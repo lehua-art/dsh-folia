@@ -17,4 +17,4 @@
 
 - insert:
     - id: folia
-      name: 'dsh-plugin-folia'
+      name: 'dsh-folia'
