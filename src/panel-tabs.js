@@ -323,102 +323,15 @@ function weComponentVisibleOf(components, name) {
   //（"要什么"写在签名处），所以这里显式解构出那一个回调。
   // 四段的**顺序**是用户的明确口径（致谢压尾），判据按首次出现下标比大小钉住。
   function renderAboutTab(ctx) {
-    const { onReopenNotice } = ctx;
-    // ── D3 可见面 gate（ADR-0013 D3①/D3③）：该组件行关掉 ⇒ **整块不渲染**（返回 null，
-    // 界面不显示；配置项由调用方按同一判据隐藏）。判据：test/verify-component-visibility.mjs
-    // 的"声明落点必须被 gate"双向对账。唯一实现在 src/client.js 的 weComponentVisible。
+    // 本仓自有版本：**「关于」页签保留，内容清空**（用户口径）。
+    // 不再显示项目简介 / Star / 贡献者致谢，也不再带上游的交流群二维码与赞赏码 ——
+    // 这一页只作为"存在一个关于页签"的占位，点进去是空白。
+    //
+    // 组件可见性门仍保留：关掉 about-notice 组件行时，这一页签照旧整块不渲染
+    //（判据仍是 test/verify-component-visibility.mjs 的"声明落点必须被 gate"）。
     if (!weComponentVisibleOf(ctx.sel && ctx.sel.inventory && ctx.sel.inventory.components, 'about-notice')) return null;
-    // star 数那一行（模块级：值 + 三态文案都在 client.js 的 starCountLabel 里；
-    // 这里的"读"与 SliderRow 一类模块级助手同口径 —— 只读，不发请求）。
-    const stars = starCountLabel();
-    // 本仓自有版本：**不再带上游的交流群二维码与赞赏码**（那是原作者的社群与收款渠道）。
-    // 「关于」页只剩项目简介 / Star / 贡献者致谢三节，联系方式留给仓库的 Issues。
-    // 贡献者致谢逐条列出（名字 / 做了什么）——「谢谢」要能落到具体的人身上，
-    // 一句笼统的"感谢所有贡献者"没有信息量。
-    const credits = [
-      weT("🧩 oneincase —— 内置 WebWallGL 实时渲染引擎与 media-bridge 媒体中间件的作者：场景 / 网页壁纸的实时渲染，以及 Windows / macOS / Linux 三平台的原生媒体链路，都建立在它们之上"),
-      weT("🛠️ YV3507 —— 提交量最大的贡献者：从早期场景渲染器起步，到静态帧系列修复、液态玻璃令牌体系、实时帧链路与多轮大型重构，几乎每个里程碑都有他"),
-      weT("🎨 yuxilao —— scene-gl 的 Linux 实时渲染管线（WebGL2 官方 shader 驱动）、轮换交接与 GPU 帧回填"),
-      weT("🍎 Jerry —— 在三平台原生支持落地之前，macOS 侧的适配与贡献路径由他维护"),
-      weT("🌟 还有 SiriLee、libiwolve、0-007pro、jujubaoj646-star、xiahou001、wilianyichen、hecoococ、ShamSky88、Rekk0、Y1X1n 等贡献者，以及所有通过 issue 反馈与 PR 参与改进的朋友 —— 谢谢你们！"),
-    ];
-    return React.createElement(React.Fragment, null,
-      // ── ① 项目简介 ──
-      React.createElement("div", { className: "we-picker__section" },
-        React.createElement("div", { className: "we-picker__section-head" },
-          React.createElement("span", { className: "we-picker__section-label" }, weT("📖 项目简介")),
-        ),
-        React.createElement("div", { className: "we-about__lead" },
-          React.createElement("div", { className: "we-about__lead-title" }, weT("🖼️ 壁纸引擎 · 让 DSH 的背后动起来")),
-          React.createElement("p", { className: "we-about__p" },
-            weT("把 Wallpaper Engine 的壁纸搬到 DSH 界面后面：视频直接播放，场景（Scene）与网页（Web）壁纸由内置的 WebWallGL 引擎实时渲染，再配上一整套液态玻璃界面改造 —— 你桌面上那张会动的画，现在就在对话背后放着。🎬✨")),
-          React.createElement("p", { className: "we-about__p" },
-            weT("壁纸全部来自你自己的机器（本机库 / WE 工程目录 / 手动上传），插件不联网也能用，更不会把它们传到任何地方。🔒")),
-        ),
-      ),
-      // ── ② 仓库与 Star ──
-      React.createElement("div", { className: "we-picker__section" },
-        React.createElement("div", { className: "we-picker__section-head" },
-          React.createElement("span", { className: "we-picker__section-label" }, weT("⭐ 开源与支持")),
-        ),
-        React.createElement("p", { className: "we-about__p" },
-          weT("项目以 MIT 协议开源、完全免费。如果它让你的 DSH 好看了一点点，去仓库点一颗 ⭐ 就是最直接的鼓励～")),
-        React.createElement("div", { className: "we-about__star-row" },
-          React.createElement("a", {
-            className: "we-picker__btn we-picker__btn--primary we-about__star",
-            href: ABOUT_REPO_URL,
-            target: "_blank",
-            rel: "noopener noreferrer",
-            title: weT("在浏览器里打开项目仓库"),
-          }, weT("⭐ 去 GitHub 点亮 Star")),
-          // 实时 star 数：宿主代取（带缓存，见 packages/about-notice/lib/routes/github-stars.js）。
-          // 取不到时**整行不消失**、改说"暂时取不到" —— 数字是点缀，按钮才是主操作。
-          stars
-            ? React.createElement("span", {
-                className: "we-about__stars",
-                title: weT("来自 GitHub API 的实时数据（带缓存；拉不到时显示上一次取到的值）"),
-              }, stars)
-            : null,
-        ),
-        React.createElement("div", { className: "we-about__url-row" },
-          React.createElement("span", { className: "we-picker__hint" }, weT("🔗 仓库地址（按钮打不开时可手动复制）：")),
-          // 可选中、可整段复制的裸地址：桌面壳里外链能否唤起浏览器不由插件说了算，
-          // 这条是给"点了没反应"的场景留的兜底（同字体集导出的"普通链接"口径）。
-          React.createElement("code", { className: "we-about__url" }, ABOUT_REPO_URL),
-        ),
-        // 「重新查看本版更新公告」：公告的哨兵 `noticeSeen` 让它**一版只弹一次** ⇒ 不给一条
-        // 重看路径的话，用户"想再看这版改了什么"就只能去改设置文件。
-        // ⚠️ 只调回调（`ctx.onReopenNotice`）：状态写入与 emit 都在 client.js 那一侧 ——
-        // 本渲染器因此保持"只读模块级状态"（判据见文件头那段说明）。
-        // 与上面那枚 Star 按钮**同放一节**是有意的：它们是同一件事的两个面（公告配图下那行
-        // 也是同一个求星入口，见 src/client.js 的 UpdateNotice）。
-        React.createElement("button", {
-          className: "we-picker__btn we-about__reopen", type: "button",
-          onClick: () => { if (typeof onReopenNotice === "function") onReopenNotice(); },
-          title: weT("再弹一次本版更新公告（含配图下方的求星入口）"),
-        }, weT("重新查看本版更新公告")),
-        React.createElement("p", { className: "we-about__p" },
-          weT("想要新功能、遇到问题，或者想看看接下来要做什么，都欢迎来仓库提 Issue / PR —— 一起把它做得更好 🧰")),
-      ),
-      // ── ③ 交流群：**已整节移除**（本仓不带上游社群二维码；见上方 qrCards 位置的说明）──
-      // ── ④ 贡献者致谢（**压尾**：用户口径——先讲清"这是什么、去哪支持"，
-      //    最后再把功劳簿摆出来。💌 那句收尾也并进这一段，页面结束在"谢谢"上。）──
-      React.createElement("div", { className: "we-picker__section" },
-        React.createElement("div", { className: "we-picker__section-head" },
-          React.createElement("span", { className: "we-picker__section-label" }, weT("🙏 贡献者致谢")),
-        ),
-        React.createElement("p", { className: "we-about__p" }, weT("这个插件是许多人一起做出来的成果，谢谢他们：❤️")),
-        React.createElement("ul", { className: "we-about__credits" },
-          credits.map((line, i) => React.createElement("li", { key: "credit-" + i, className: "we-about__credit" }, line)),
-        ),
-        React.createElement("p", { className: "we-about__p" }, weT("也谢谢上游 Wallpaper Engine 生态与 DSH 官方插件的作者们 —— 站在你们的肩膀上。🙇")),
-        React.createElement("p", { className: "we-about__p we-about__foot" },
-          weT("💌 感谢每一位使用者 —— 换上你喜欢的那张壁纸，这个插件就没白写。")),
-      ),
-    );
+    return null;
   }
-
-
   // ── 页签级重置（issue #192 用户口径：「每个选项卡后面加重置，重置指定选项卡」）──────────
   // 压在**每个页签内容的最末尾**，由 client.js 的渲染点在 renderActiveTab() 之后统一挂 ——
   // 六处渲染器各挂一遍必然漏一个，挂一处才是结构性的。
