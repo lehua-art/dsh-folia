@@ -1,6 +1,0 @@
-{
-  "meta": {
-    "title": "System Media Bridge",
-    "description": "System media integration host half: now playing / spectrum / artwork / reverse control, with the media-bridge child process and the built-in fallback."
-  }
-}

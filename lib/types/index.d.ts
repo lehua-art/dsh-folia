@@ -1,15 +1,15 @@
 /**
- * dsh-folia — host half type surface.
+ * dsh-wallpaper-engine — host half type surface.
  *
  * The host plugin contributes no public Cordis services and registers no model
  * tool. It serves 45 same-origin HTTP routes through `ctx.webServer` and unwinds
  * them on unload; `docs/ROUTE-INDEX.md` is the generated table of those routes
  * and stays authoritative for their paths and handlers.
  *
- * Exactly one of those routes leaves the machine: `GET /folia/star-count`
+ * Exactly one of those routes leaves the machine: `GET /wallpaper-engine/star-count`
  * fetches the repository's star count from the public GitHub API (read-only, no
  * credentials, 10-minute cache plus an on-disk fallback). Everything else serves
- * local data — including `GET /folia/about-qr/<file>`, which hands out
+ * local data — including `GET /wallpaper-engine/about-qr/<file>`, which hands out
  * the two contact QR codes shipped in `lib/about/` (whitelisted names only).
  *
  * `webServer` is a HARD dependency, declared by `inject` below: the Loader waits
@@ -33,17 +33,17 @@ export interface WallpaperDescriptor {
   contentrating: string | null;
   /** Whether the entry has playable media (video/web, or any single-file upload). */
   playable: boolean;
-  /** Served media URL (`/folia/media/<token>`), or null. */
+  /** Served media URL (`/wallpaper-engine/media/<token>`), or null. */
   media: string | null;
   /** Real container suffix of the media file, lower-case and without the dot (e.g. `mp4`),
    *  or null. The media URL is token-shaped and carries no extension, so the client's
    *  "the browser can play this natively" decision (skip the frame-rate-cap re-encode)
    *  has no other way to know the container. */
   mediaExt: string | null;
-  /** Served preview URL (`/folia/preview/<token>`; uploads without a
-   *  preview image fall back to `/folia/video-preview/<token>`), or null. */
+  /** Served preview URL (`/wallpaper-engine/preview/<token>`; uploads without a
+   *  preview image fall back to `/wallpaper-engine/video-preview/<token>`), or null. */
   preview: string | null;
-  /** Scene static-frame URL (`/folia/scene-frame/<token>`), or null. */
+  /** Scene static-frame URL (`/wallpaper-engine/scene-frame/<token>`), or null. */
   frameUrl: string | null;
   /** Load-time placeholder colour derived from WE's schemecolor (`rgb(r, g, b)`), or null. */
   schemeColor: string | null;
@@ -55,20 +55,20 @@ export interface WallpaperDescriptor {
    *  first-frame watchdog budget by it — the first frame cannot exist before the whole
    *  package has arrived, and measured packages reach 336 MB. */
   scenePkgBytes: number;
-  /** Scene embedded-animation MP4 URL (`/folia/scene-video/<token>`); null
+  /** Scene embedded-animation MP4 URL (`/wallpaper-engine/scene-video/<token>`); null
    *  until the probe confirms the pkg really carries an MP4. */
   sceneVideo: string | null;
-  /** Scene packaged-audio URL (`/folia/scene-audio/<token>`), or null. */
+  /** Scene packaged-audio URL (`/wallpaper-engine/scene-audio/<token>`), or null. */
   sceneAudio: string | null;
   /** Whether a user-supplied static frame replaces the extracted one. */
   hasCustomFrame: boolean;
   /** Whether the web live render applies to this entry (entry HTML present). */
   webLive: boolean;
-  /** Full entry URL the web renderer loads (`/folia/scene-files/<token>/<name>`), or null. */
+  /** Full entry URL the web renderer loads (`/wallpaper-engine/scene-files/<token>/<name>`), or null. */
   webLiveSrc: string | null;
-  /** Served project.json URL for the properties panel (`/folia/props/<token>`), or null. */
+  /** Served project.json URL for the properties panel (`/wallpaper-engine/props/<token>`), or null. */
   propsUrl: string | null;
-  /** Automatic web first-frame cache URL (`/folia/live-frame/<token>`), or null. */
+  /** Automatic web first-frame cache URL (`/wallpaper-engine/live-frame/<token>`), or null. */
   liveFrame: string | null;
 }
 
@@ -92,7 +92,7 @@ export interface PlaylistDescriptor {
   unresolvedCount: number;
 }
 
-/** Shape returned by GET /folia/inventory. */
+/** Shape returned by GET /wallpaper-engine/inventory. */
 export interface Inventory {
   /**
    * Absolute Wallpaper Engine **install root**, or null when not found. This is the directory
@@ -104,10 +104,10 @@ export interface Inventory {
   /** Absolute upload directory (env → config.json → default); always a path. */
   uploadDir: string;
   /**
-   * Absolute **cache root** in effect (env `DSH_FOLIA_CACHE_DIR` → config.json `cacheDir` →
+   * Absolute **cache root** in effect (env `DSH_WE_CACHE_DIR` → config.json `cacheDir` →
    * `<data dir>/cache`); always a path. Transcodes / faststart variants / scene frames /
    * video previews / media-bridge caches all live under it. Change it via
-   * `POST /folia/cache-dir`; when an env override is set this differs from the
+   * `POST /wallpaper-engine/cache-dir`; when an env override is set this differs from the
    * persisted value, which is how the UI knows to say "overridden by environment".
    */
   cacheDir: string;

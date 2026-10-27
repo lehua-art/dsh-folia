@@ -1,4 +1,4 @@
-# dsh-plugin-folia bundle patch.
+# dsh-plugin-wallpaper-engine bundle patch.
 #
 # Applied over the dsh-web-app layer. This bundle contributes EIGHT host rows:
 #   - four owned by the main package: the plugin that scans Wallpaper Engine and
@@ -23,11 +23,11 @@
     # enumerates Scene/Video/Web wallpapers from the Workshop + default projects
     # (Application wallpapers are listed but never rendered),
     # and serves their media + a JSON inventory over same-origin HTTP routes
-    # the browser half fetches directly (GET /folia/inventory, /media,
+    # the browser half fetches directly (GET /wallpaper-engine/inventory, /media,
     # /preview, …; docs/ROUTE-INDEX.md is the authoritative table — it is generated
     # and machine-checked, so the route count is deliberately not repeated here).
-    - id: folia
-      name: 'dsh-plugin-folia'
+    - id: wallpaper-engine
+      name: 'dsh-plugin-wallpaper-engine'
     # Second row: the `about-notice` component's host half (C8′, P2-1). The host
     # loads it as its own plugin — its entry re-enters this bundle's
     # `applyComponent` — so disabling just this row removes the About tab's
@@ -35,8 +35,8 @@
     # P-F (2026-10-16): this component moved out to `packages/about-notice/`, so the
     # row `name` is now the real package name (resolved through <profile>/node_modules,
     # same as the fx / parallax / fonts rows below). The `id` is frozen.
-    - id: folia-about-notice
-      name: 'dsh-plugin-folia-about-notice'
+    - id: wallpaper-engine-about-notice
+      name: 'dsh-plugin-wallpaper-engine-about-notice'
     # Third row: the `mascot-avatar` component's host half (C6, P2-2) — the custom
     # mascot image (/mascot) and the two session avatars (/avatar/<side>). Same
     # shape as the row above (independent plugin, re-enters `applyComponent`);
@@ -44,8 +44,8 @@
     # P-F (2026-10-16): this component moved out to `packages/mascot-avatar/`, so the
     # row `name` is now the real package name (resolved through <profile>/node_modules,
     # same as the fx / parallax / fonts rows below). The `id` is frozen.
-    - id: folia-mascot-avatar
-      name: 'dsh-plugin-folia-mascot-avatar'
+    - id: wallpaper-engine-mascot-avatar
+      name: 'dsh-plugin-wallpaper-engine-mascot-avatar'
     # Fourth row: the `media-bridge` component's host half (third component) — the
     # system media integration (now playing / spectrum / artwork / reverse control)
     # and its backend (the media-bridge child process with the built-in fallback).
@@ -56,8 +56,8 @@
     # P-F (2026-10-16): this component moved out to `packages/media-bridge/`, so the
     # row `name` is now the real package name (resolved through <profile>/node_modules,
     # same as the fx / parallax / fonts rows below). The `id` is frozen.
-    - id: folia-media-bridge
-      name: 'dsh-plugin-folia-media-bridge'
+    - id: wallpaper-engine-media-bridge
+      name: 'dsh-plugin-wallpaper-engine-media-bridge'
       # webServer is a hard dependency (`inject = ['webServer']` in lib/index.js):
       # the Loader waits for the HTTP server to mount, so a headless/TUI profile
       # without one does not load this bundle at all.
@@ -67,23 +67,23 @@
     # 与发布期 pnpm hoist 布局同形（§8.1 spike 结论）。主包 apply 会先 resolve 这三行，
     # 解析不到就**大声抛错**（宿主对行级失败是静默的 —— §4.1 I5）。
     # 可选桌宠联动；没有 dsh-pet 或首次准备未完成时保留吉祥物原生行为。
-    - id: folia-pet-link
-      name: 'dsh-plugin-folia-pet-link'
+    - id: wallpaper-engine-pet-link
+      name: 'dsh-plugin-wallpaper-engine-pet-link'
     # fx：点击拖尾 + 特效扩展（src/fx-layer.js、src/ext-fx.js），浏览器半边在本包自己的产物里。
-    - id: folia-fx
-      name: 'dsh-plugin-folia-fx'
+    - id: wallpaper-engine-fx
+      name: 'dsh-plugin-wallpaper-engine-fx'
     # parallax：3D 视差层（src/parallax-layer.js、src/ext-parallax.js），同上。
-    - id: folia-parallax
-      name: 'dsh-plugin-folia-parallax'
+    - id: wallpaper-engine-parallax
+      name: 'dsh-plugin-wallpaper-engine-parallax'
     # fonts：整个字体系统（P-C 之后宿主半边 + 浏览器半边都在本包）
     #   · 宿主半边：lib/routes/fontsets.js、lib/routes/system-fonts.js 两条路由族；
     #   · 浏览器半边：外观页签第六节「全局字体」+ 字体集编辑器 ⇒ 产物 lib/client.fonts.js。
     # 注意（§6.1 = A / ADR-0013 D20）：随包走的只是**渲染器与描述符**；字体的键、默认值、
     # 消毒与持久化仍在主包 lib/settings-schema.js（FONTSET_KEYS）与 fontsets/<id>.json。
-    - id: folia-fonts
-      name: 'dsh-plugin-folia-fonts'
+    - id: wallpaper-engine-fonts
+      name: 'dsh-plugin-wallpaper-engine-fonts'
     # ── 内置桌宠本体：已解耦（2026-10-20）────────────────────────────────────────
-    # `packages/pet`（`dsh-we-pet-builtin`）与它的 `folia-pet` 行**已从本包移除**：
+    # `packages/pet`（`dsh-we-pet-builtin`）与它的 `wallpaper-engine-pet` 行**已从本包移除**：
     # 它把 `electron`（optional）带进安装树，而 electron 42+ 在缺少 `dist/` 时会在
     # `require('electron')` 里**同步**下载约 140MB 二进制 ⇒ 宿主启动被堵到 60 秒超时，
     # 整个 profile 起不来。桌宠本体的正式接入等上游 dsh-pet 提供联动接口后，由 pet-link 对接

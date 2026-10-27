@@ -7,11 +7,11 @@
   <img src="assets/readme/hero-light.png" alt="DSH Wallpaper Engine: your wallpapers, your glass, your workspace" width="1440">
 </picture>
 
-[![Node.js](https://img.shields.io/badge/Node.js-22.12%2B-8fd6a0?style=flat-square)](https://nodejs.org) [![License](https://img.shields.io/badge/License-MIT-8fd6a0?style=flat-square)](LICENSE) [![Upstream Stars](https://img.shields.io/github/stars/elysia395/dsh-folia?style=flat-square&label=Upstream%20Stars)](https://github.com/elysia395/dsh-folia/stargazers) [![Upstream Forks](https://img.shields.io/github/forks/elysia395/dsh-folia?style=flat-square&label=Upstream%20Forks)](https://github.com/elysia395/dsh-folia/forks) [![Upstream Contributors](https://img.shields.io/github/contributors/elysia395/dsh-folia?style=flat-square&label=Upstream%20Contributors)](https://github.com/elysia395/dsh-folia/graphs/contributors) [![Upstream Release](https://img.shields.io/github/v/release/elysia395/dsh-folia?style=flat-square&label=Upstream%20Release)](https://github.com/elysia395/dsh-folia/releases) [![npm](https://img.shields.io/npm/v/dsh-plugin-folia?style=flat-square)](https://www.npmjs.com/package/dsh-plugin-folia) [![npm Downloads](https://img.shields.io/npm/dm/dsh-plugin-folia?style=flat-square)](https://www.npmjs.com/package/dsh-plugin-folia) [![dsh-pet integration](https://img.shields.io/badge/dsh--pet-Public%20API-8fd6a0?style=flat-square)](https://github.com/PC2005-cloud/dsh-pet/issues/122)
+[![Node.js](https://img.shields.io/badge/Node.js-22.12%2B-8fd6a0?style=flat-square)](https://nodejs.org) [![License](https://img.shields.io/badge/License-MIT-8fd6a0?style=flat-square)](LICENSE) [![Upstream Stars](https://img.shields.io/github/stars/elysia395/dsh-wallpaper-engine?style=flat-square&label=Upstream%20Stars)](https://github.com/elysia395/dsh-wallpaper-engine/stargazers) [![Upstream Forks](https://img.shields.io/github/forks/elysia395/dsh-wallpaper-engine?style=flat-square&label=Upstream%20Forks)](https://github.com/elysia395/dsh-wallpaper-engine/forks) [![Upstream Contributors](https://img.shields.io/github/contributors/elysia395/dsh-wallpaper-engine?style=flat-square&label=Upstream%20Contributors)](https://github.com/elysia395/dsh-wallpaper-engine/graphs/contributors) [![Upstream Release](https://img.shields.io/github/v/release/elysia395/dsh-wallpaper-engine?style=flat-square&label=Upstream%20Release)](https://github.com/elysia395/dsh-wallpaper-engine/releases) [![npm](https://img.shields.io/npm/v/dsh-plugin-wallpaper-engine?style=flat-square)](https://www.npmjs.com/package/dsh-plugin-wallpaper-engine) [![npm Downloads](https://img.shields.io/npm/dm/dsh-plugin-wallpaper-engine?style=flat-square)](https://www.npmjs.com/package/dsh-plugin-wallpaper-engine) [![dsh-pet integration](https://img.shields.io/badge/dsh--pet-Public%20API-8fd6a0?style=flat-square)](https://github.com/PC2005-cloud/dsh-pet/issues/122)
 
 Bring local **Wallpaper Engine Scene, Web and Video wallpapers** into the DSH chat interface, with liquid glass, typography, configuration presets, mascot artwork and optional official dsh-pet integration. The plugin registers no agent tools or prompt text, so it adds no model token overhead.
 
-> **This page describes the unpublished [Fish-under-sea source branch](https://github.com/lehua-art/dsh-folia).** Stars, forks, contributors, releases, npm downloads and Star History refer to the official [elysia395/dsh-folia repository](https://github.com/lehua-art/dsh-folia) or its npm package. Cached badges do not mean these branch changes have been merged or published. Identical package version numbers do not guarantee identical source trees.
+> **This page describes the unpublished [Fish-under-sea source branch](https://github.com/Fish-under-sea/dsh-wallpaper-engine).** Stars, forks, contributors, releases, npm downloads and Star History refer to the official [elysia395/dsh-wallpaper-engine repository](https://github.com/elysia395/dsh-wallpaper-engine) or its npm package. Cached badges do not mean these branch changes have been merged or published. Identical package version numbers do not guarantee identical source trees.
 
 ## Contents
 
@@ -41,7 +41,7 @@ The current suite has **one main package and seven subpackages, eight packages i
 
 Requirements: **Node.js >=22.12.0, a DSH 0.2 kernel (including 0.2.0-rc.1/rc.2), pnpm and the target host's DSH CLI**. The desktop application's external version number is not its kernel version. Optional pet integration needs a separate official pet installation. Unlike the published build (which asks once with a two-choice dialog and never changes the theme), this branch applies the author preset plus a dark UI automatically on a fresh install and switches the theme whenever a preset that declares a preference is applied; existing save files are never overwritten.
 
-1. Download and extract the complete [review branch `official-pet-bridge-20261020`](https://github.com/Fish-under-sea/dsh-folia/tree/official-pet-bridge-20261020), or clone that branch, not the fork's default branch. Open a terminal in the folder containing `package.json`.
+1. Download and extract the complete [review branch `official-pet-bridge-20261020`](https://github.com/Fish-under-sea/dsh-wallpaper-engine/tree/official-pet-bridge-20261020), or clone that branch, not the fork's default branch. Open a terminal in the folder containing `package.json`.
 2. Completely close the target DSH host. Confirm its actual data directory and profile.
 3. Inspect the plan, then run the installer:
 
@@ -61,10 +61,10 @@ The publisher must build the eight-package set with `npm run pack:release`, publ
 **From `1.4.0` on, all eight packages are on npm** — one command installs the whole set (the main package resolves the seven children at exact versions):
 
 ```sh
-dsh plugin --profile web add dsh-plugin-folia
+dsh plugin --profile web add dsh-plugin-wallpaper-engine
 ```
 
-To get **unreleased branch changes** you still need the source deployment; the npm name only ever gives you a published version. Desktop installations still require the desktop carrier CLI and a fully closed host. See the [deployment and publishing guide](https://github.com/Fish-under-sea/dsh-folia/blob/official-pet-bridge-20261020/CONTRIBUTING.md).
+To get **unreleased branch changes** you still need the source deployment; the npm name only ever gives you a published version. Desktop installations still require the desktop carrier CLI and a fully closed host. See the [deployment and publishing guide](https://github.com/Fish-under-sea/dsh-wallpaper-engine/blob/official-pet-bridge-20261020/CONTRIBUTING.md).
 
 ### Rows and platforms
 
@@ -76,7 +76,7 @@ Windows, macOS and Linux use the same source suite. On platforms without the Wal
 
 Open **Settings → Wallpaper Engine**, or pull the mascot cord to open the library drawer. Select wallpapers in the **in-panel library**, not a separate modal. Changes apply immediately and persist on the host.
 
-![Main interface, historical upstream demo](https://github.com/elysia395/dsh-folia/releases/download/media-v1/main-interface.gif)
+![Main interface, historical upstream demo](https://github.com/elysia395/dsh-wallpaper-engine/releases/download/media-v1/main-interface.gif)
 
 Historical upstream demonstrations may differ from this branch. The six settings tabs are Library, Appearance, Playback, System, Extensions and About.
 
@@ -86,7 +86,7 @@ Historical upstream demonstrations may differ from this branch. The six settings
 - **System**: mascot selection, adapter target, occlusion pause and cache locations. The default mascot is DeepSeek; Deepseek_Pro and 菲比啾比 are separate artworks, alongside Claude, DeepSeek, Gemini, GPT, GLM, Grok, Kimi and Qwen. The chibi maid is carried by the author preset rather than the built-in carousel.
 - **Extensions**: optional avatars, click / trail effects and parallax. Disabling an extension removes its own decorations without resetting the wallpaper.
 
-Glass ownership uses per-surface `auto` / `native` fallback. Unknown plugin surfaces are not forcibly cleared. Extra frost selectors have strict limits and must meet positioning and decoration-safety checks. There is no universal guarantee of compatibility with every skin or plugin. See [coexistence](https://github.com/Fish-under-sea/dsh-folia/blob/official-pet-bridge-20261020/docs/COEXISTENCE.md).
+Glass ownership uses per-surface `auto` / `native` fallback. Unknown plugin surfaces are not forcibly cleared. Extra frost selectors have strict limits and must meet positioning and decoration-safety checks. There is no universal guarantee of compatibility with every skin or plugin. See [coexistence](https://github.com/Fish-under-sea/dsh-wallpaper-engine/blob/official-pet-bridge-20261020/docs/COEXISTENCE.md).
 
 System audio capture uses **output loopback, not the microphone**. Online lyrics are off by default and may send track title, artist and album to LRCLIB when enabled. Media runtime support is native per platform: GSMTC / MediaRemote / MPRIS.
 
@@ -111,20 +111,20 @@ Native position interpolation uses wall-clock time and is not guaranteed to trac
 
 ## Configuration and privacy
 
-Wallpaper settings live in `~/.dsh-folia/config.json`, independent of the browser port. Caches and uploads default to subdirectories under the same data root and can be moved from the UI. Migration moves recognized plugin files, not unrelated files in the target directory. Pet target selection and exported runtime tuning have their separate bridge lifecycle; they are not all part of the host configuration file.
+Wallpaper settings live in `~/.dsh-wallpaper-engine/config.json`, independent of the browser port. Caches and uploads default to subdirectories under the same data root and can be moved from the UI. Migration moves recognized plugin files, not unrelated files in the target directory. Pet target selection and exported runtime tuning have their separate bridge lifecycle; they are not all part of the host configuration file.
 
 | Variable | Purpose |
 |---|---|
-| `DSH_FOLIA_DATA_DIR` | Override the whole plugin data root |
-| `DSH_FOLIA_CACHE_DIR` / `DSH_FOLIA_UPLOAD_DIR` | Override cache / upload roots |
-| `DSH_FOLIA_STEAM_ROOT` / `DSH_FOLIA_ASSETS_DIR` | Override Steam discovery / official WE resources |
-| `DSH_FOLIA_FFMPEG` / `DSH_FOLIA_FFMPEG_URL` | Explicit ffmpeg executable / download source |
-| `DSH_FOLIA_TRANSCODE_TIMEOUT_MS` | Transcode time budget |
-| `DSH_FOLIA_MEDIA_BRIDGE` / `DSH_FOLIA_MEDIA_BRIDGE_URL` | Explicit media bridge / source |
-| `DSH_FOLIA_MEDIA_BRIDGE_TAG` / `DSH_FOLIA_MEDIA_BRIDGE_SHA256` | Version and required integrity information for custom versions |
-| `DSH_FOLIA_MEDIA_LEGACY` / `DSH_FOLIA_MEDIA_NO_AUDIO` | Built-in fallback / metadata-only mode |
-| `DSH_FOLIA_MEDIA_PROVIDER` | `mock` for development |
-| `DSH_FOLIA_MEDIA_IDLE_MS` / `DSH_FOLIA_MEDIA_DEBUG` | Idle shutdown / diagnostic output |
+| `DSH_WE_DATA_DIR` | Override the whole plugin data root |
+| `DSH_WE_CACHE_DIR` / `DSH_WE_UPLOAD_DIR` | Override cache / upload roots |
+| `DSH_WE_STEAM_ROOT` / `DSH_WE_ASSETS_DIR` | Override Steam discovery / official WE resources |
+| `DSH_WE_FFMPEG` / `DSH_WE_FFMPEG_URL` | Explicit ffmpeg executable / download source |
+| `DSH_WE_TRANSCODE_TIMEOUT_MS` | Transcode time budget |
+| `DSH_WE_MEDIA_BRIDGE` / `DSH_WE_MEDIA_BRIDGE_URL` | Explicit media bridge / source |
+| `DSH_WE_MEDIA_BRIDGE_TAG` / `DSH_WE_MEDIA_BRIDGE_SHA256` | Version and required integrity information for custom versions |
+| `DSH_WE_MEDIA_LEGACY` / `DSH_WE_MEDIA_NO_AUDIO` | Built-in fallback / metadata-only mode |
+| `DSH_WE_MEDIA_PROVIDER` | `mock` for development |
+| `DSH_WE_MEDIA_IDLE_MS` / `DSH_WE_MEDIA_DEBUG` | Idle shutdown / diagnostic output |
 
 Wallpaper files stay local. Runtime downloads, GitHub repository statistics and opt-in lyrics access external services; this is not a claim of fully offline operation.
 
@@ -140,16 +140,16 @@ Wallpaper files stay local. Runtime downloads, GitHub repository statistics and 
 
 ## Development
 
-See the current [contribution guide](https://github.com/Fish-under-sea/dsh-folia/blob/official-pet-bridge-20261020/CONTRIBUTING.md), [changelog](https://github.com/Fish-under-sea/dsh-folia/blob/official-pet-bridge-20261020/docs/CHANGELOG.md), [upgrade notes](https://github.com/Fish-under-sea/dsh-folia/blob/official-pet-bridge-20261020/docs/UPGRADING.md), [rendering design](https://github.com/Fish-under-sea/dsh-folia/blob/official-pet-bridge-20261020/docs/HOW-IT-WORKS.md) and [troubleshooting](https://github.com/Fish-under-sea/dsh-folia/blob/official-pet-bridge-20261020/docs/TROUBLESHOOTING.md). Generated clients are built from source; do not edit generated bundles by hand. The npm package does not ship `docs/`, so these technical links use repository URLs.
+See the current [contribution guide](https://github.com/Fish-under-sea/dsh-wallpaper-engine/blob/official-pet-bridge-20261020/CONTRIBUTING.md), [changelog](https://github.com/Fish-under-sea/dsh-wallpaper-engine/blob/official-pet-bridge-20261020/docs/CHANGELOG.md), [upgrade notes](https://github.com/Fish-under-sea/dsh-wallpaper-engine/blob/official-pet-bridge-20261020/docs/UPGRADING.md), [rendering design](https://github.com/Fish-under-sea/dsh-wallpaper-engine/blob/official-pet-bridge-20261020/docs/HOW-IT-WORKS.md) and [troubleshooting](https://github.com/Fish-under-sea/dsh-wallpaper-engine/blob/official-pet-bridge-20261020/docs/TROUBLESHOOTING.md). Generated clients are built from source; do not edit generated bundles by hand. The npm package does not ship `docs/`, so these technical links use repository URLs.
 
-Report branch-specific installation or pet-integration problems to the [current fork](https://github.com/Fish-under-sea/dsh-folia/issues), with versions, platform, reproduction steps and sanitized logs. Shared upstream problems belong in the [official tracker](https://github.com/elysia395/dsh-folia/issues). Never include credentials. Community QR codes are available in the [Chinese README](README.md#联系方式).
+Report branch-specific installation or pet-integration problems to the [current fork](https://github.com/Fish-under-sea/dsh-wallpaper-engine/issues), with versions, platform, reproduction steps and sanitized logs. Shared upstream problems belong in the [official tracker](https://github.com/elysia395/dsh-wallpaper-engine/issues). Never include credentials. Community QR codes are available in the [Chinese README](README.md#联系方式).
 
 ## Credits
 
-Contributions are grouped by work, not ranked. See the official [Contributors](https://github.com/elysia395/dsh-folia/graphs/contributors) and [merged PRs](https://github.com/elysia395/dsh-folia/pulls?q=is%3Apr+is%3Amerged) for the maintained history.
+Contributions are grouped by work, not ranked. See the official [Contributors](https://github.com/elysia395/dsh-wallpaper-engine/graphs/contributors) and [merged PRs](https://github.com/elysia395/dsh-wallpaper-engine/pulls?q=is%3Apr+is%3Amerged) for the maintained history.
 
 - **[elysia395](https://github.com/elysia395)**: project creation, upstream maintenance, releases, presets and community.
-- **[生鱼 / Fish-under-sea](https://github.com/Fish-under-sea)**: current source-branch integration, whole-configuration presets and asset import / export, mascot carousel, source deployment and release closure, official pet bridge, bubble / routine / tuning work and regression documentation. Earlier work: [#173](https://github.com/elysia395/dsh-folia/pull/173), [#180](https://github.com/elysia395/dsh-folia/pull/180), [integration PR #251](https://github.com/elysia395/dsh-folia/pull/251). Some latest source work remains unpublished.
+- **[生鱼 / Fish-under-sea](https://github.com/Fish-under-sea)**: current source-branch integration, whole-configuration presets and asset import / export, mascot carousel, source deployment and release closure, official pet bridge, bubble / routine / tuning work and regression documentation. Earlier work: [#173](https://github.com/elysia395/dsh-wallpaper-engine/pull/173), [#180](https://github.com/elysia395/dsh-wallpaper-engine/pull/180), [integration PR #251](https://github.com/elysia395/dsh-wallpaper-engine/pull/251). Some latest source work remains unpublished.
 - **[YV3507](https://github.com/YV3507)**: rendering and frame-pipeline fixes, liquid-glass tokens, architecture, documentation, regression guards and community integration.
 - **[oneincase](https://github.com/oneincase)**: [WebWallGL](https://github.com/oneincase/webwallgl), [media-bridge](https://github.com/oneincase/media-bridge), live rendering, cross-platform media and performance work.
 - **[yuxilao](https://github.com/yuxilao)** and **[Jerry / ruijiaang-lab](https://github.com/ruijiaang-lab)**: Linux scene-rendering exploration, performance / rotation work, and early macOS / WaifuX compatibility and contribution paths.
@@ -163,9 +163,9 @@ The README's retro window layout references [MaiBot](https://github.com/Mai-with
 
 Official upstream history, not fork statistics:
 
-<a href="https://star-history.com/#elysia395/dsh-folia&Date">
+<a href="https://star-history.com/#elysia395/dsh-wallpaper-engine&Date">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=elysia395/dsh-folia&amp;type=Date&amp;theme=dark">
-    <img src="https://api.star-history.com/svg?repos=elysia395/dsh-folia&amp;type=Date" alt="Official upstream Star History" width="960">
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=elysia395/dsh-wallpaper-engine&amp;type=Date&amp;theme=dark">
+    <img src="https://api.star-history.com/svg?repos=elysia395/dsh-wallpaper-engine&amp;type=Date" alt="Official upstream Star History" width="960">
   </picture>
 </a>

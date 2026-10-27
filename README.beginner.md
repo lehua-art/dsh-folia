@@ -2,7 +2,7 @@
 
 [中文完整版](README.md) · [English README](README.en.md) · [English below](#english)
 
-> **先分清版本**：本指南对应 [Fish-under-sea 灰测源码](https://github.com/lehua-art/dsh-folia)，不是 npm 上已经发布的版本。当前安装单位是**主包 + 七个子包，共八包**，不再内置 pet。正式项目的数据、发布与贡献记录见 [elysia395 主仓](https://github.com/lehua-art/dsh-folia)。
+> **先分清版本**：本指南对应 [Fish-under-sea 灰测源码](https://github.com/Fish-under-sea/dsh-wallpaper-engine)，不是 npm 上已经发布的版本。当前安装单位是**主包 + 七个子包，共八包**，不再内置 pet。正式项目的数据、发布与贡献记录见 [elysia395 主仓](https://github.com/elysia395/dsh-wallpaper-engine)。
 
 ## 中文
 
@@ -18,7 +18,7 @@
 - **DSH 0.2 内核**，包括 `0.2.0-rc.1/rc.2`；桌面应用版本号与内核版本号不是一回事。
 - **Node.js >=22.12.0、pnpm 和目标宿主的 DSH CLI**。
 - 目标 DSH 的**数据目录**和 **profile**。网页版通常是 `web`；桌面版为 `desktop`。数据目录从目标应用确认，不要照猜 `~/.dsh`。
-- 下载并解压 [本轮评审分支 `official-pet-bridge-20261020`](https://github.com/Fish-under-sea/dsh-folia/tree/official-pet-bridge-20261020) 的完整源码，不要用 Fork 默认分支代替，也不要只下载主包或某个子目录。
+- 下载并解压 [本轮评审分支 `official-pet-bridge-20261020`](https://github.com/Fish-under-sea/dsh-wallpaper-engine/tree/official-pet-bridge-20261020) 的完整源码，不要用 Fork 默认分支代替，也不要只下载主包或某个子目录。
 
 Wallpaper Engine 只用于读取已有壁纸资源，不需要一直在后台运行。macOS 没有其官方客户端，可以用自定义上传或已有 WE 项目目录。
 
@@ -82,17 +82,17 @@ node scripts/install-source.mjs --profile web --dsh-home "<目标 DSH 数据目�
 
 更新时完全退出宿主，更新**整个源码目录**，重跑原安装命令，再启动 DSH。不要只替换某个生成文件。
 
-一般壁纸设置保存在 `~/.dsh-folia/config.json`；缓存和上传默认也在该数据目录。环境变量可覆盖路径。清理浏览器不会删除这份宿主配置，但**pet 目标选择和运行时调参不全在这个文件里**，需要保留的调参请先导出 JSON。
+一般壁纸设置保存在 `~/.dsh-wallpaper-engine/config.json`；缓存和上传默认也在该数据目录。环境变量可覆盖路径。清理浏览器不会删除这份宿主配置，但**pet 目标选择和运行时调参不全在这个文件里**，需要保留的调参请先导出 JSON。
 
 更改缓存 / 上传目录会迁移已识别的插件文件，不搬走目标文件夹里无关的内容。不要把缓存当成上传原件：缓存可重建，自定义壁纸需要另行备份。
 
 ### 常见问题
 
 **安装失败或说找不到子包？**
-核对是否在完整仓库根目录、Node / DSH 版本是否达标、目标 home / profile / CLI 是否一致。重跑完整安装器，不要先往活动 profile 手工塞临时链接。保留脱敏日志，参考 [故障排查](https://github.com/Fish-under-sea/dsh-folia/blob/official-pet-bridge-20261020/docs/TROUBLESHOOTING.md)。
+核对是否在完整仓库根目录、Node / DSH 版本是否达标、目标 home / profile / CLI 是否一致。重跑完整安装器，不要先往活动 profile 手工塞临时链接。保留脱敏日志，参考 [故障排查](https://github.com/Fish-under-sea/dsh-wallpaper-engine/blob/official-pet-bridge-20261020/docs/TROUBLESHOOTING.md)。
 
 **壁纸库是空的？**
-先检查内容分级 / 类型筛选，再确认 WE 下载过壁纸。Steam 未被识别时，可用 `DSH_FOLIA_STEAM_ROOT` 指向含 `steamapps` 的 Steam 根目录。没有 WE 客户端就用上传，或将自定义存储位置指向已有 WE 项目目录。
+先检查内容分级 / 类型筛选，再确认 WE 下载过壁纸。Steam 未被识别时，可用 `DSH_WE_STEAM_ROOT` 指向含 `steamapps` 的 Steam 根目录。没有 WE 客户端就用上传，或将自定义存储位置指向已有 WE 项目目录。
 
 **视频黑屏或不播放？**
 先看当前壁纸卡片的错误原因，尝试播放或换片。浏览器无法解码时，使用 H.264 MP4。自上传项目也会受内容分级筛选影响。
@@ -101,15 +101,15 @@ node scripts/install-source.mjs --profile web --dsh-home "<目标 DSH 数据目�
 先等首帧。大场景要传输资源包；渲染失败后会降级为可用的预览图或实时帧。并非每个工坊项目都与原版引擎完全兼容。没有可用画面时会说明原因，不会伪造成功。
 
 **文字不好读 / 想关玻璃？**
-先调暗化、底色与边框。玻璃按表面管理，可在对应设置回退原生；未知插件表面不保证自动兼容，见 [共存说明](https://github.com/Fish-under-sea/dsh-folia/blob/official-pet-bridge-20261020/docs/COEXISTENCE.md)。
+先调暗化、底色与边框。玻璃按表面管理，可在对应设置回退原生；未知插件表面不保证自动兼容，见 [共存说明](https://github.com/Fish-under-sea/dsh-wallpaper-engine/blob/official-pet-bridge-20261020/docs/COEXISTENCE.md)。
 
 **插件会把壁纸上传到网上吗？**
 不会。壁纸在本机读取和保存。不过下载运行时、查询仓库数据，以及开启在线歌词后的曲目信息查询会联网。系统频谱采集的是输出回环，不是麦克风。
 
 ### 项目与致谢
 
-- 正式项目、发布和贡献历史：[elysia395/dsh-folia](https://github.com/lehua-art/dsh-folia)。
-- 当前灰测维护与集成：**[生鱼 / Fish-under-sea](https://github.com/lehua-art/dsh-folia)**，包括部署闭包、官方 pet 桥接、气泡、排播与调参等本分支工作；尚未发布不等于已经合入主仓。
+- 正式项目、发布和贡献历史：[elysia395/dsh-wallpaper-engine](https://github.com/elysia395/dsh-wallpaper-engine)。
+- 当前灰测维护与集成：**[生鱼 / Fish-under-sea](https://github.com/Fish-under-sea/dsh-wallpaper-engine)**，包括部署闭包、官方 pet 桥接、气泡、排播与调参等本分支工作；尚未发布不等于已经合入主仓。
 - 感谢 **[PC2005-cloud / dsh-pet](https://github.com/PC2005-cloud/dsh-pet)** 的公开接口支持与联动讨论。
 - 感谢 B 站 UP 主 **[ZipZipPipe](https://space.bilibili.com/4168597)** 创作的 **AI 娘二创形象**，为我们的新吉祥物提供形象基础。不是模型厂商官方形象；署名不改变角色与素材的权利归属。
 
@@ -117,13 +117,13 @@ node scripts/install-source.mjs --profile web --dsh-home "<目标 DSH 数据目�
 
 ## English
 
-This guide covers the **unpublished [Fish-under-sea source branch](https://github.com/lehua-art/dsh-folia)**. The official upstream's releases and npm package are separate. The current source suite is **one main package plus seven subpackages**, with no bundled pet.
+This guide covers the **unpublished [Fish-under-sea source branch](https://github.com/Fish-under-sea/dsh-wallpaper-engine)**. The official upstream's releases and npm package are separate. The current source suite is **one main package plus seven subpackages**, with no bundled pet.
 
 ### Prepare and install
 
 You need a working **DSH 0.2 kernel** (including `0.2.0-rc.1/rc.2`), **Node.js >=22.12.0**, pnpm, the target host's CLI, and its actual data-directory / profile identifiers. Wallpaper Engine is optional if you use custom images / videos. Application wallpapers are unsupported.
 
-1. Download and extract the complete [review branch `official-pet-bridge-20261020`](https://github.com/Fish-under-sea/dsh-folia/tree/official-pet-bridge-20261020), not the fork's default branch.
+1. Download and extract the complete [review branch `official-pet-bridge-20261020`](https://github.com/Fish-under-sea/dsh-wallpaper-engine/tree/official-pet-bridge-20261020), not the fork's default branch.
 2. Fully close the target DSH host. Open a terminal in the folder containing `package.json`.
 3. Replace the placeholder with that host's actual data directory, inspect the plan, then install:
 
@@ -154,12 +154,12 @@ Before upgrading a former bundled-pet setup, close DSH and disable its old bundl
 
 ### Settings and troubleshooting
 
-General wallpaper settings persist in `~/.dsh-folia/config.json`. Environment variables may override paths. Pet selection and runtime tuning have a separate lifecycle: export tuning JSON before refresh. Cache files can be regenerated; uploaded originals need their own backups.
+General wallpaper settings persist in `~/.dsh-wallpaper-engine/config.json`. Environment variables may override paths. Pet selection and runtime tuning have a separate lifecycle: export tuning JSON before refresh. Cache files can be regenerated; uploaded originals need their own backups.
 
-For installation errors, verify the complete checkout, supported versions, and exact home / profile / CLI. For an empty library, check filters and Steam detection; `DSH_FOLIA_STEAM_ROOT` points at the Steam root containing `steamapps`. For decoding errors, try H.264 MP4. See [troubleshooting](https://github.com/Fish-under-sea/dsh-folia/blob/official-pet-bridge-20261020/docs/TROUBLESHOOTING.md) and the [English README](README.en.md).
+For installation errors, verify the complete checkout, supported versions, and exact home / profile / CLI. For an empty library, check filters and Steam detection; `DSH_WE_STEAM_ROOT` points at the Steam root containing `steamapps`. For decoding errors, try H.264 MP4. See [troubleshooting](https://github.com/Fish-under-sea/dsh-wallpaper-engine/blob/official-pet-bridge-20261020/docs/TROUBLESHOOTING.md) and the [English README](README.en.md).
 
 Wallpapers stay local, but runtime downloads, repository statistics and opt-in lyric queries access external services. The plugin registers no model tools or prompt text, so it adds no model token overhead.
 
 ### Credits
 
-Official project and history: [elysia395](https://github.com/lehua-art/dsh-folia). Current test-branch integration: **[生鱼 / Fish-under-sea](https://github.com/Fish-under-sea)**. Thank you to **[PC2005-cloud / dsh-pet](https://github.com/PC2005-cloud/dsh-pet)** for the public integration APIs, and Bilibili creator **[ZipZipPipe](https://space.bilibili.com/4168597)** for the **AI-girl fan-character designs used as the basis for our new mascots**. These are not official model-vendor characters; attribution does not relicense artwork under MIT. See [all credits](README.md#致谢) and [asset sources](assets/readme/SOURCES.md).
+Official project and history: [elysia395](https://github.com/elysia395/dsh-wallpaper-engine). Current test-branch integration: **[生鱼 / Fish-under-sea](https://github.com/Fish-under-sea)**. Thank you to **[PC2005-cloud / dsh-pet](https://github.com/PC2005-cloud/dsh-pet)** for the public integration APIs, and Bilibili creator **[ZipZipPipe](https://space.bilibili.com/4168597)** for the **AI-girl fan-character designs used as the basis for our new mascots**. These are not official model-vendor characters; attribution does not relicense artwork under MIT. See [all credits](README.md#致谢) and [asset sources](assets/readme/SOURCES.md).

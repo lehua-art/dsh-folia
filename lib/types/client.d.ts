@@ -1,5 +1,5 @@
 /**
- * dsh-folia — client (browser) half.
+ * dsh-wallpaper-engine — client (browser) half.
  *
  * A compiled browser module in the `window.__ModuleLoader__.load({ id,
  * factory })` form. The factory returns the plugin exports declared below. It
@@ -23,7 +23,7 @@ export declare function apply(ctx: Context): void;
 /**
  * Frozen, sorted key table of the **cross-package host bridge** (`src/client.js`
  * `HOST_BRIDGE_BINDINGS`): the bindings a sub-package browser half receives as
- * `require("dsh-plugin-folia")`. Every sub-package bundle destructures
+ * `require("dsh-plugin-wallpaper-engine")`. Every sub-package bundle destructures
  * these names from the host module and throws at evaluation time when one is
  * missing (`packages/<pkg>/src/client.js` `*_HOST_REQUIRED`), so the list is a
  * contract, not documentation — see docs/wip/BUNDLE-SPLIT.md §5.1 ②.
