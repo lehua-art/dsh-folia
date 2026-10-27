@@ -50,7 +50,7 @@ const CACHE = join(ROOT, '.test-cache', 'compat');
 const ISO_HOME = join(CACHE, 'home');
 const DATA_DIR = join(ISO_HOME, '.dsh-folia');
 const LOG_FILE = join(CACHE, 'harness.log');
-const PLUGIN = 'dsh-plugin-folia';
+const PLUGIN = 'dsh-folia';
 const BASE = '/folia';
 
 const argv = process.argv.slice(2);

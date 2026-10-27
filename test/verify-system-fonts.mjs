@@ -693,7 +693,7 @@ section('⑧ 真渲染（构建产物）：内置族键 + 本机字体同列、�
       .runInContext(sandbox);
     const loaded = cap.handoffs.slice(before);
     if (loaded.length !== 1) throw new Error(fontsRel + ' 必须恰好注册一份 bundle（实际 ' + loaded.length + ' 份）');
-    loaded[0].factory((spec) => (spec === 'dsh-plugin-folia' ? exportsObj : (() => {
+    loaded[0].factory((spec) => (spec === 'dsh-folia' ? exportsObj : (() => {
       throw new Error('unexpected require: ' + spec);
     })()));
   }

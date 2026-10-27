@@ -331,25 +331,8 @@ function weComponentVisibleOf(components, name) {
     // star 数那一行（模块级：值 + 三态文案都在 client.js 的 starCountLabel 里；
     // 这里的"读"与 SliderRow 一类模块级助手同口径 —— 只读，不发请求）。
     const stars = starCountLabel();
-    // 两张码的参数表：图（路由 URL）/ 图题 / 替代文本 / 一句话说明。渲染一次 map 两遍，
-    // 免得两段几乎一样的 createElement 各自演化（改一处忘一处正是这类页面最容易烂的地方）。
-    const qrCards = [
-      {
-        key: "qq",
-        title: weT("🐧 QQ 群 · FOLIAWALLPAPER | LLM 讨论群"),
-        // 图本体是随包 PNG（lib/about/），这里只给路径 —— apiUrl 补 BASE 前缀。
-        src: apiUrl(ABOUT_QR_QQ_PATH),
-        alt: weT("QQ 群二维码"),
-        hint: weT("手机 QQ 扫码加入 · 群里见 👋"),
-      },
-      {
-        key: "douyin",
-        title: weT("🎵 抖音群 · dsh 交流群"),
-        src: apiUrl(ABOUT_QR_DOUYIN_PATH),
-        alt: weT("抖音群二维码"),
-        hint: weT("抖音扫码加入 · 群号 252729465001"),
-      },
-    ];
+    // 本仓自有版本：**不再带上游的交流群二维码与赞赏码**（那是原作者的社群与收款渠道）。
+    // 「关于」页只剩项目简介 / Star / 贡献者致谢三节，联系方式留给仓库的 Issues。
     // 贡献者致谢逐条列出（名字 / 做了什么）——「谢谢」要能落到具体的人身上，
     // 一句笼统的"感谢所有贡献者"没有信息量。
     const credits = [
@@ -417,27 +400,8 @@ function weComponentVisibleOf(components, name) {
         React.createElement("p", { className: "we-about__p" },
           weT("想要新功能、遇到问题，或者想看看接下来要做什么，都欢迎来仓库提 Issue / PR —— 一起把它做得更好 🧰")),
       ),
-      // ── ③ 交流群（两张二维码）──
-      React.createElement("div", { className: "we-picker__section" },
-        React.createElement("div", { className: "we-picker__section-head" },
-          React.createElement("span", { className: "we-picker__section-label" }, weT("💬 加入交流群")),
-        ),
-        React.createElement("p", { className: "we-about__p" },
-          weT("卡住了、想吐槽、或者想第一时间拿到新版本，都欢迎来群里找我们 👋")),
-        React.createElement("div", { className: "we-about__qr-row" },
-          qrCards.map((c) => React.createElement("figure", { key: c.key, className: "we-about__qr" },
-            React.createElement("figcaption", { className: "we-about__qr-title" }, c.title),
-            React.createElement("img", {
-              className: "we-about__qr-img",
-              src: c.src,
-              alt: c.alt,
-              draggable: false,
-            }),
-            React.createElement("figcaption", { className: "we-about__qr-hint" }, c.hint),
-          )),
-        ),
-      ),
-      // ── ④ 贡献者致谢（**压尾**：用户口径——先讲清"这是什么、去哪支持、怎么找我们"，
+      // ── ③ 交流群：**已整节移除**（本仓不带上游社群二维码；见上方 qrCards 位置的说明）──
+      // ── ④ 贡献者致谢（**压尾**：用户口径——先讲清"这是什么、去哪支持"，
       //    最后再把功劳簿摆出来。💌 那句收尾也并进这一段，页面结束在"谢谢"上。）──
       React.createElement("div", { className: "we-picker__section" },
         React.createElement("div", { className: "we-picker__section-head" },

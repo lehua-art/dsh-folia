@@ -55,8 +55,6 @@ const INLINE_MODULES = [
     file: 'src/about-assets.js',
     why: '「关于」页签与更新公告的静态数据：仓库地址 + 随包图的路由路径（图本体在 lib/about/，见 lib/routes/about-qr.js 白名单）',
     markers: ['const ABOUT_REPO_URL = "https://github.com/lehua-art/dsh-folia"',
-      'const ABOUT_QR_QQ_PATH = "/about-qr/qq-group.png"',
-      'const ABOUT_QR_DOUYIN_PATH = "/about-qr/douyin-group.png"',
       'const NOTICE_ART_PATH = "/about-qr/update-notice.jpg"'],
   },
   {

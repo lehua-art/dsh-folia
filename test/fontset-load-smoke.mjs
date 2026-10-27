@@ -153,7 +153,7 @@ function mount({ fetchImpl, store }) {
     const loaded = cap.handoffs.slice(before);
     if (loaded.length !== 1) throw new Error(fontsRel + ' 必须恰好注册一份 bundle（实际 ' + loaded.length + ' 份）');
     loaded[0].factory((spec) => {
-      if (spec === 'dsh-plugin-folia') return exportsObj;
+      if (spec === 'dsh-folia') return exportsObj;
       throw new Error('unexpected require: ' + spec);
     });
   }

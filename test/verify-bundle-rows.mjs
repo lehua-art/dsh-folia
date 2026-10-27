@@ -62,7 +62,7 @@ import { buildIndex, rowRegistrationCounts, classifyRowShape, MAIN_MODULES, SUBP
 import { createSubpackageHost, provideSubpackageHost } from '../lib/subpackage-boot.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const BARE = 'dsh-plugin-folia';
+const BARE = 'dsh-folia';
 const PATCH_REL = 'cordis.patch.yml';
 
 let failed = 0;

@@ -10,10 +10,10 @@
  *     与发布集里的 tarball 一一对应"，以及每个子包 tarball 里是不是真有它自己 `exports['./client']`
  *     指向的浏览器半边。
  *
- * 为什么它值得一条硬档：用户在 DSH 里执行 `pnpm add dsh-plugin-folia` 时，主包的七条
+ * 为什么它值得一条硬档：用户在 DSH 里执行 `pnpm add dsh-folia` 时，主包的七条
  * 精确依赖只要有一条在 registry 上找不到，安装就在**用户机器上**以
  * `ERR_PNPM_FETCH_404 … This error happened while installing the dependencies of
- * dsh-plugin-folia@<v>` 失败并整体回滚 —— 这是"只拿到母包、其他包都找不到"的唯一形态，
+ * dsh-folia@<v>` 失败并整体回滚 —— 这是"只拿到母包、其他包都找不到"的唯一形态，
  * 而主包与七个子包的对应关系此前只写在 README/CONTRIBUTING 的散文里。
  *
  * 判据全部作用在同一个 `collect(release)` 上（负对照喂变异过的 release 模型，同一条判据重跑）：

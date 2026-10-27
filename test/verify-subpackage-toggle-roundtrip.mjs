@@ -253,7 +253,7 @@ function rootExportsTarget(spec) {
 }
 /**
  * **过渡期兜底**（refactor 后行入口应为零主包说明符，见主流程的判据）：
- * 老形态的子包宿主入口按裸名 import 主包（'dsh-plugin-folia/subpackage-boot.js'）。
+ * 老形态的子包宿主入口按裸名 import 主包（'dsh-folia/subpackage-boot.js'）。
  * 真实 profile 里主包就装在 node_modules/<主包名>，本仓普通检出下 node_modules 里没有主包自己，
  * 于是裸名解析不到 —— 这里按主包 exports 把裸名映射成仓内 file:// URL。只改解析、不改被测代码；
  * 映射不到（exports 缺该子路径）就保持原样，让 import 大声失败（顺带钉住主包 exports 面）。
@@ -918,12 +918,12 @@ function fontsSectionOwnershipProblems(t) {
     // 负对照自证：把每个坏输入**被抓到的第一条原文原因**打出来（否则"没有变红"这件事在日志里
     // 只剩一句 ok，复核者无法判断它是因为目标缺陷变红、还是被别的地板顺手判红）。
     const ownNeg = [], ownCaught = [];
-    const GOOD_ART = 'const host = require("dsh-plugin-folia"); host.registerPanelSection("appearance", "fonts", { id: "fonts" });';
+    const GOOD_ART = 'const host = require("dsh-folia"); host.registerPanelSection("appearance", "fonts", { id: "fonts" });';
     const BAD_ROOT = 'x.registerPanelSection("appearance", "fonts", { id: "fonts", render: () => null });';
     const GOOD_READ = ['x', 'const secs = wePanelSectionsOf("appearance");'];
     // 每个坏输入只带**一个**缺陷：主包产物 / 外观页签源码默认给"读得到、但没内联注册"的正常文本，
     // 否则新加的覆盖面无牙地板会替别的缺陷判红，负对照就不再是"这条缺陷被抓到"的证据。
-    const GOOD_ROOT = 'window.__ModuleLoader__.load({ id: "dsh-plugin-folia", factory: () => {} });';
+    const GOOD_ROOT = 'window.__ModuleLoader__.load({ id: "dsh-folia", factory: () => {} });';
     const GOOD_APP = 'export function renderAppearanceFontSection() { return null; }';
     const base = (over) => Object.assign({
       fontsArtifactRel: 'x', rootArtifact: GOOD_ROOT, rootAppearanceSrc: GOOD_APP, panelSrcs: [GOOD_READ],

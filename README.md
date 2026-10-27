@@ -61,7 +61,7 @@
 
 <table>
   <tr>
-    <td width="36%" valign="middle">
+    <td width="64%" valign="middle">
       <ul>
         <li><a href="#能做什么">能做什么</a> · <a href="#支持哪些壁纸类型">支持哪些壁纸类型</a> · <a href="#安装">安装</a> · <a href="#使用">使用</a></li>
         <li><a href="#可选桌宠联动">可选桌宠联动</a> · <a href="#配置与数据">配置与数据</a> · <a href="#兼容与限制">兼容与限制</a> · <a href="#开发与贡献">开发与贡献</a></li>
@@ -72,14 +72,6 @@
       <a href="assets/readme/mascot-eating-rice-1280x1784.jpg">
         <img src="assets/readme/mascot-eating-rice-1280x1784.jpg" alt="吉祥物干饭插图">
       </a>
-    </td>
-    <td width="36%" align="center" valign="middle">
-      <a href="assets/about/sponsor-fish.png">
-        <img src="assets/about/sponsor-fish.png" alt="生鱼的赞赏码" width="320" height="320">
-      </a>
-      <br><strong>生鱼的赞赏码</strong>
-      <br><sub>“大肥鱼的白饭告急，收到的赞赏将统统用于本插件的维护与更新”</sub>
-      <br><sub>自愿赞赏 · 不影响安装与使用</sub>
     </td>
   </tr>
 </table>
@@ -322,20 +314,9 @@ macOS 没有 Wallpaper Engine 官方客户端。可以上传图片 / 视频，�
 
 > npm 包不包含 `docs/`。上面的技术资料使用源码仓库地址、演示图使用 Release 资产地址（`media-v1`），避免在 npm 页面中出现无效的相对路径。
 
-<h2 id="联系方式"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/section-community-dark.png"><img src="assets/readme/section-community-light.png" alt="联系方式" width="1440"></picture></h2>
+<h2 id="联系方式">联系方式</h2>
 
-本分支安装与联动回归优先提交到 [维护仓库 Issues](https://github.com/Fish-under-sea/dsh-folia/issues)；正式版本的共性问题提交到 [正式主仓 Issues](https://github.com/elysia395/dsh-folia/issues)，方便追踪与复现。交流也可以加入以下群组；插件「关于」页使用同一份二维码。
-
-<p align="center">
-  <a href="lib/about/qq-group.png"><img src="lib/about/qq-group.png" alt="QQ 群：FOLIAWALLPAPER | LLM 讨论群" width="260" height="259"></a>
-  &nbsp;
-  <a href="lib/about/douyin-group.png"><img src="lib/about/douyin-group.png" alt="抖音群：folia 交流 2 群" width="260" height="260"></a>
-</p>
-
-| 交流入口 | 群组 |
-|---|---|
-| QQ 群 | **FOLIAWALLPAPER \| LLM 讨论群** |
-| 抖音群 | **folia 交流 2 群**，群号 `917001335502` |
+本仓不提供交流群。安装、使用、bug 与功能建议统一走 [仓库 Issues](https://github.com/lehua-art/dsh-folia/issues)。
 
 <h2 id="致谢"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/section-credits-dark.png"><img src="assets/readme/section-credits-light.png" alt="致谢" width="1440"></picture></h2>
 
@@ -384,15 +365,11 @@ macOS 没有 Wallpaper Engine 官方客户端。可以上传图片 / 视频，�
 
 README 首屏与分节横条的复古窗口视觉复刻自 [MaiBot](https://github.com/Mai-with-u/MaiBot)，项目图标与菲比使用本仓原始素材，像素字体采用 Jersey 20。详细来源与授权见 [素材说明](assets/readme/SOURCES.md)；未沿用对方的人物、统计数据或排名。
 
-<h2 id="支持与赞赏"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/section-support-dark.png"><img src="assets/readme/section-support-light.png" alt="支持与赞赏" width="1440"></picture></h2>
+<h2 id="支持与赞赏">支持</h2>
 
-项目保持开源，赞赏完全自愿，**不影响安装、使用或问题反馈**。给仓库点 Star、提交可复现的 Issue、补充文档与参与测试，同样是在支持项目。
-
-**生鱼的赞赏码**：赞赏用于本插件的维护与更新。以下是生鱼个人的赞赏入口，不代表全部贡献者的收款账户。
-
-> “大肥鱼的白饭告急，收到的赞赏将统统用于本插件的维护与更新”
-
-赞赏码展示在 [目录](#目录) 右侧，点击图片可查看原图。感谢每一份支持。
+项目保持开源、完全免费，**没有赞赏入口** —— 本仓是上游 MIT 项目的二次开发，
+不代收任何款项。给仓库点一颗 Star、提交可复现的 Issue、补充文档或参与测试，
+就是最好的支持。
 
 <h2 id="star-history"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/section-stars-dark.png"><img src="assets/readme/section-stars-light.png" alt="Star History" width="1440"></picture></h2>
 
