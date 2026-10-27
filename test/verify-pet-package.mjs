@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { apply } from '../packages/pet-link/lib/index.js';
+import { apply } from '../lib/components/pet-link/lib/index.js';
 import { createSubpackageHost } from '../lib/subpackage-boot.js';
 const root = new URL('../', import.meta.url);
-const pkg = JSON.parse(readFileSync(new URL('packages/pet-link/package.json', root), 'utf8'));
+const pkg = JSON.parse(readFileSync(new URL('lib/components/pet-link/package.json', root), 'utf8'));
 assert.equal(pkg.name, 'dsh-plugin-folia-pet-link');
 assert.ok(!Object.keys({ ...pkg.dependencies, ...pkg.peerDependencies }).includes('dsh-pet'));
 assert.equal(pkg.exports['./install'], undefined, '不再发布改写官方文件的安装入口');
-assert.equal(existsSync(new URL('packages/pet/package.json', root)), false, '不携带内置副本');
+assert.equal(existsSync(new URL('lib/components/pet/package.json', root)), false, '不携带内置副本');
 for (const path of ['lib/index.js', 'lib/routes/official-pet.js', 'lib/official-provider.js',
   'lib/prepared.js', 'src/official-pet.js', 'src/pet-link.js', 'src/pet-link-tuner.js']) {
-  assert.ok(existsSync(new URL('packages/pet-link/' + path, root)), path);
+  assert.ok(existsSync(new URL('lib/components/pet-link/' + path, root)), path);
 }
 const routes = new Map(); let cleanup;
 const off = apply({ wallpaperEngineHost: createSubpackageHost(),

@@ -36,7 +36,7 @@ import {
   registerSystemFontsRoutes, collectSystemFonts, normalizeFamilies, familyFromFileName, defaultRun,
   parseMacFonts, parseFcList, parseLineFamilies, parseWindowsFontRegistry, parseFontFileNames,
   authoritativeSources, SYSTEM_FONTS_TTL_MS, SYSTEM_FONTS_CACHE_VERSION, FONT_SCAN_TIMEOUT_MS,
-} from '../packages/fonts/lib/routes/system-fonts.js';   // P-A：族随子包行出户（packages/fonts）
+} from '../lib/components/fonts/lib/routes/system-fonts.js';   // P-A：族随子包行出户（lib/components/fonts）
 import { systemFontKeyOf, sanitizeFamilyValue } from '../lib/settings-schema.js';
 import { panelText } from './tools/src-scope.mjs';
 import { sendJson } from '../lib/json-response.js';   // c.http.sendJson —— 子包路由的 JSON 应答唯一实现（§5.1 ①：叶子不再给面）
@@ -447,7 +447,7 @@ section('⑤ 客户端通道：登记进产物 / 浏览器安全 / 只碰自己�
     && /if \(v\) ensureSystemFonts\(false\)/.test(client));
   // P-C：字体节的渲染器随字体包搬出页签族 ⇒ 判"那一节画了什么/拿没拿到入口"必须读
   // **页签族 + 包内那一节**的并集（判的是行为口径，不是文件住处）。
-  const panelAllText = panelText() + '\n;\n' + read('packages/fonts/src/appearance-font-section.js');
+  const panelAllText = panelText() + '\n;\n' + read('lib/components/fonts/src/appearance-font-section.js');
   check('面板拿到了全局字族与重新扫描两个入口（ctx 少一个就是"点了没反应"）',
     /onGlobalFamily, onRefreshSystemFonts/.test(panelAllText));
   const tabs = stripComments(panelAllText);
@@ -663,7 +663,7 @@ section('⑧ 真渲染（构建产物）：内置族键 + 本机字体同列、�
   const cap = { handoff: null, handoffs: [] };
   const sandbox = {
     window: {
-      __ModuleLoader__: { load: (h) => { cap.handoff = h; cap.handoffs.push(h); } },
+      __ModuleLoader__: { load: (h) => { if (!cap.handoff) cap.handoff = h; cap.handoffs.push(h); } },
       setTimeout: (fn, ms) => { const t = { fn, ms, cleared: false, fired: false }; timers.push(t); return t; },
       clearTimeout: (t) => { if (t) t.cleared = true; },
       addEventListener() {}, removeEventListener() {},
@@ -687,7 +687,7 @@ section('⑧ 真渲染（构建产物）：内置族键 + 本机字体同列、�
   // 在同一个 vm 上下文里把那份子包产物也求值掉（它的 factory 用 require('主包名')
   // 取主 bundle 的显式键集，再往面板节注册表登记那一节）—— 否则面板上根本没有字体节。
   {
-    const fontsRel = '../packages/fonts/lib/client.fonts.js';
+    const fontsRel = '../lib/components/fonts/lib/client.fonts.js';
     const before = cap.handoffs.length;
     new vm.Script(readFileSync(new URL(fontsRel, import.meta.url), 'utf8'), { filename: fontsRel })
       .runInContext(sandbox);

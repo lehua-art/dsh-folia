@@ -12,7 +12,7 @@
  *
  * 每个声明 dsh.client 的包要求四面对齐：
  *   1. dsh.client 形状与根 package.json 的 dsh.client 一致（web / immediately / 同键集）。
- *   2. exports["./client"] 必须指向 packages/<pkg>/lib/client.<short>.js
+ *   2. exports["./client"] 必须指向 lib/components/<pkg>/lib/client.<short>.js
  *      （<short> = 包名去掉 dsh-plugin-folia- 前缀）。
  *   3. 该产物存在、非空，且文件头里注册 window.__ModuleLoader__.load({ id: "<子包真实包名>" })。
  *   4. 该 id 只出现在恰好一个产物里，且根产物 lib/client.js 里不出现（③④）。
@@ -62,7 +62,7 @@ function discoverSubpackages() {
     if (!isFile(pj)) continue;
     let manifest = null, error = null;
     try { manifest = JSON.parse(readFileSync(pj, 'utf8')); } catch (e) { error = e.message; }
-    out.push({ dir: 'packages/' + n, abs: join(dir, n), manifest, error });
+    out.push({ dir: 'lib/components/' + n, abs: join(dir, n), manifest, error });
   }
   return out;
 }
@@ -121,7 +121,7 @@ function clientHalfViolations(inp) {
   const name = inp.name, dir = inp.dir, manifest = inp.manifest || {};
   const exp = manifest.exports || {};
   const dc = manifest.dsh && manifest.dsh.client;
-  // upstream-fork 形态（P1：packages/pet）：独立派生身份 + 预构建产物 + **零主包绑定**。
+  // upstream-fork 形态（P1：lib/components/pet）：独立派生身份 + 预构建产物 + **零主包绑定**。
   // 它与一般子包的三处差异都在这里显式分叉（不是放宽，是换判据，且每处都有负控）：
   //   · 包名不带 SHORT_PREFIX ⇒ 产物名不套 client.<short>.js，改由注册表登记的落点定；
   //   · exports['./client'] 是条件对象（types + default）⇒ 取 default；
@@ -210,11 +210,11 @@ const pkgs = discoverSubpackages();
 const rowNames = patchRowNames();
 const artifacts = listClientArtifacts(pkgs);
 const usable = pkgs.filter((p) => p.manifest && !p.error);
-check('packages/ 下至少有一个子包（P-A 未落判红）', pkgs.length > 0, pkgs.map((p) => p.dir).join(' / '));
+check('lib/components/ 下至少有一个子包（P-A 未落判红）', pkgs.length > 0, pkgs.map((p) => p.dir).join(' / '));
 check('每个子包 manifest 可解析', usable.length === pkgs.length, pkgs.filter((p) => p.error).map((p) => p.dir + '：' + p.error).join('；'));
 
 // P-C 契约 §1 / ADR-0014 S3.1：字体包的浏览器半边**不再是"明确排除"**，而是必被覆盖。
-// 棘轮（有意硬编码）：这张清单只许随契约显式改动；每个包名都必须在 packages/ 下命中真实目录，
+// 棘轮（有意硬编码）：这张清单只许随契约显式改动；每个包名都必须在 lib/components/ 下命中真实目录，
 // 否则改名/搬家会让棘轮**静默失效**（判据变成恒真）—— 命中 0 处即红。
 const REQUIRED_CLIENT_HALF = ['dsh-plugin-folia-fonts'];
 
@@ -223,7 +223,7 @@ for (const n of REQUIRED_CLIENT_HALF) {
   const p = usable.find((u) => u.manifest.name === n);
   requiredDirs.push(p ? p.dir : null);
 }
-check('必被覆盖清单（' + REQUIRED_CLIENT_HALF.length + ' 个包）在 packages/ 下逐名命中（0 处即红，防棘轮静默失效）',
+check('必被覆盖清单（' + REQUIRED_CLIENT_HALF.length + ' 个包）在 lib/components/ 下逐名命中（0 处即红，防棘轮静默失效）',
   requiredDirs.every(Boolean),
   REQUIRED_CLIENT_HALF.map((n, i) => n + ' -> ' + (requiredDirs[i] || '未命中')).join('；'));
 const requiredDeclared = [];
@@ -235,7 +235,7 @@ for (const n of REQUIRED_CLIENT_HALF) {
 check('必被覆盖清单里的包都声明了 dsh.client（P-C 契约 §1：字体包从"明确排除"改为必被覆盖）',
   requiredDeclared.length === 0,
   requiredDeclared.join('；') + ' 没有声明 dsh.client => 浏览器半边不会被活动行发现（ADR-0014 S3.1）；'
-  + '落地面 = packages/fonts/package.json 的 dsh.client + exports["./client"] + lib/client.fonts.js');
+  + '落地面 = lib/components/fonts/package.json 的 dsh.client + exports["./client"] + lib/client.fonts.js');
 
 const declared = [], browserHalfNoDecl = [];
 for (const p of usable) {
@@ -267,13 +267,13 @@ const okDshClient = rootDshClient || { platform: 'web', immediately: true, injec
 const PAD = '/* pad */'.repeat(200);
 const mkIn = (over) => {
   const o = {
-    name: 'dsh-plugin-folia-fx', dir: 'packages/fx',
+    name: 'dsh-plugin-folia-fx', dir: 'lib/components/fx',
     manifest: { name: 'dsh-plugin-folia-fx', dsh: { client: JSON.parse(JSON.stringify(okDshClient)) }, exports: { './client': './lib/client.fx.js' } },
     rowNames: [rootName, 'dsh-plugin-folia-fx'],
     rootName,
     artifacts: {
       // 基准产物 = 真产物形状：__ModuleLoader__ 注册 + 构建期那一行 require("<主包名>")。
-      'packages/fx/lib/client.fx.js': 'window.__ModuleLoader__.load({ id: "dsh-plugin-folia-fx", factory: (require) => { const host = require("' + rootName + '"); return { host }; } });' + PAD,
+      'lib/components/fx/lib/client.fx.js': 'window.__ModuleLoader__.load({ id: "dsh-plugin-folia-fx", factory: (require) => { const host = require("' + rootName + '"); return { host }; } });' + PAD,
       'lib/client.js': 'window.__ModuleLoader__.load({ id: "' + rootName + '", factory: () => {} });',
     },
     rootClientRel: 'lib/client.js', rootDshClient,
@@ -288,29 +288,29 @@ const neg = (label, mutate, expectRe) => {
   check('负对照：' + label, v.some((s) => expectRe.test(s)), '违反项=' + JSON.stringify(v));
 };
 neg('声明了 dsh.client 但产物没构建（缺产物文案要提示先跑 build）', (o) => { o.artifacts = { 'lib/client.js': mkIn().artifacts['lib/client.js'] }; }, /先跑 npm run build/);
-neg('exports["./client"] 落点不对判红', (o) => { o.manifest.exports['./client'] = './lib/client.js'; delete o.artifacts['packages/fx/lib/client.fx.js']; }, /必须指向|不存在/);
-neg('产物里没有该包 id 的注册判红', (o) => { o.artifacts['packages/fx/lib/client.fx.js'] = 'window.__ModuleLoader__.load({ id: "somebody-else" });' + PAD; }, /注册/);
-neg('产物像空壳判红', (o) => { o.artifacts['packages/fx/lib/client.fx.js'] = 'window.__ModuleLoader__.load({ id: "dsh-plugin-folia-fx" });'; }, /产物像空壳/);
-neg('同一注册出现两份判红', (o) => { o.artifacts['lib/client.fx.bis.js'] = mkIn().artifacts['packages/fx/lib/client.fx.js']; }, /多份产物/);
-neg('根产物里也注册了同一个包判红', (o) => { o.artifacts['lib/client.js'] = mkIn().artifacts['packages/fx/lib/client.fx.js']; }, /内联两处|多份产物/);
+neg('exports["./client"] 落点不对判红', (o) => { o.manifest.exports['./client'] = './lib/client.js'; delete o.artifacts['lib/components/fx/lib/client.fx.js']; }, /必须指向|不存在/);
+neg('产物里没有该包 id 的注册判红', (o) => { o.artifacts['lib/components/fx/lib/client.fx.js'] = 'window.__ModuleLoader__.load({ id: "somebody-else" });' + PAD; }, /注册/);
+neg('产物像空壳判红', (o) => { o.artifacts['lib/components/fx/lib/client.fx.js'] = 'window.__ModuleLoader__.load({ id: "dsh-plugin-folia-fx" });'; }, /产物像空壳/);
+neg('同一注册出现两份判红', (o) => { o.artifacts['lib/client.fx.bis.js'] = mkIn().artifacts['lib/components/fx/lib/client.fx.js']; }, /多份产物/);
+neg('根产物里也注册了同一个包判红', (o) => { o.artifacts['lib/client.js'] = mkIn().artifacts['lib/components/fx/lib/client.fx.js']; }, /内联两处|多份产物/);
 neg('主 patch 里没有该行判红', (o) => { o.rowNames = [rootName]; }, /没有 name/);
 neg('dsh.client 缺根里的键判红', (o) => { delete o.manifest.dsh.client.inject; }, /缺键/);
 // P-C 契约 §2：产物里少了构建期那一行 ⇒ 键集为空，必须判红（放行面见 verify-subpackage-purity.mjs）。
 neg('产物里没有构建期的主包绑定 require("<主包名>") 判红', (o) => {
-  o.artifacts['packages/fx/lib/client.fx.js'] = 'window.__ModuleLoader__.load({ id: "dsh-plugin-folia-fx", factory: (require) => { return {}; } });' + PAD;
+  o.artifacts['lib/components/fx/lib/client.fx.js'] = 'window.__ModuleLoader__.load({ id: "dsh-plugin-folia-fx", factory: (require) => { return {}; } });' + PAD;
 }, /构建期的主包绑定/);
 check('负对照：产物里有那一行就 0 违反（同一判据的两向都测）',
   !clientHalfViolations(mkIn()).some((s) => /构建期的主包绑定/.test(s)));
 // P-C 契约 §1：必被覆盖清单是反向棘轮 —— 声明被删掉时**必须**报红，不许回落到"范围外 0 违反"。
 check('负对照：必被覆盖的包没声明 dsh.client 判红（棘轮有牙）',
-  clientHalfViolations(mkIn((o) => { o.requiredCovered = ['packages/fx']; delete o.manifest.dsh.client; })).some((s) => /必须声明 dsh.client/.test(s)));
+  clientHalfViolations(mkIn((o) => { o.requiredCovered = ['lib/components/fx']; delete o.manifest.dsh.client; })).some((s) => /必须声明 dsh.client/.test(s)));
 check('负对照：未声明 dsh.client 的包不产生任何违反项（范围外）',
   clientHalfViolations(mkIn((o) => { delete o.manifest.dsh.client; })).some((s) => /必须声明 dsh.client/.test(s)) === false);
 check('负对照：清单外的包声明了 dsh.client 也不额外报"必须声明"',
   !clientHalfViolations(mkIn()).some((s) => /必须声明 dsh.client/.test(s)));
 
 // -- upstream-fork 的独立判据面（当前无登记）─────────────────────────────────
-// 内置桌宠副本（`packages/pet`）已解耦，`UPSTREAM_FORKS` 为空 ⇒ 本判据的 fork 分支暂时不可达。
+// 内置桌宠副本（`lib/components/pet`）已解耦，`UPSTREAM_FORKS` 为空 ⇒ 本判据的 fork 分支暂时不可达。
 // 分支代码**保留**（`isUpstreamFork` 命中时启用）：等上游 dsh-pet 提供联动接口、重新登记 fork 后，
 // 这一组正/负对照（预构建落点、条件对象 exports、零主包绑定）按原口径自动生效，一行都不用放宽。
 // 这里只钉住"登记表为空"这一事实本身，防止有人悄悄删掉分支却以为是解耦。

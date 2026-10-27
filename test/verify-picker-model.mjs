@@ -368,7 +368,7 @@ const fetch = (url) => {
 const cap = { handoff: null };
 const sandbox = {
   window: {
-    __ModuleLoader__: { load: (h) => { cap.handoff = h; } },
+    __ModuleLoader__: { load: (h) => { if (!cap.handoff) cap.handoff = h; } },
     setTimeout: (fn, ms) => { const t = { fn, ms, cleared: false }; sandboxTimers.push(t); return t; },
     clearTimeout: (t) => { if (t) t.cleared = true; },
   },

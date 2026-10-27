@@ -1,5 +1,5 @@
 /**
- * verify-client-sync.mjs — 构建**产物面**与 `src/**` / `packages/<pkg>/src/**` 的重建结果
+ * verify-client-sync.mjs — 构建**产物面**与 `src/**` / `lib/components/<pkg>/src/**` 的重建结果
  * **逐字节一致**，且**产物不出现在版本库里**（v1.4 起产物出库，见 CONTRIBUTING
  * 「What `lib/client.js` actually is」）。
  *
@@ -9,7 +9,7 @@
  *
  * ⚠️ 产物**不止一份**（BUNDLE-SPLIT §7.2「每包一产物」）：主包 `lib/client.js` + 每个声明了
  * 浏览器半边（`dsh.client` / `exports['./client']`）的 standalone 子包各一份
- * `packages/<pkg>/lib/client.<短名>.js`（fx / parallax …）。产物集合**不写死在本文件里**，
+ * `lib/components/<pkg>/lib/client.<短名>.js`（fx / parallax …）。产物集合**不写死在本文件里**，
  * 而是取发现层 `test/tools/packages.mjs` 的 `clientPackages` —— 写死清单的失败模式是
  * 新产物**静默脱离**新鲜度判据（改了子包源码忘重建，而这里全绿地验证旧产物）。
  *
@@ -71,7 +71,7 @@ console.log('  产物集合（发现层 clientPackages）：' + ARTIFACTS.length
 
 // ── prebuilt（受控派生）形态：产物**必须入库**，不能按 §「产物不入库」判 ──────────
 // 绝大多数子包的浏览器半边由 `npm run build` 现场编译（源码 → 产物），所以产物出库。
-// 但 `packages/pet` 是 upstream-fork 形态：`lib/client.js` 是上游 dsh-pet@0.3.7 的
+// 但 `lib/components/pet` 是 upstream-fork 形态：`lib/client.js` 是上游 dsh-pet@0.3.7 的
 // **预构建产物**（tsdown 出、含 .ts 源码面），本仓没有它的构建链 —— 它的
 // `client.build.json` 写的是 `prebuilt`：构建期只核对 sha256，不读源码重编。
 // 对这类产物「入库」才是对的：不入库 ⇒ CI 的 checkout 里根本没有这个文件 ⇒

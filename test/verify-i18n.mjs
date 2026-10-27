@@ -65,7 +65,7 @@ const DATA_BLOCKS = [
 /** 逐条精确值豁免（形如"是数据不是文案"的个别串）。每条都必须写明理由，且必须还在源码里。 */
 const VALUE_ALLOW = [
   ...[
-    ...JSON.parse(readFileSync(join(ROOT, 'packages/pet-link/src/pet-link-actions.json'), 'utf8')).animations.events.FOLIAWALLPAPER,
+    ...JSON.parse(readFileSync(join(ROOT, 'lib/components/pet-link/src/pet-link-actions.json'), 'utf8')).animations.events.FOLIAWALLPAPER,
   ].map(value => ({ value, why: '桌宠资源池的实际动画名；必须与文件名一致，不能翻译。' })),
   {
     value: '设置',
@@ -214,12 +214,12 @@ const DICT_MODULE = 'src/i18n-copy.js';
 const DICT_FAMILY = parseInlineModules().map(({ file }) => file)
   .filter((file) => /(?:^|\/)i18n-copy(?:-[^/]+)?\.js$/.test(file));
 const DICT_MODULES = new Set(DICT_FAMILY);
-// A3（多包，BUNDLE-SPLIT §7.1）之后产品源码分居两处：主包 src/** 与 lib/**，子包 packages/<pkg>/{src,lib}/**。
-// 扫描面必须同源扩到 packages/**：否则迁出去的 weT(…) 调用点（如 packages/fx/src/ext-fx.js）
-// 与宿主「原句」出处（如 packages/fonts/lib/fontsets.js）双双掉出扫描面 —— 症状恰好是
+// A3（多包，BUNDLE-SPLIT §7.1）之后产品源码分居两处：主包 src/** 与 lib/**，子包 lib/components/<pkg>/{src,lib}/**。
+// 扫描面必须同源扩到 lib/components/**：否则迁出去的 weT(…) 调用点（如 lib/components/fx/src/ext-fx.js）
+// 与宿主「原句」出处（如 lib/components/fonts/lib/fontsets.js）双双掉出扫描面 —— 症状恰好是
 // 「一堆孤儿键 + 一堆凭空造句」，而源码两半其实都合规。这正是 A3 打崩本守卫的形态。
 const PACKAGES_ROOT = join(ROOT, 'packages');
-/** 子包面里的 <sub> 目录（src / lib）；没有 packages/ 时返回空数组。 */
+/** 子包面里的 <sub> 目录（src / lib）；没有 lib/components/ 时返回空数组。 */
 const subpackageDirs = (sub) => {
   let entries;
   try { entries = readdirSync(PACKAGES_ROOT, { withFileTypes: true }); } catch { return []; }

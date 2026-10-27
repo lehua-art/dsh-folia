@@ -456,7 +456,7 @@ section('④b 排版角色（F2）');
   // 调节面板的渲染器已抽到 src/panel-tabs.js（C）：这里按文件分源，不拼接 ——
 // 拼接会让一个文件的文本满足另一个文件的结构断言。
 // P-C 例外（唯一一处）：外观页签第六节「全局字体」的渲染器已**随字体包搬出**页签族
-// （packages/fonts/src/appearance-font-section.js）⇒ 判字体节写法的判据必须把包内那一份
+// （lib/components/fonts/src/appearance-font-section.js）⇒ 判字体节写法的判据必须把包内那一份
 // 也算进来，否则会因为"搬家"而假红（它们判的是写法，不是住处）。
 const fontTabsUi = panelText() + '\n;\n'
   + readFileSync(join(root, 'packages', 'fonts', 'src', 'appearance-font-section.js'), 'utf8');

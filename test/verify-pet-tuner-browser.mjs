@@ -5,13 +5,13 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
-import { MEME_NAMES } from '../packages/pet-link/lib/prepared.js';
+import { MEME_NAMES } from '../lib/components/pet-link/lib/prepared.js';
 
 const out = resolve('.artifacts/official-pet');
 mkdirSync(out, { recursive: true });
 const source = ['official-pet.js', 'pet-link.js', 'pet-link-tuner.js']
-  .map(file => readFileSync(new URL('../packages/pet-link/src/' + file, import.meta.url), 'utf8')).join('\n');
-const images = MEME_NAMES.map(name => pathToFileURL(resolve('packages/pet-link/assets/memes', name + '.png')).href);
+  .map(file => readFileSync(new URL('../lib/components/pet-link/src/' + file, import.meta.url), 'utf8')).join('\n');
+const images = MEME_NAMES.map(name => pathToFileURL(resolve('lib/components/pet-link/assets/memes', name + '.png')).href);
 const html = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>:root{color-scheme:light dark}body{margin:0;background:Canvas;color:CanvasText}</style><script>${source}
 window.pose={x:0.02,y:0.05};const service={pose:()=>window.pose,progress:()=>null};let run=0;

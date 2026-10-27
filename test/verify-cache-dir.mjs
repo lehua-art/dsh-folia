@@ -275,7 +275,7 @@ const hostSrc = readFileSync(join(root, 'lib', 'index.js'), 'utf8');
 //    按**本分支真源**读（判据文案、正则、期望值一字未改）；上游同名副本 `lib/asset-paths.js` 已删。
 // ⚠️ 下面几个"读点"按**本分支真源**解析（缺文件不再让整条链 ENOENT 崩掉）：
 //   · `defaultUploadDir()` 住 `lib/upload-dir.js`、`customFrameDir()` 住 `lib/media/media-dirs.js`；
-//   · 媒体子系统在本分支住**媒体桥子包** packages/media-bridge/lib（P-F 批 1c 出户）：
+//   · 媒体子系统在本分支住**媒体桥子包** lib/components/media-bridge/lib（P-F 批 1c 出户）：
 //     媒体后端门面（中间件 --cache-dir + 内置封面工厂的缺省）真源是 backend.js。
 //   · 三个缓存子目录的实现已从门面 lib/index.js 搬进内核媒体模块（内核化拆包）：
 //     transcodes → lib/media/transcode.js、frames → lib/media/frame-store.js、
@@ -294,8 +294,8 @@ const dataDirSrc = readAnyOf('lib/kernel/data-dir.js', 'lib/index.js');
 const faststartSrc = readAnyOf('lib/faststart.js');
 // 中间件缓存（`cacheDir: join(cacheRoot(), 'media-bridge')`）真源在**后端门面**：它才是构造
 // 中间件监督者 / 内置实现的那一层（组件入口只登记路由）。组件行优先、上游 lib/media 兜底。
-const backendSrc = readAnyOf('packages/media-bridge/lib/backend.js', 'lib/components/media-bridge/backend.js', 'lib/media/index.js');
-const legacySrc = readAnyOf('packages/media-bridge/lib/legacy.js', 'lib/components/media-bridge/legacy.js', 'lib/media/legacy.js');
+const backendSrc = readAnyOf('lib/components/media-bridge/lib/backend.js', 'lib/components/media-bridge/backend.js', 'lib/media/index.js');
+const legacySrc = readAnyOf('lib/components/media-bridge/lib/legacy.js', 'lib/components/media-bridge/legacy.js', 'lib/media/legacy.js');
 // D1 按名字对号入座地读各自真源：合并成一个池子会让某个名字被别的文件的文本满足（更松）。
 const CACHE_SUBDIR_SRC = {
   transcodes: readAnyOf('lib/media/transcode.js', 'lib/index.js'),
@@ -325,7 +325,7 @@ check('D3 媒体中间件 / 封面缓存跟缓存根走（工厂每次现问，�
     && LAZY_ROOT.test(backendSrc) && LAZY_ROOT.test(legacySrc));
 // 「传访问器」而不是「传现算的值」：值快照会让用户在设置页改完缓存位置之后，
 // 新的封面 / 中间件缓存又写回旧盘（宿主重启才纠正）—— 与 cacheBaseDir() 不收快照同一个理由。
-const nowPlayingSrc = readAnyOf('packages/media-bridge/lib/routes/now-playing.js', 'lib/components/media-bridge/now-playing.js', 'lib/routes/now-playing.js');
+const nowPlayingSrc = readAnyOf('lib/components/media-bridge/lib/routes/now-playing.js', 'lib/components/media-bridge/now-playing.js', 'lib/routes/now-playing.js');
 const ROOT_SNAPSHOT = /cacheBaseDir: cacheBaseDir\(\),/;
 check('D3b now-playing 把访问器交给媒体后端，而不是起动时现算的值',
   /^\s{4}cacheBaseDir,$/m.test(nowPlayingSrc) && !ROOT_SNAPSHOT.test(nowPlayingSrc));

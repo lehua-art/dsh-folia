@@ -70,8 +70,8 @@ const hasNodeEngine = (p) => Boolean(p && p.engines && p.engines.node);
   // 只扫会被发布的宿主代码（浏览器半边不跑在 Node 上，不能拿它推下限）
   // ⚠️ 媒体子系统在本分支住**组件行**（P2 拆包）：面要跟着实现走，否则'是否用了有版本要求的 API'
 // 会推导出 0（判据非空转自检立刻报红——这正是它该做的）。
-const hostSrc = ['lib/index.js', 'packages/media-bridge/lib/legacy.js', 'packages/media-bridge/lib/backend.js',
-  'packages/media-bridge/lib/supervisor.js', 'packages/media-bridge/lib/index.js']
+const hostSrc = ['lib/index.js', 'lib/components/media-bridge/lib/legacy.js', 'lib/components/media-bridge/lib/backend.js',
+  'lib/components/media-bridge/lib/supervisor.js', 'lib/components/media-bridge/lib/index.js']
     .map((f) => { try { return read(f); } catch { return ''; } }).join('\n');
   const need = requiredFloor(hostSrc);
   const declared = pkg.engines && pkg.engines.node;
@@ -224,8 +224,8 @@ const tabsSrc = panelText();
   // **不走流式落盘**：上限只有 8MB（客户端导入前已按 512px 缩过一轮）⇒ 走共享读体器 +
   // 原子落盘，内联收集器那条棘轮因此不增（见 test/verify-body-caps.mjs 的两条棘轮）。
   // ⚠️ 头像路由族在本分支归**组件行** mascot-avatar（P2 拆包；实现入包、主包不留注册点）。
-  // P-F（2026-10-16）：该组件行已出户到 `packages/mascot-avatar/`，实现跟着走。
-  const routeSrc = read('packages/mascot-avatar/lib/routes/avatar.js');
+  // P-F（2026-10-16）：该组件行已出户到 `lib/components/mascot-avatar/`，实现跟着走。
+  const routeSrc = read('lib/components/mascot-avatar/lib/routes/avatar.js');
   // ⚠️ 读点更正（T2 #8 / task-10 G）：`AVATAR_*` / `MASCOT_*` / `avatarDir()` / `mascotDir()` 的真源
   //    在本分支是 `lib/media/media-dirs.js`（上游同名副本 `lib/asset-paths.js` 已不在 import 图上）
   //    ⇒ 本块只改"读哪个文件"，下面六条断言与期望值一字未改。
@@ -258,9 +258,9 @@ const tabsSrc = panelText();
     /function avatarDir\(\) \{ return ensureDirOnce\(join\(pluginDataDir\(\), 'avatars'\)\); \}/.test(hostNow)
     && /AVATAR_MAX_BYTES = 8 \* 1024 \* 1024/.test(hostNow));
 
-  // 吉祥物立绘族（packages/mascot-avatar/lib/routes/mascot.js）：与头像同形，但**只有一张**（导入即覆盖）。
+  // 吉祥物立绘族（lib/components/mascot-avatar/lib/routes/mascot.js）：与头像同形，但**只有一张**（导入即覆盖）。
   // P-F（2026-10-16）：随 `mascot-avatar` 出户，读点跟着实现走（同头像那条）。
-  const mascotRouteSrc = read('packages/mascot-avatar/lib/routes/mascot.js');
+  const mascotRouteSrc = read('lib/components/mascot-avatar/lib/routes/mascot.js');
   check('立绘路由：形态与头像同族（共享读体器 + 原子落盘，不是新的流式豁免）',
     // 与头像那条同款：出户后经注入面 `http` 调共享实现，不写带引号的 `from '…/http-body.js'` 字面。
     /DEPS = \[[^\]]*'http'\]/.test(mascotRouteSrc) && /http\.bodyReader\(req, \{/.test(mascotRouteSrc)
@@ -286,15 +286,15 @@ const tabsSrc = panelText();
   // （手抄就会漂：客户端放行、宿主拒收，反之亦然 —— 那是最难查的一类"看起来没反应"）。
   const kernel = read('lib/settings-schema.js');
   const storeSrc = read('src/fontset-store.js');
-  const editorSrc = read('packages/fonts/src/fontset-editor.js');
-  // P-A：字体集族已随子包行出户（packages/fonts/lib/routes/fontsets.js），判据跟着实现走。
-  const routeSrc = read('packages/fonts/lib/routes/fontsets.js');
+  const editorSrc = read('lib/components/fonts/src/fontset-editor.js');
+  // P-A：字体集族已随子包行出户（lib/components/fonts/lib/routes/fontsets.js），判据跟着实现走。
+  const routeSrc = read('lib/components/fonts/lib/routes/fontsets.js');
   const tag = /const\s+FONTSET_SCHEMA_TAG\s*=\s*'([^']+)'\s*\+\s*FONTSET_SCHEMA_VERSION/.exec(kernel);
   check('版本标记 = 前缀 + 版本常量，且定义在共享内核（判据非空转）',
     Boolean(tag) && /const\s+FONTSET_SCHEMA_VERSION\s*=\s*\d+/.test(kernel), tag ? tag[1] + 'N' : '(没解析到)');
   // 字面量只许出现在共享内核：其余会 import 的两半都只能写常量名。
-  const literalSites = ['lib/index.js', 'packages/fonts/lib/routes/fontsets.js', 'src/fontset-store.js',
-    'packages/fonts/src/fontset-editor.js', 'src/client.js', 'src/api-client.js']
+  const literalSites = ['lib/index.js', 'lib/components/fonts/lib/routes/fontsets.js', 'src/fontset-store.js',
+    'lib/components/fonts/src/fontset-editor.js', 'src/client.js', 'src/api-client.js']
     .filter((f) => /dsh-we\/fontset@/.test(read(f)));
   check('字体集的版本字面量只出现在共享内核（两半都引用常量名，不手抄）',
     literalSites.length === 0, literalSites.join(',') || '零处手抄');

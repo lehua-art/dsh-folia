@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { applyImpl } from '../packages/pet-link/lib/index.js';
+import { applyImpl } from '../lib/components/pet-link/lib/index.js';
 import { httpView } from '../lib/subpackage-boot.js';
 import { clientEntryFixture } from './tools/official-performer.mjs';
 
 const root = new URL('../', import.meta.url);
-const built = readFileSync(new URL('packages/pet-link/lib/client.pet-link.js', root), 'utf8');
+const built = readFileSync(new URL('lib/components/pet-link/lib/client.pet-link.js', root), 'utf8');
 assert.doesNotMatch(built, /\n\s*exports\.apply = \(\) => undefined;/, '构建不得覆盖官方桥接的 apply');
-const manifest = JSON.parse(readFileSync(new URL('packages/pet-link/package.json', root), 'utf8'));
+const manifest = JSON.parse(readFileSync(new URL('lib/components/pet-link/package.json', root), 'utf8'));
 assert.deepEqual(manifest.dsh.client.inject, ['@deepseek-ai/dsh-client-runtime'], '包依赖仍由客户端清单声明');
 const { plugin: clientEntry, bridge, listeners } = clientEntryFixture(built);
 assert.deepEqual(clientEntry.inject, [], '包名不是 Cordis 服务；可选官方服务不得阻塞客户端激活');
@@ -35,8 +35,8 @@ try {
 } finally { dispose(); }
 assert.equal(routes.size, 0, '正式路由退出后全部归还');
 
-const source = readFileSync(new URL('packages/pet-link/src/official-pet.js', root), 'utf8')
-  + '\n' + readFileSync(new URL('packages/pet-link/src/pet-link.js', root), 'utf8');
+const source = readFileSync(new URL('lib/components/pet-link/src/official-pet.js', root), 'utf8')
+  + '\n' + readFileSync(new URL('lib/components/pet-link/src/pet-link.js', root), 'utf8');
 const create = new Function(source + ';return createOfficialPetPerformer;')();
 const calls = [];
 let clock = 0, serial = 0, playback = null, serviceOn = true;

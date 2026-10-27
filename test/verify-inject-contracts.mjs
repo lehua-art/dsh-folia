@@ -548,7 +548,7 @@ export function reconcileCallSite(site, mod) {
   return issues;
 }
 
-// ── 子包行入口（packages/<pkg>/<main>）：叶子冻结表 = 声明面唯一真源 ────────────
+// ── 子包行入口（lib/components/<pkg>/<main>）：叶子冻结表 = 声明面唯一真源 ────────────
 // 子包入口的 c 是运行期键表展开：旧形态 { ...subpackageKeys('<id>'), disposers, cachePath }，
 // 重构后（§5.1 ①）是 const host = ctx.<服务名>; const keys = host.keys('<id>', ctx);
 // { ...keys, disposers, schema: host.schema, http: host.http } —— 两种形态静态扫描都看不见那些键。
@@ -560,7 +560,7 @@ const ROOT_NAME = (() => {
   try { return JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).name || ''; } catch { return ''; }
 })();
 
-/** `packages/<dir>/…` 的入口相对路径 → 子包 id（对账该包的 `name`）；不是子包入口则 null。 */
+/** `lib/components/<dir>/…` 的入口相对路径 → 子包 id（对账该包的 `name`）；不是子包入口则 null。 */
 export function subpackageEntryId(rel) {
   const m = /^packages\/([^/]+)\//.exec(rel);
   if (!m || !ROOT_NAME) return null;
@@ -741,10 +741,10 @@ function selftest(ok) {
     nc8.consumed.has('tokenFor') && reconcileModule(nc8).length === 0 && nc8.unusedLocal.length === 0,
     '消费面=[' + [...nc8.consumed.keys()].join(',') + '] 死解构=[' + nc8.unusedLocal.join(',') + ']');
 
-  // ── 子包行入口（packages/<pkg>/）：叶子冻结表 = 声明面唯一真源 ─────────────────
+  // ── 子包行入口（lib/components/<pkg>/）：叶子冻结表 = 声明面唯一真源 ─────────────────
   // nc-sub1 / nc-sub2：`c = { ...subpackageKeys('probe'), disposers }` 的静态展开面必须是叶子表的
   // 逐字复制；表里少一键（或调用点多给）都会让声明面对账失真。
-  const subSite = (keys, dynamic) => ({ rel: 'packages/probe/lib/index.js', line: 1, fn: 'registerProbeRoutes', keys, dynamic: dynamic || null });
+  const subSite = (keys, dynamic) => ({ rel: 'lib/components/probe/lib/index.js', line: 1, fn: 'registerProbeRoutes', keys, dynamic: dynamic || null });
   ok2('nc-sub1 子包入口：叶子表里少一个族要求的键必须红',
     reconcileSubpackageCallSite(subSite(['disposers']), good, ['disposers']).some((s) => s.kind === 'declared-not-given' && s.key === 'base'));
   ok2('nc-sub2 正控：叶子表 ∪ 调用点显式键覆盖声明面 ⇒ 子包入口调用点无问题',
@@ -752,7 +752,7 @@ function selftest(ok) {
 
   // nc-sub3 / nc-sub4：共享 c 上的"多给"只在**整包**层判 —— 入口显式键必须被某族认领。
   const subEntry = (explicit, table, deps, optional) => ({
-    rel: 'packages/probe/lib/index.js', id: 'probe', table,
+    rel: 'lib/components/probe/lib/index.js', id: 'probe', table,
     explicit,
     families: [{ rel: 'probe.js', fn: 'registerProbeRoutes', deps, optionalDeps: optional || [] }],
   });
@@ -772,8 +772,8 @@ function selftest(ok) {
     '}',
     'registerProbeRoutes(webServer, { ...keys, disposers });',
   ].join('\n');
-  const withTable = parseCallSitesText(subRaw, 'packages/probe/lib/index.js', new Set(['registerProbeRoutes']), { names: tableBindingNames(subRaw, 'probe'), keys: ['base'] });
-  const withoutTable = parseCallSitesText(subRaw, 'packages/probe/lib/index.js', new Set(['registerProbeRoutes']));
+  const withTable = parseCallSitesText(subRaw, 'lib/components/probe/lib/index.js', new Set(['registerProbeRoutes']), { names: tableBindingNames(subRaw, 'probe'), keys: ['base'] });
+  const withoutTable = parseCallSitesText(subRaw, 'lib/components/probe/lib/index.js', new Set(['registerProbeRoutes']));
   ok2('nc-sub5 `...subpackageKeys(id)` 认表时展开成表键、不认表时仍判 dynamic',
     withTable.length === 1 && !withTable[0].dynamic && withTable[0].keys.includes('base') && withTable[0].keys.includes('disposers')
     && withoutTable.length === 1 && Boolean(withoutTable[0].dynamic),
@@ -789,7 +789,7 @@ function selftest(ok) {
     '}',
     'registerProbeRoutes(webServer, { ...keys, disposers });',
   ].join('\n');
-  const svcSites = parseCallSitesText(svcRaw, 'packages/probe/lib/index.js', new Set(['registerProbeRoutes']),
+  const svcSites = parseCallSitesText(svcRaw, 'lib/components/probe/lib/index.js', new Set(['registerProbeRoutes']),
     { names: tableBindingNames(svcRaw, 'probe'), keys: ['base'] });
   ok2('nc-sub6 服务面形态（const host = ctx.<服务名>; host.keys(id, ctx)）也被认成冻结表绑定',
     svcSites.length === 1 && !svcSites[0].dynamic && svcSites[0].keys.includes('base') && svcSites[0].keys.includes('disposers'),
@@ -803,7 +803,7 @@ function selftest(ok) {
     'export function registerProbeRoutes(webServer, c) { void c; }',
     'registerProbeRoutes(webServer, { ...keys, disposers });',
   ].join('\n');
-  const alienSite = parseCallSitesText(alienRaw, 'packages/probe/lib/index.js', new Set(['registerProbeRoutes']),
+  const alienSite = parseCallSitesText(alienRaw, 'lib/components/probe/lib/index.js', new Set(['registerProbeRoutes']),
     { names: tableBindingNames(alienRaw, 'probe'), keys: ['base'] })[0];
   ok2('nc-sub7 负对照：接收者不源自 ctx.<服务名> 的 X.keys(id) 不被认成冻结表（仍判 dynamic）',
     tableBindingNames(alienRaw, 'probe').size === 0 && Boolean(alienSite && alienSite.dynamic),

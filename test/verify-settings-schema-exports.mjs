@@ -125,7 +125,7 @@ const BUILD_PRODUCT = 'lib/client.js';
 
 /**
  * **子包的浏览器半边产物**（BUNDLE-SPLIT §7.1 / ADR-0013 D9「多包后每包一产物」）。
- * 与 `BUILD_PRODUCT` 同性质：`npm run build` 现场生成、被 `.gitignore` 排除（`packages/<pkg>/lib/client.<pkg>.js`）
+ * 与 `BUILD_PRODUCT` 同性质：`npm run build` 现场生成、被 `.gitignore` 排除（`lib/components/<pkg>/lib/client.<pkg>.js`）
  * ⇒ 干净检出里没有、构建后才有 ⇒ 走出来的面会比 `git ls-files` **多出**它们。
  * **真源 = 各包 `package.json` 的 `exports['./client']`**（构建脚本 `SUBPACKAGE_BUILDS[].artifact` 与它逐字相同），
  * 不写死 fx / parallax：多一个声明了浏览器半边的包，这里自动多一条豁免，而**别的**产物名仍按"脏面"判红。
@@ -141,7 +141,7 @@ function subpackageClientProducts() {
     const target = meta.exports && meta.exports['./client'];
     if (typeof target !== 'string') continue;
     out.push({
-      rel: 'packages/' + name + '/' + target.replace(/^\.\//, ''),
+      rel: 'lib/components/' + name + '/' + target.replace(/^\.\//, ''),
       declaresClient: Boolean(meta.dsh && meta.dsh.client),
     });
   }
@@ -455,8 +455,8 @@ check('自检：构建产物（lib/client.js）不在内部模块清单里，且
     diffFace(['lib/a.js', 'lib/b.js', 'zz-dup.js'], T).ok === false
     && diffFace(['lib/a.js', 'lib/b.js', 'zz-dup.js'], T).extra.join() === 'zz-dup.js'
     && diffFace(['lib/a.js', 'lib/b.js', BUILD_PRODUCT], T, { allowedExtra: [BUILD_PRODUCT] }).ok === true);
-  check('负对照：同族但**不在豁免名单**里的产物名仍判红（豁免是逐条清单，不是 `packages/*/lib/client*` 通配）',
-    diffFace(['lib/a.js', 'lib/b.js', 'packages/fx/lib/client.nope.js'], T, { allowedExtra: ALLOWED_BUILD_PRODUCTS }).extra.join() === 'packages/fx/lib/client.nope.js'
+  check('负对照：同族但**不在豁免名单**里的产物名仍判红（豁免是逐条清单，不是 `lib/components/*/lib/client*` 通配）',
+    diffFace(['lib/a.js', 'lib/b.js', 'lib/components/fx/lib/client.nope.js'], T, { allowedExtra: ALLOWED_BUILD_PRODUCTS }).extra.join() === 'lib/components/fx/lib/client.nope.js'
       && diffFace(['lib/a.js', 'lib/b.js', ...SUBPACKAGE_CLIENT_PRODUCTS.map((p) => p.rel)], T, { allowedExtra: ALLOWED_BUILD_PRODUCTS }).ok === true);
   check('负对照：面里**漏掉**一个被跟踪的代码文件 ⇒ 同一条 diffFace 判红（"面变窄"可见）',
     diffFace(['lib/a.js'], T).ok === false && diffFace(['lib/a.js'], T).missing.join() === 'lib/b.js'

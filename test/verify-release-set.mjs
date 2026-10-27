@@ -19,7 +19,7 @@
  * 判据全部作用在同一个 `collect(release)` 上（负对照喂变异过的 release 模型，同一条判据重跑）：
  *   ① 发布集 = 主包 + 仓库里每个子包各一个 tarball，名字与版本与源码清单逐字相等；
  *   ② 主包 tarball 里 `dependencies` 的七个子包值 = 子包真实版本，且**不带范围前缀**；
- *   ③ 主包 tarball 不带开发面目录（`packages/` `src/` `test/` `scripts/` `docs/`）；
+ *   ③ 主包 tarball 不带开发面目录（`lib/components/` `src/` `test/` `scripts/` `docs/`）；
  *   ④ 每个子包 tarball 都有 `lib/index.js`、`cordis.patch.yml`，声明 `dsh.client` 的还必须有
  *      `exports['./client']` 指向的那个文件。
  *
@@ -91,7 +91,7 @@ function violations(release) {
   for (const needed of ['package.json', 'lib/index.js', 'lib/subpackage-boot.js', 'cordis.patch.yml']) {
     if (!mainEntries.has('package/' + needed)) problems.push('主包 tarball 缺少 ' + needed);
   }
-  for (const dir of ['packages/', 'src/', 'test/', 'scripts/', 'docs/', 'node_modules/']) {
+  for (const dir of ['lib/components/', 'src/', 'test/', 'scripts/', 'docs/', 'node_modules/']) {
     const leaked = [...mainEntries.keys()].filter((path) => path.startsWith('package/' + dir));
     if (leaked.length) problems.push('主包 tarball 混入开发面目录 ' + dir + '（' + leaked.length + ' 个文件）');
   }
@@ -173,10 +173,10 @@ const negatives = [
     entries.delete(target);
     m.files.set(child.file, entries);
   }],
-  ['主包 tarball 混入 packages/', (m) => {
+  ['主包 tarball 混入 lib/components/', (m) => {
     const mainFile = m.packages.at(-1).file;
     const entries = new Map(m.files.get(mainFile));
-    entries.set('package/packages/fx/package.json', Buffer.from('{}'));
+    entries.set('package/lib/components/fx/package.json', Buffer.from('{}'));
     m.files.set(mainFile, entries);
   }],
   ['发布集少一个 tarball', (m) => { m.packages = m.packages.slice(0, -1); }],

@@ -548,7 +548,7 @@ check('音频未启用时状态明确为 off（不申请授权、不装音频桥
 check('中间件版本/后端可查（排查时能一眼看出跑的是哪个产物）',
   Boolean(mstat && mstat.bridge) && mstat.bridge.version === WANT_BRIDGE_VERSION && mstat.bridge.protocol === 1,
   mstat && mstat.bridge ? `${mstat.bridge.version} ${mstat.bridge.provider}（期望 ${WANT_BRIDGE_VERSION}）` : '?');
-// 独立地板（与上面那条解耦）：期望值取自产品自己的常量（packages/media-bridge/lib/provision.js 的
+// 独立地板（与上面那条解耦）：期望值取自产品自己的常量（lib/components/media-bridge/lib/provision.js 的
 // MEDIA_BRIDGE_TAG），所以它能抓"产物陈旧/下载被挡"，抓不到"tag 该升没升"——那是有意的
 // 取舍（见 :78 注释）。但"观测点本身不在场"（mstat.bridge 空）绝不允许静默：否则取值为空
 // 时上面那条只是变成一条普通的红，没人分得清是"版本不对"还是"根本没有版本可查"。

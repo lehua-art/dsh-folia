@@ -194,7 +194,7 @@ function loadClient({
   const timers = [];
   const sandbox = {
     window: {
-      __ModuleLoader__: { load: (h) => { cap.handoff = h; } },
+      __ModuleLoader__: { load: (h) => { if (!cap.handoff) cap.handoff = h; } },
       addEventListener: () => {},
       removeEventListener: () => {},
       matchMedia: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),

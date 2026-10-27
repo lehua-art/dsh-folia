@@ -187,7 +187,7 @@ async function runScenario({ mode = 'varied', blobSize = 120000, gpuAlreadyPinne
   const pickerRenders = [];
   const sandbox = {
     window: {
-      __ModuleLoader__: { load:(h)=>{ cap.handoff=h; } },
+      __ModuleLoader__: { load:(h)=>{ if (!cap.handoff) cap.handoff=h; } },
       setTimeout:(fn,ms)=>{ const t={fn,ms,cleared:false}; timers.push(t); return t; },
       clearTimeout:(t)=>{ if(t)t.cleared=true; },
       setInterval:(fn,ms)=>{ const t={fn,ms,cleared:false}; intervals.push(t); return t; },

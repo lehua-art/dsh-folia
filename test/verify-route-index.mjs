@@ -178,15 +178,15 @@ console.log('\n⑤ 索引 == 运行时真实注册的路由（唯一能发现"�
   // P2-1/P2-2：组件行是**独立 plugin**（patch 里一行一行加载）⇒ 同一条 mock 上逐行都跑一遍，再与
   // 索引做**严格等式**（并集，不是 ≥）。放松成 ≥ 就发现不了"组件行悄悄少注册一条 / 多注册一条"。
   // 组件清单与"每行该注册几条"（该入口调用的路由族条数）都**现算** —— 不写死组件名，也不写死 2。
-  // ⚠️ P-F 批 1c：三格组件已全部出户到 `packages/<pkg>/` ⇒ 发现层的 `kind === 'subpath'` 为空，
+  // ⚠️ P-F 批 1c：三格组件已全部出户到 `lib/components/<pkg>/` ⇒ 发现层的 `kind === 'subpath'` 为空，
   // `COMPONENT_MODULES` 是空数组**属预期形态**（不是"少了行"）。组件清单因此改由**声明面**现解析：
-  // `COMPONENT_VIEW_KEYS` 点名的每一格 → 出户落 `packages/<pkg>/lib/index.js`、未出户落
+  // `COMPONENT_VIEW_KEYS` 点名的每一格 → 出户落 `lib/components/<pkg>/lib/index.js`、未出户落
   // `lib/components/<pkg>/index.js`。出户那几格在下面的**子包行**循环里要跳过，否则同一 mock 上
   // 注册两遍（并集等式与 (kind,path) 去重都会误红），而它们已经在这一节按门面分发点姿势各跑过一遍。
   const { COMPONENT_VIEW_KEYS } = await import(pathToFileURL(join(ROOT, 'lib', 'kernel', 'component-session.js')).href);
   const declaredComponents = Object.keys(COMPONENT_VIEW_KEYS || {}).sort();
   const entryRelOf = (name) => (existsSync(join(ROOT, 'packages', name, 'lib', 'index.js'))
-    ? 'packages/' + name + '/lib/index.js' : 'lib/components/' + name + '/index.js');
+    ? 'lib/components/' + name + '/lib/index.js' : 'lib/components/' + name + '/index.js');
   const componentEntryRels = declaredComponents.map(entryRelOf);
   const componentDisposers = [];
   const perComponent = [];

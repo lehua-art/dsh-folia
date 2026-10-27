@@ -31,7 +31,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Readable, Writable } from 'node:stream';
 // 剥注释：共享的字符串感知实现（`verify-module-layout` 的『剥注释必须字符串感知』一节钉住"不许再用朴素正则"）。
 import { stripComments, stripExportBlocks } from './tools/js-text.mjs';
-// 子包登记面的**发现层**：T2 起子包构建数据是逐包配方 JSON，本守卫不写死 packages/fx / packages/parallax。
+// 子包登记面的**发现层**：T2 起子包构建数据是逐包配方 JSON，本守卫不写死 lib/components/fx / lib/components/parallax。
 import { discoverPackages } from './tools/packages.mjs';
 // 刀3：样式族取文（8 个域模块 + 组装点，构建序拼接）。刀6：客户端正文族（正文 + 助手模块）。
 import { styleText, panelSources, panelText, liveText, clientText } from './tools/src-scope.mjs';
@@ -45,7 +45,7 @@ installWeTShim();
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 // ── A3 之后 fx / parallax 两族的浏览器半边住在**自己的子包**里 ─────────────────────
-// 源码在 packages/<pkg>/src/**，产物在 packages/<pkg>/lib/client.<短名>.js（宿主按
+// 源码在 lib/components/<pkg>/src/**，产物在 lib/components/<pkg>/lib/client.<短名>.js（宿主按
 // cordis.patch.yml 的行名加载子包行，行再提供自己的浏览器半边）。本守卫里对这四个文件
 // 的读盘 / import 全都走下面这两枚定位器 —— 落点散在十处，写死字符串必再漂一次。
 const subFxFile = (f) => join(root, 'packages', 'fx', 'src', f);
@@ -53,13 +53,13 @@ const subParallaxFile = (f) => join(root, 'packages', 'parallax', 'src', f);
 const SUB_FX_PRODUCT = join(root, 'packages', 'fx', 'lib', 'client.fx.js');
 const SUB_PARALLAX_PRODUCT = join(root, 'packages', 'parallax', 'lib', 'client.parallax.js');
 
-/** 子包构建配方（`packages/<pkg>/client.build.json`）的取文 —— 本守卫唯一的子包登记面。
+/** 子包构建配方（`lib/components/<pkg>/client.build.json`）的取文 —— 本守卫唯一的子包登记面。
  *
  *  T2 起 `scripts/build-client.mjs` 里**不再有** `SUBPACKAGE_BUILDS` 字面量表：前端构建数据逐包一份
  *  配方 JSON（`artifact` / `inline[].file` 都**相对包目录**）。所以「哪两份源文件住在子包产物里」
  *  只能从配方读 —— 继续从构建器源码文本里切片找那张表，在 T2 之后是**读空**（正面证据恒不成立）。
  *
- *  发现面走 `discoverPackages()`（不写死 packages/fx / packages/parallax）。子包目录里**没有**
+ *  发现面走 `discoverPackages()`（不写死 lib/components/fx / lib/components/parallax）。子包目录里**没有**
  *  配方文件是正常的（host-only 子包不编浏览器半边），因此只收在盘的配方；**在盘但读不出来**
  *  逐包登记到 `broken`，调用方必须判红并点名（静默跳过 = 登记面判据恒真）。
  */
@@ -90,7 +90,7 @@ const registersFile = (text, rel) =>
 
 /** 装配共享注册表（src/extension-registry.js）并登记「扩展」页签的三项。
  *
- *  为什么挂载台需要它：三份 bundle（主包 / packages/fx / packages/parallax）的**求值顺序不保证**，
+ *  为什么挂载台需要它：三份 bundle（主包 / lib/components/fx / lib/components/parallax）的**求值顺序不保证**，
  *  panel-tabs 的 extensionModules() 只问注册表。挂载台是**按文件** import 的，于是必须自己把表
  *  装起来 —— 否则 weExtensionModules 是裸标识符（ReferenceError，且只在渲染「扩展」页签时才炸）。
  *
@@ -128,7 +128,7 @@ async function loadExtensionRegistry() {
     })());
   // P-C：外观页签的第六节「全局字体」已随字体包搬走 ⇒ 夹具按**真入口同形**登记它。
   // 挂载台与 ext-fx / ext-parallax 一样是"按文件 import 包内源文件"，取的也是同一份渲染器；
-  // 描述符形状与 packages/fonts/src/client.js 逐字同形（title 是 accessor ⇒ 注册期不读译文）。
+  // 描述符形状与 lib/components/fonts/src/client.js 逐字同形（title 是 accessor ⇒ 注册期不读译文）。
   const fontSectionMod = await import(pathToFileURL(join(root, 'packages', 'fonts', 'src', 'appearance-font-section.js')).href);
   reg.weRegisterPanelSection('appearance', 'fonts', {
     id: 'fonts',
@@ -343,7 +343,7 @@ const dispose = apply(mockCtx);
 // ── 组件行也要 boot（本分支的路由族归属：媒体状态族归 `media-bridge` 组件行）──
 // ⚠️ 这不是"放宽判据"，而是夹具的 boot 段要跟上本分支结构：`/media-status`、`/audio-spectrum`、
 // `/now-playing`、`/now-playing/artwork`、`/media-control` 五条路由的实现住在
-// `packages/media-bridge/lib/`（P2-2 入包、P-F 批 1c 出户，ADR-0013 D14「实现入包、主包不留注册点」，
+// `lib/components/media-bridge/lib/`（P2-2 入包、P-F 批 1c 出户，ADR-0013 D14「实现入包、主包不留注册点」，
 // 由 `verify-route-ownership` 的 M10 钉住）。上游那条判据按"门面 apply 后即可用"写（单包单行假设）。
 // 处置与第 4 轮 `/avatar` 一致：**连组件一起 boot**，判据判什么一个字没改。
 if (typeof hostMod.applyComponent === 'function') {
@@ -998,7 +998,7 @@ const liveSrc = liveText();
 const prepSrc = readFileSync(join(root, 'src', 'media-prep.js'), 'utf8');
 // 刀4：panel-tabs 已按域拆成 5 个兄弟模块 + 组装点 ⇒ 判"页签族的渲染/接缝"一律扫**并集**。
 const tabsSrc = panelText();
-// P-C：外观页签第六节「全局字体」的渲染器随字体包搬出页签族（packages/fonts/src/appearance-font-section.js）
+// P-C：外观页签第六节「全局字体」的渲染器随字体包搬出页签族（lib/components/fonts/src/appearance-font-section.js）
 // ⇒ 判"该节画什么 / 有没有 surface 门 / 有没有 ↺ / 解构了哪些 ctx 字段"的判据必须读
 //    **页签族 + 包内那一节**的并集 —— 它们判的是行为口径，不是文件住处。
 const fontSectionSrc = readFileSync(join(root, 'packages', 'fonts', 'src', 'appearance-font-section.js'), 'utf8')
@@ -1930,10 +1930,10 @@ const hostLib = hostLibComposed;
   const moduleRegistered = (text) => /file:\s*'src\/live-layer\.js'/.test(text);
   check('negative control: 未登记的模块名会被判出',
     moduleRegistered(build) && /file:\s*'src\/nope\.js'/.test(build.replace("'src/live-layer.js'", "'src/nope.js'")));
-  // ── 点击效果与拖尾效果（「扩展」二号模块）：A3 起**整族搬进子包 packages/fx** ──────
+  // ── 点击效果与拖尾效果（「扩展」二号模块）：A3 起**整族搬进子包 lib/components/fx** ──────
   // 口径翻了：不再是"登记进主 bundle 的 INLINE_MODULES"，而是"**不在主产物里、只住在自己的
   // 子包产物里**"。子包行由宿主按 cordis.patch.yml 的行名加载，它的浏览器半边由
-  // packages/fx/lib/client.fx.js 提供（__ModuleLoader__.load({ id: <子包真名> })）。
+  // lib/components/fx/lib/client.fx.js 提供（__ModuleLoader__.load({ id: <子包真名> })）。
   // 主产物零残留是这条的重点：两份同样实现 = 两个 rAF 各画各的、指针各记一份轨迹。
   const fxProduct = readFileSync(SUB_FX_PRODUCT, 'utf8');
   const countOnce = (text, needle) => text.split(needle).length - 1;
@@ -1951,7 +1951,7 @@ const hostLib = hostLibComposed;
     registersFile('{ "file": "src/fx-layer.js" }', 'src/fx-layer.js')
     && registersFile("{ file: 'src/fx-layer.js' }", 'src/fx-layer.js')
     && !registersFile('{ "file": "src/fx-layer.js" }', 'src/nope.js'));
-  check('fx-layer.js / ext-fx.js 已搬出主 bundle（零残留 · 只住在 packages/fx/lib/client.fx.js）',
+  check('fx-layer.js / ext-fx.js 已搬出主 bundle（零残留 · 只住在 lib/components/fx/lib/client.fx.js）',
     !/file:\s*'src\/fx-layer\.js'/.test(inlineText) && !/file:\s*'src\/ext-fx\.js'/.test(inlineText)
     // 正面证据：两处必须**登记在子包配方**里（否则子包产物从哪来）。配方是 JSON ⇒ 引号不敏感同判。
     && registersFile(subRecipes.text, 'src/fx-layer.js') && registersFile(subRecipes.text, 'src/ext-fx.js')
@@ -1966,11 +1966,11 @@ const hostLib = hostLibComposed;
     // 两段分开判：产物头是跨行的（load({ \n \t id: "<包名>"）—— 合成一行会认不中。
     && fxProduct.includes('__ModuleLoader__.load({')
     && fxProduct.includes('id: "dsh-plugin-folia-fx"'));
-  // ── 3D 效果（「扩展」三号模块）：同上，整族搬进 packages/parallax ──────────────────
+  // ── 3D 效果（「扩展」三号模块）：同上，整族搬进 lib/components/parallax ──────────────────
   // 与前两族不同的设计要点：行为层**不建 DOM**（只写 CSS 变量）——"顺手 appendChild 一版"
   // 是最容易走偏的写法，所以在**产物**层面断言它没有建 DOM 的痕迹（变量型行为层是它的要点）。
   const parallaxProduct = readFileSync(SUB_PARALLAX_PRODUCT, 'utf8');
-  check('parallax-layer.js / ext-parallax.js 已搬出主 bundle（零残留 · 只住在 packages/parallax/lib/client.parallax.js）',
+  check('parallax-layer.js / ext-parallax.js 已搬出主 bundle（零残留 · 只住在 lib/components/parallax/lib/client.parallax.js）',
     !/file:\s*'src\/parallax-layer\.js'/.test(inlineText) && !/file:\s*'src\/ext-parallax\.js'/.test(inlineText)
     // 正面证据同上：登记在子包配方里（引号不敏感）。
     && registersFile(subRecipes.text, 'src/parallax-layer.js') && registersFile(subRecipes.text, 'src/ext-parallax.js')
@@ -2008,7 +2008,7 @@ const hostLib = hostLibComposed;
     // 子包产物，屏上顺序由共享注册表按描述符 order 排（见下面那批注册表判据）。
     && bundle.includes('weRegisterExtensionModule("avatar", AVATAR_EXTENSION_MODULE)'));
   // ── 扩展页签的**注册表**契约（A3 起跨三份 bundle）──────────────────────────────
-  // 三份产物（主 + packages/fx + packages/parallax）的并集恰好注册这三项；屏上顺序**只**由
+  // 三份产物（主 + lib/components/fx + lib/components/parallax）的并集恰好注册这三项；屏上顺序**只**由
   // 描述符的 order 决定（三份 bundle 的求值顺序不保证，静态数组序不是契约 —— §6.2 显式键集）。
   const regIds = Array.from((bundle + '\n' + fxProduct + '\n' + parallaxProduct)
     // 两种拼写都要认：宿主注入的显式键是 registerExtensionModule（小写 r），
@@ -2184,12 +2184,12 @@ const hostLib = hostLibComposed;
 }
 
 // ⚠️ 门面面 = lib/index.js + **组件行真源**。本分支把媒体桥实现搬进了
-// lib/components/media-bridge/**（P2 拆包）→ **P-F 批 1c 出户到 `packages/media-bridge/lib/**`**，
+// lib/components/media-bridge/**（P2 拆包）→ **P-F 批 1c 出户到 `lib/components/media-bridge/lib/**`**，
 // "中间件优先 / legacy 回落 / 音频已关透传"这些形态住在那儿 ⇒ 只扫门面会误报丢失
 // （判据纪律同 hostHalfSrc："拆出的模块必须加进来"）。
-const componentMediaSources = ['packages/media-bridge/lib/index.js', 'packages/media-bridge/lib/legacy.js',
-  'packages/media-bridge/lib/routes/now-playing.js', 'packages/media-bridge/lib/provision.js',
-  'packages/media-bridge/lib/supervisor.js']
+const componentMediaSources = ['lib/components/media-bridge/lib/index.js', 'lib/components/media-bridge/lib/legacy.js',
+  'lib/components/media-bridge/lib/routes/now-playing.js', 'lib/components/media-bridge/lib/provision.js',
+  'lib/components/media-bridge/lib/supervisor.js']
   .map((f) => { try { return readFileSync(join(root, f), 'utf8'); } catch { return ''; } }).join('\n');
 // 再补 **P0 拆出的 lib 模块**：这些模块的实现形态（如 upload-dir 的 `up-dir-${name}` 前缀与
 // `resolveSceneMainFileP` 解析）本就是"原门面里那段代码"，判据按门面面扫时必须能看到它们。
@@ -2477,8 +2477,8 @@ check('negative control: 调用点保持语句形态（加赋值前缀会被路�
 // 这套现为**回落实现**（lib/media/legacy.js），首选是 media-bridge 子进程（lib/media/*）
 // —— 断言因此两边都盯：回落能力不能退化，新链路的接缝要在。
 // ⚠️ 实现归属随 P2 拆包搬进**组件行**（lib/components/media-bridge/legacy.js），P-F 批 1c 出户到
-// `packages/media-bridge/lib/legacy.js`：判据按**真源**读，候选表兼容三种排布，缺锚即判红。
-const legacyBridgePath = ['packages/media-bridge/lib/legacy.js', 'lib/components/media-bridge/legacy.js',
+// `lib/components/media-bridge/lib/legacy.js`：判据按**真源**读，候选表兼容三种排布，缺锚即判红。
+const legacyBridgePath = ['lib/components/media-bridge/lib/legacy.js', 'lib/components/media-bridge/legacy.js',
   'lib/media/legacy.js']
   .find((rel) => existsSync(join(root, rel)));
 const legacyBridgeSrc = legacyBridgePath ? readFileSync(join(root, legacyBridgePath), 'utf8') : '';
@@ -2503,16 +2503,16 @@ check('host 按扩展名回封面 Content-Type', serveSrc.includes("bmp: 'image/
 // ── media-bridge 中间件的接缝（首选路径）────────────────────────────────────
 // ── media 域真源映射（P2 拆包把实现搬进组件行）────────────────────────────────
 // 上游把媒体域放在 `lib/media/<f>`；本分支随 P2 把整套实现搬进了**组件行**、P-F 批 1c 再出户到
-// `packages/media-bridge/lib/**`。判据按真源读：出户包优先、组件行兼容、`lib/media` 兜底；
+// `lib/components/media-bridge/lib/**`。判据按真源读：出户包优先、组件行兼容、`lib/media` 兜底；
 // 三处都没有时返回首选路径（后续 readFileSync 会响亮地 ENOENT）—— 绝不回落到"再调一次自己"。
-const mediaSrcCandidates = (f) => ['packages/media-bridge/lib/' + f, 'packages/media-bridge/lib/routes/' + f,
+const mediaSrcCandidates = (f) => ['lib/components/media-bridge/lib/' + f, 'lib/components/media-bridge/lib/routes/' + f,
   'lib/components/media-bridge/' + f, 'lib/media/' + f].map((rel) => join(root, rel));
 const mediaSrcPath = (f) => mediaSrcCandidates(f).find((abs) => existsSync(abs)) || mediaSrcCandidates(f)[0];
 const provSrc = readFileSync(mediaSrcPath('provision.js'), 'utf8');
 const supSrc = readFileSync(mediaSrcPath('supervisor.js'), 'utf8');
 // ⚠️ 门面面 = 媒体桥子包的**整面**（不是只有 index.js）：'中间件优先/回落/音频已关透传'这些形态
 // 分布在 index.js 与 legacy.js/supervisor.js 里 ⇒ 只读一个文件会误报丢失（判据纪律：拆出的模块必须加进来）。
-const mediaPkgDir = ['packages/media-bridge/lib', 'lib/components/media-bridge']
+const mediaPkgDir = ['lib/components/media-bridge/lib', 'lib/components/media-bridge']
   .map((rel) => join(root, rel)).find((abs) => existsSync(abs));
 const facadeSrc = (mediaPkgDir ? readdirSync(mediaPkgDir) : [])
   .filter((f) => f.endsWith('.js'))
@@ -2565,7 +2565,7 @@ const winHideSites = [
 const winHideBad = [];
 for (const site of winHideSites) {
   // ⚠️ 真源解析：表内保留**上游坐标**（lib/transcode.js、lib/media/legacy.js），读取时按候选表
-  // 定位本分支的真源 —— P2 拆包把媒体域实现搬进了组件行（P-F 批 1c 再出户到 `packages/media-bridge/lib/`），
+  // 定位本分支的真源 —— P2 拆包把媒体域实现搬进了组件行（P-F 批 1c 再出户到 `lib/components/media-bridge/lib/`），
   // 而 lib/transcode.js 在本分支是 lib/media/transcode.js。找不到就落回原路径（下面的判据会以"读了空/缺失"响亮地判红）。
   const siteBase = site.file.split('/').pop();
   const siteAbs = [join(root, site.file), join(root, 'lib', 'media', siteBase),
@@ -5378,7 +5378,7 @@ check('官方侧栏接入用能力门 + 可选服务（不写进 inject，低版
       // ⚠️ 四个区域距离必须**显式补齐**：`cleared` 那一步换掉的对象只剩 `parallaxEnabled`
       // ⇒ `parallaxSettings()` 的四条 `weClampTo(...)` 全部落到各自的**兜底常数**
       // （`PARALLAX_GROUP_CHAT` 1.2 / `COMPOSER` 1.8 / `SIDEBAR` 1.6 / `BUBBLE` 1.4，见
-      // `packages/parallax/src/parallax-layer.js` 的这四枚常数与 `parallaxSettings()` 里那四条 `weClampTo(...)`）—— 那样"会话基准"就不是 1.0 档、
+      // `lib/components/parallax/src/parallax-layer.js` 的这四枚常数与 `parallaxSettings()` 里那四条 `weClampTo(...)`）—— 那样"会话基准"就不是 1.0 档、
       // "输入卡片"也不是 1.5 档，下面所有分档断言全部对着错的档位（踩过：composer 读成 1.8 档
       // = −29，而判据在等 1.5 档 = −24）。
       globalThis.selection.parallaxUiChatDepth = 1;
@@ -5406,7 +5406,7 @@ check('官方侧栏接入用能力门 + 可选服务（不写进 inject，低版
       //    不成立，删掉不改变任何可达形态 ⇒ 那个方向由源码结构那条判据钉。）
       //    ⚠️ 位移落在哪一层：`mkGroup` 给的出口已经是 `display: contents`（照宿主 ANCHOR_STYLE），
       //    所以 `parallaxGroupBox()` 会走过出口、把记录与位移都落在**父盒子上**
-      //    （`packages/parallax/src/parallax-layer.js` 的 `parallaxGroupBox()`）⇒ 读数一律读 `.box` 的 `translate`，出口那份 props
+      //    （`lib/components/parallax/src/parallax-layer.js` 的 `parallaxGroupBox()`）⇒ 读数一律读 `.box` 的 `translate`，出口那份 props
       //    永远没有 translate（老腿里"出口无 translate"那条断言因此是恒真的，改读盒子才有牙）。
       const composerAttr = mkGroup({ 'data-composer-card': '' });
       docGroups.push(composerAttr.outlet);
@@ -5545,7 +5545,7 @@ check('官方侧栏接入用能力门 + 可选服务（不写进 inject，低版
     // 三号模块的岛：注册表项形状 + 「关着只画总开关、开着才画 3 个参数」这条可见行为。
     // 与另两个模块同一张注册表 ⇒ id 必须唯一（'parallax'），title/desc 取的就是译文。
     // 单独 import 时 `PARALLAX_PLUGIN_DEFAULT` / `PARALLAX_GROUP_DEPTH_MIN` / `PARALLAX_GROUP_DEPTH_MAX`
-    // 在**构建期**是同一作用域的兄弟模块符号（packages/parallax/src/parallax-layer.js 里那三枚）⇒ 按内联规则补替身。
+    // 在**构建期**是同一作用域的兄弟模块符号（lib/components/parallax/src/parallax-layer.js 里那三枚）⇒ 按内联规则补替身。
     // 缺省值有导出、直接取层本尊；钳制范围那一对层**不导出** ⇒ 从层源码里现读（`const NAME = N;`，
     // 顺手把"面板回显的范围就是层那一对常量"钉住），值都是现取的、这里不抄数。
     const PREV_PLUGIN_DEFAULT = globalThis.PARALLAX_PLUGIN_DEFAULT;

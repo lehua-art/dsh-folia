@@ -2,7 +2,7 @@
 /**
  * verify-subpackage-purity.mjs -- BUNDLE-SPLIT 7.6(3) 跨包纯度（P-A 子包族）
  *
- * 2.1/2.2：包边界就是卸载边界。子包之间的任何 import（裸名或相对跨到 packages/<other>）都会把
+ * 2.1/2.2：包边界就是卸载边界。子包之间的任何 import（裸名或相对跨到 lib/components/<other>）都会把
  * 两个包在模块图上粘死：关掉其中一个，另一个还握着它的模块实例。
  *
  * 允许的跨包面（lead 裁定，Service 口径 = 收窄后的**唯一**面）：
@@ -14,7 +14,7 @@
  *     服务名**不硬编码在判据里**：本文件动态 import lib/subpackage-boot.js 读它的
  *     `HOST_SERVICE_NAME` 导出，逐包逐字对账 —— 名字漂移即判红。
  *   · require('dsh-plugin-folia') 这条**浏览器侧**通道只允许出现在子包客户端产物
- *     （packages/<pkg>/lib/client*.js）里，宿主半边里出现即违规；例外面不扩大。
+ *     （lib/components/<pkg>/lib/client*.js）里，宿主半边里出现即违规；例外面不扩大。
  *     **P-C 契约 §2 收紧**（放行面 = 声明落点产物里的**那一行 require**）：
  *     ① 落点必须是本包 manifest `exports["./client"]` 指的**那一份**产物（同包另一个
  *        `lib/client*.js` 不认账）；② 形态必须是 `require(...)`（构建期那一行，kind='dynamic'）——
@@ -22,7 +22,7 @@
  *        产物里的主包通道**恰一条**（0 条 / 多条都红）。三处都由 `rootChannels()` 单一真源给出，
  *        判据与主流程对账共用它，不允许两处各写一套条件。
  *   · **字体包覆盖面地板**（P-C 契约 §1）：判据真的作用到字体包 —— 浏览器半边入口
- *     `packages/fonts/src/client.js` 必须在扫描面内、字体包 src 面非空。0 文件会让上面所有
+ *     `lib/components/fonts/src/client.js` 必须在扫描面内、字体包 src 面非空。0 文件会让上面所有
  *     "零主包说明符"判据**真空为真**（这是本轮要堵的洞），所以空扫描面判红。
  * 其余裸包必须在自己 dependencies/peerDependencies/optionalDependencies（客户端产物可放宽到
  * dsh.client.inject 声明面）里声明；相对 import 一律不许逃出本包；也不许自引用。
@@ -73,7 +73,7 @@ function discoverSubpackages() {
     if (!isFile(pj)) continue;
     let manifest = null, error = null;
     try { manifest = JSON.parse(readFileSync(pj, 'utf8')); } catch (e) { error = e.message; }
-    out.push({ dir: 'packages/' + n, abs: join(dir, n), manifest, error });
+    out.push({ dir: 'lib/components/' + n, abs: join(dir, n), manifest, error });
   }
   return out;
 }
@@ -174,7 +174,7 @@ function rootChannels(pkg, rootPkg, files) {
  * @returns {string[]} 违反项
  */
 function fontsCoverageProblems(pkg, files) {
-  if (!pkg) return ['packages/ 下没有 dsh-plugin-folia-fonts（包名漂移 => 棘轮静默失效）'];
+  if (!pkg) return ['lib/components/ 下没有 dsh-plugin-folia-fonts（包名漂移 => 棘轮静默失效）'];
   const bad = [];
   const rels = files.map((f) => relOf(f.abs));
   const src = rels.filter((r) => r.indexOf(pkg.dir + '/src/') === 0);
@@ -199,7 +199,7 @@ function purityViolations(inp) {
   // 放行面：只认声明落点产物里的那一行 require（P-C 契约 §2）。
   const allowed = new Set(rootChannels(pkg, inp.rootPkg, inp.files).map((c) => c.rel + '|' + c.spec + '|' + c.kind));
   const siblings = inp.siblings.map((s) => ({ name: s.manifest.name, abs: s.abs, dir: s.dir }));
-  // upstream-fork 形态（P1：packages/pet）不是主包服务面的消费者：它自带 patch 行 + 自己的
+  // upstream-fork 形态（P1：lib/components/pet）不是主包服务面的消费者：它自带 patch 行 + 自己的
   // inject 面（webServer / agentDefaultModel / credentials / llm / commands / connection），
   // 与主包的关系是"同级插件"。所以「必须 inject wallpaperEngineHost 且必须从 ctx 取用」这条
   // 对它不适用 —— 显式跳过（判据**反向**由 client-half 的"产物不许有主包绑定"与
@@ -283,7 +283,7 @@ const HOST = (typeof HOST_SERVICE_NAME === 'string' && HOST_SERVICE_NAME) ? HOST
 
 const rootPkg = JSON.parse(read('package.json'));
 const pkgs = discoverSubpackages();
-check('packages/ 下至少有一个子包（P-A 未落判红）', pkgs.length > 0, pkgs.map((p) => p.dir).join(' / '));
+check('lib/components/ 下至少有一个子包（P-A 未落判红）', pkgs.length > 0, pkgs.map((p) => p.dir).join(' / '));
 const usable = pkgs.filter((p) => p.manifest && !p.error);
 check('每个子包 manifest 可解析', usable.length === pkgs.length, pkgs.filter((p) => p.error).map((p) => p.dir + '：' + p.error).join('；'));
 
@@ -342,8 +342,8 @@ if (usable.length > 0) {
 
 // -- 负对照 ------------------------------------------------------------------
 const MOD = 'dsh-plugin-folia-fx';
-const mkPkg = (name, deps) => ({ dir: 'packages/fx', abs: join(ROOT, 'packages', 'fx'), manifest: { name, dependencies: deps || {} }, error: null });
-const other = { dir: 'packages/parallax', abs: join(ROOT, 'packages', 'parallax'), manifest: { name: 'dsh-plugin-folia-parallax', dependencies: {} }, error: null };
+const mkPkg = (name, deps) => ({ dir: 'lib/components/fx', abs: join(ROOT, 'packages', 'fx'), manifest: { name, dependencies: deps || {} }, error: null });
+const other = { dir: 'lib/components/parallax', abs: join(ROOT, 'packages', 'parallax'), manifest: { name: 'dsh-plugin-folia-parallax', dependencies: {} }, error: null };
 const mk = (files, opts) => {
   const pkg = (opts && opts.pkg) || mkPkg(MOD, (opts && opts.deps) || {});
   return {
@@ -384,15 +384,15 @@ negOk('已声明 peer 的裸包 import 不判红', [{ rel: 'lib/a.js', text: "im
 negOk('客户端产物不背宿主 inject 义务（服务名对账不越界）', [{ rel: 'lib/client.fx.js', text: "const root = require('dsh-plugin-folia');\nexport const inject = ['webServer'];\n" }], { pkg: (() => { const p = mkPkg(MOD); p.manifest.exports = { './client': './lib/client.fx.js' }; return p; })() });
 
 // -- P-C 契约 §1/§2 的负对照：字体包源码面 / 放行面收紧 / 覆盖面地板 -------------------------
-// 「在 packages/fonts/src/*.js 写入一句 require ⇒ 红」用**真落点路径**在内存里构造（不落盘）：
-// 本判据的写面只有 test/**，packages/fonts/** 属 fonts-pc；纯函数喂文件清单等价于那处写入。
+// 「在 lib/components/fonts/src/*.js 写入一句 require ⇒ 红」用**真落点路径**在内存里构造（不落盘）：
+// 本判据的写面只有 test/**，lib/components/fonts/** 属 fonts-pc；纯函数喂文件清单等价于那处写入。
 const mkFontsPkg = () => {
   const p = mkPkg('dsh-plugin-folia-fonts');
-  p.dir = 'packages/fonts'; p.abs = join(ROOT, 'packages', 'fonts');
+  p.dir = 'lib/components/fonts'; p.abs = join(ROOT, 'packages', 'fonts');
   p.manifest.exports = { './client': './lib/client.fonts.js' };
   return p;
 };
-neg('字体包源码面出现主包说明符判红（P-C 契约 §1：零主包说明符，真落点路径 packages/fonts/src/client.js）',
+neg('字体包源码面出现主包说明符判红（P-C 契约 §1：零主包说明符，真落点路径 lib/components/fonts/src/client.js）',
   [{ rel: 'src/client.js', text: "const host = require('dsh-plugin-folia');\n" }], /宿主半边 import 主包说明符/, { pkg: mkFontsPkg() });
 neg('字体包其它源码文件出现主包说明符同样判红',
   [{ rel: 'src/appearance-font-section.js', text: "const h = require('dsh-plugin-folia');\n" }], /宿主半边 import 主包说明符/, { pkg: mkFontsPkg() });

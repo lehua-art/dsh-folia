@@ -121,7 +121,7 @@ const FADE_GRACE_MS = Number(code.match(/ROTATION_FADE_MS = (\d+)/)[1]) + 100;
 const cap = { handoff:null };
 const sandbox = {
   window: {
-    __ModuleLoader__: { load:(h)=>{ cap.handoff=h; } },
+    __ModuleLoader__: { load:(h)=>{ if (!cap.handoff) cap.handoff=h; } },
     setTimeout:(fn,ms)=>{ const t={fn,ms,cleared:false}; timers.push(t); return t; },
     clearTimeout:(t)=>{ if(t)t.cleared=true; },
     addEventListener(){}, innerWidth:1920, innerHeight:1080, devicePixelRatio:1,

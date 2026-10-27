@@ -544,57 +544,42 @@ function toPosix(rel) {
  *   · 配方的 `artifact` 经包目录拼接后必须**逐字等于**发现层的 `clientArtifact`（防两处漂移）。
  * 缺配方会让该包的浏览器半边**静默不产出**（页面白屏、构建却全绿），所以宁可让构建红。
  */
+/** 单包化之后，带浏览器半边的组件目录（相对 `lib/components/`）。 */
+const MERGED_CLIENT_COMPONENTS = ['fonts', 'fx', 'parallax', 'pet-link'];
+
+/**
+ * 读全部带浏览器半边的组件配方。
+ *
+ * ⚠️ 单包化（BUNDLE-MERGE）之后，配方来源从「发现层的 `packages/<pkg>/`」改成
+ * 「本包内的 `lib/components/<name>/`」—— 组件不再是独立 npm 包，`discoverPackages()`
+ * 找不到它们了。原先那套「缺配方 / 孤儿配方都判红」的双向对账仍然保留在这里的手写清单上：
+ * 清单少一个组件 ⇒ 它的浏览器半边静默不产出（页面白屏而构建全绿），所以缺配方必须红。
+ */
 function loadSubpackageRecipes() {
-  const model = discoverPackages(root);
   const recipes = [];
-  for (const p of model.packages) {
-    if (p.kind !== 'standalone') continue;
-    const relDir = toPosix(p.dir);
-    const recipeAbs = resolve(root, relDir, RECIPE_FILE);
-    const hasRecipe = existsSync(recipeAbs);
-    const declaresClient = typeof p.clientArtifact === 'string' && p.clientArtifact.length > 0;
-    if (declaresClient && !hasRecipe) {
-      console.error(`[build-client] ${p.name}（${relDir}）声明了浏览器半边`
-        + `（exports['./client'] ⇒ ${p.clientArtifact}）却没有构建配方 ${relDir}/${RECIPE_FILE}`
-        + '：该包的浏览器半边会静默不产出（用户页面白屏，而构建/守卫全绿）。'
-        + `请补上 ${relDir}/${RECIPE_FILE}（形状 { entry, artifact, inline:[{file,why,markers}] }，`
-        + '可照抄任一别包的同名文件）。');
+  for (const name of MERGED_CLIENT_COMPONENTS) {
+    const relDir = `lib/components/${name}`;
+    const dirAbs = resolve(root, relDir);
+    const recipeAbs = resolve(dirAbs, RECIPE_FILE);
+    if (!existsSync(recipeAbs)) {
+      console.error(`[build-client] ${relDir} 缺构建配方 ${RECIPE_FILE}：该组件的浏览器半边`
+        + '会静默不产出（用户页面白屏，而构建/守卫全绿）。'
+        + '形状见任一别包的 client.build.json：{ entry, artifact, inline:[{file,why,markers}] }。');
       process.exit(1);
     }
-    if (!declaresClient && hasRecipe) {
-      console.error(`[build-client] ${p.name}（${relDir}）留着孤儿配方 ${relDir}/${RECIPE_FILE}`
-        + "，但清单没有声明浏览器半边（exports['./client']）：配方不会被消费，"
-        + "它描述的产物也没人会加载。请删掉该配方，或给清单补上 exports['./client']。");
-      process.exit(1);
-    }
-    if (!hasRecipe) continue;
     const recipe = JSON.parse(readNormalized(recipeAbs));
-    const joined = `${relDir}/${recipe.artifact}`;
-    if (joined !== p.clientArtifact) {
-      console.error(`[build-client] ${p.name}（${relDir}）配方与清单漂移：${RECIPE_FILE} 的 artifact=`
-        + `${JSON.stringify(recipe.artifact)} ⇒ 产物 ${joined}，`
-        + `而清单 exports['./client'] ⇒ ${p.clientArtifact}。`
-        + '两者必须一致（否则构建出的产物没人加载，按产物名对账的守卫也会红）。');
-      process.exit(1);
-    }
-    // upstream-fork 形态（P1）：预构建产物。它没有本仓的构建链（源码是上游 .ts 体系），
-    // 所以这里**不读源码重编**，只做「登记字节 ⇄ 盘上字节」的对账（见 assertPrebuiltBundle）。
     if (recipe.prebuilt != null) {
-      if (recipe.entry != null || recipe.inline != null) {
-        console.error(`[build-client] ${p.name}（${relDir}）${RECIPE_FILE} 同时给了 prebuilt 与 entry/inline：`
-          + '预构建形态不消费源码（entry/inline 会被忽略），两种形态只能选一种，混写等于让人误以为它在编译。');
-        process.exit(1);
-      }
-      recipes.push({ dir: relDir, dirAbs: resolve(root, relDir), name: p.name, artifact: recipe.artifact, prebuilt: recipe.prebuilt });
-      continue;
+      console.error(`[build-client] ${relDir} 的 ${RECIPE_FILE} 声明了 prebuilt —— 单包化形态`
+        + '不支持预构建产物（组件已并进本包，没有上游派生世代）。');
+      process.exit(1);
     }
     recipes.push({
       dir: relDir,
-      dirAbs: resolve(root, relDir),
-      name: p.name,
+      dirAbs,
+      name: `dsh-plugin-folia-${name}`,
       artifact: recipe.artifact,
       entry: typeof recipe.entry === 'string' && recipe.entry ? recipe.entry : DEFAULT_SUBPACKAGE_ENTRY,
-      inline: recipe.inline,
+      inline: recipe.inline || [],
     });
   }
   return recipes;
@@ -632,42 +617,58 @@ function readNormalized(abs) {
  */
 const DECL_RE = /^([ \t]*)(?:async\s+)?(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/gm;
 
-// ── 产物生成 ─────────────────────────────────────────────────────────────────
-// 主 bundle 与子包 bundle 走**同一套**注入 / 浏览器安全 / 撞名判据（`readInlinedPrelude` /
-// `assertNoShadowedScopeDecls` 都参数化了模块表与基准目录）：判据只有一份，只有模块表不同。
-const OUTPUTS = [
-  { kind: 'compiled', label: 'lib/client.js', target: resolve(root, 'lib', 'client.js'), inlined: INLINE_MODULES, text: buildMainBundle() },
-  ...loadSubpackageRecipes().map((recipe) => (recipe.prebuilt != null
-    ? { kind: 'prebuilt', label: `${recipe.dir}/${recipe.artifact}`, dirAbs: recipe.dirAbs, name: recipe.name, artifact: recipe.artifact, prebuilt: recipe.prebuilt }
-    : {
-      kind: 'compiled',
-      label: `${recipe.dir}/${recipe.artifact}`,
-      target: resolve(recipe.dirAbs, recipe.artifact),
-      inlined: recipe.inline,
-      text: buildSubpackageBundle(recipe),
-    })),
-];
+// ── 产物生成（单包化：全部 bundle 落进同一个 lib/client.js）──────────────────
+// 主 bundle 与组件 bundle 走**同一套**注入 / 浏览器安全 / 撞名判据
+// （`readInlinedPrelude` / `assertNoShadowedShadowDecls` 都参数化了模块表与基准目录）。
+const MAIN_OUT = {
+  label: 'lib/client.js',
+  target: resolve(root, 'lib', 'client.js'),
+  inlined: INLINE_MODULES,
+  text: buildMainBundle(),
+};
+const SUB_OUTS = loadSubpackageRecipes().map((recipe) => ({
+  label: `${recipe.dir}/${recipe.artifact}`,
+  name: recipe.name,
+  inlined: recipe.inline,
+  text: buildSubpackageBundle(recipe),
+  // 兼容产物：合并后的 lib/client.js 才是唯一被 DSH 加载的入口，但开发期的回归夹具
+  // （fontset-load-smoke / verify-system-fonts 等）仍按 `lib/components/<x>/lib/client.<x>.js`
+  // 这个路径读组件半边。落一份同样的字节，让夹具继续按原路径工作，不必逐个改读法。
+  compatTarget: resolve(recipe.dirAbs, recipe.artifact),
+}));
 
-for (const out of OUTPUTS) {
-  if (out.kind === 'prebuilt') {
-    // 预构建形态：只对账、不写盘。为什么**不**写盘：这份字节是上游派生世代的产物证据，
-    // 构建期重写它会让「登记值 ⇄ 盘上值」这条判据变成自证（写什么都是对的）。
-    assertPrebuiltBundle(out);
-    continue;
-  }
-  // 产物必须可解析 —— 内联后出现重复声明/括号错配时在这里就红，而不是等到用户页面白屏。
+// 单包化的关键：全部注册进**同一个文件**。主 bundle 在最前 —— 组件 factory 里的
+// `require('<主包名>')` 在运行期才解析，但登记顺序决定了主模块一定先被登记。
+for (const out of [MAIN_OUT, ...SUB_OUTS]) {
   try {
     new Script(out.text, { filename: out.label });
   } catch (err) {
+    // 产物必须可解析 —— 内联后出现重复声明/括号错配时在这里就红，而不是等到用户白屏。
     console.error(`[build-client] 产物语法错误（${out.label}）：${err && err.message}`);
     process.exit(1);
   }
-  mkdirSync(dirname(out.target), { recursive: true });
-  writeFileSync(out.target, out.text);
-  // 进度信息走 **stderr**，把 stdout 留给机读输出：`npm run build` 的输出会被 `prepare` 带进
-  // `npm pack` / `npm publish` 的 stdout，而它们的 `--json` 要求 stdout 上**只有 JSON**
-  // （实测：`npm pack --dry-run --json` 原本因这一行而无法解析）。错误本就打 stderr。
-  console.error(`built ${out.target} (${Buffer.byteLength(out.text)} bytes; inlined: ${out.inlined.map((m) => m.file).join(' + ')})`);
+}
+
+const mergedText = [MAIN_OUT.text, ...SUB_OUTS.map((o) => o.text)].join('\n');
+try {
+  new Script(mergedText, { filename: 'lib/client.js (merged)' });
+} catch (err) {
+  console.error(`[build-client] 合并后的 lib/client.js 语法错误：${err && err.message}`);
+  process.exit(1);
+}
+mkdirSync(dirname(MAIN_OUT.target), { recursive: true });
+writeFileSync(MAIN_OUT.target, mergedText);
+// 兼容产物：组件半边单独落一份（只为开发期夹具按旧路径读；DSH 只加载 lib/client.js）。
+for (const out of SUB_OUTS) {
+  if (!out.compatTarget) continue;
+  mkdirSync(dirname(out.compatTarget), { recursive: true });
+  writeFileSync(out.compatTarget, out.text);
+}
+// 进度走 stderr：stdout 留给机读输出（`npm pack --json` 要求 stdout 只有 JSON）。
+console.error(`built ${MAIN_OUT.target} (${Buffer.byteLength(mergedText)} bytes; `
+  + `1 file / ${1 + SUB_OUTS.length} module registrations)`);
+for (const out of SUB_OUTS) {
+  console.error(`  registered ${out.name} (${out.inlined.map((m) => m.file).join(' + ')})`);
 }
 
 /**

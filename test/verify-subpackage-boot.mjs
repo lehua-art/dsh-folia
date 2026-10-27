@@ -7,7 +7,7 @@
  * 每个净新增子包行；解析失败要**大声报错**（不许静默 return）。
  *
  * 判据口径（数据驱动，不写死包名）：
- *   ① `packages/<dir>/package.json` 的集合 ⇄ 主 patch 里"净新增子包行"（name 以 `<root>-` 开头）的集合
+ *   ① `lib/components/<dir>/package.json` 的集合 ⇄ 主 patch 里"净新增子包行"（name 以 `<root>-` 开头）的集合
  *      必须**互为双射**：有包没行 = 没插行；有行没包 = 死行。
  *   ② `lib/subpackage-boot.js`（叶子模块，零裸包 import）必须导出
  *        · `subpackageSpecifiers(patchText, selfName)` → string[]（裸行名）
@@ -28,7 +28,7 @@
  *      c) `lib/index.js` 的合成源码（apply 体里没有调用）必须被判红；
  *      d) 宿主腿的真源码变异体（把 `throw new` 抹掉）必须被判红（判据有牙）。
  *
- * 挂链：`test/run-guards.mjs` 的 VERIFY_STEPS（hard）。缺 packages/ 或缺契约模块时**判红**，
+ * 挂链：`test/run-guards.mjs` 的 VERIFY_STEPS（hard）。缺 lib/components/ 或缺契约模块时**判红**，
  * 不放宽 —— 这正是"未落判据/未挂契约"要被看见的地方。
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -39,8 +39,8 @@ import { isUpstreamFork, upstreamForkOf } from './tools/subpackage-shapes.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CONTRACT_REL = 'lib/subpackage-boot.js';
-const PACKAGES_PREFIX = 'packages/';
-/** packages/ 下带 package.json 的直接子目录（形态判定用它，不用包的自称字段）。 */
+const PACKAGES_PREFIX = 'lib/components/';
+/** lib/components/ 下带 package.json 的直接子目录（形态判定用它，不用包的自称字段）。 */
 const PACKAGE_DIRS_ON_DISK = (() => {
   const dir = join(ROOT, 'packages');
   if (!existsSync(dir)) return [];
@@ -68,8 +68,8 @@ function discoverSubpackages() {
     if (!isFile(pj)) continue;
     try {
       const manifest = JSON.parse(readFileSync(pj, 'utf8'));
-      out.push({ dir: 'packages/' + n, name: typeof manifest.name === 'string' ? manifest.name : null, manifest, error: null });
-    } catch (e) { out.push({ dir: 'packages/' + n, name: null, manifest: null, error: e.message }); }
+      out.push({ dir: 'lib/components/' + n, name: typeof manifest.name === 'string' ? manifest.name : null, manifest, error: null });
+    } catch (e) { out.push({ dir: 'lib/components/' + n, name: null, manifest: null, error: e.message }); }
   }
   return out;
 }
@@ -151,9 +151,9 @@ const badManifests = discovered.filter((d) => d.error || !d.name);
 const rowNames = rows.map((r) => r.name).filter(Boolean);
 const rowSpecs = rowNames.filter((n) => n !== rootName && !n.startsWith(rootName + '/'));
 
-check('packages/ 下至少有一个子包（P-A 未落 ⇒ 判红，不放宽）', discovered.length > 0,
-  discovered.length ? discovered.map((d) => d.dir + '=' + d.name).join(' / ') : 'packages/ 下没有带 package.json 的目录');
-check('每个 packages/<dir>/package.json 都能解析且 name 非空', badManifests.length === 0,
+check('lib/components/ 下至少有一个子包（P-A 未落 ⇒ 判红，不放宽）', discovered.length > 0,
+  discovered.length ? discovered.map((d) => d.dir + '=' + d.name).join(' / ') : 'lib/components/ 下没有带 package.json 的目录');
+check('每个 lib/components/<dir>/package.json 都能解析且 name 非空', badManifests.length === 0,
   badManifests.map((d) => d.dir + '：' + (d.error || 'name 缺失')).join('；'));
 if (discovered.length > 0) {
   const missingRows = discovered.filter((d) => d.name && !rowNames.includes(d.name)).map((d) => d.name);
@@ -161,7 +161,7 @@ if (discovered.length > 0) {
   check('子包 ⇄ 主 patch 净新增子包行 互为双射（无包的行 / 无行的包都要红）',
     missingRows.length === 0 && deadRows.length === 0,
     [missingRows.length ? '没被主 patch 插入行的子包（§2.2：行不在 patch 里 = 浏览器半边静默不存在）：' + missingRows.join(' / ') : '',
-     deadRows.length ? '主 patch 里没有对应 packages/<dir> 的净新增行：' + deadRows.join(' / ') : ''].filter(Boolean).join('；'));
+     deadRows.length ? '主 patch 里没有对应 lib/components/<dir> 的净新增行：' + deadRows.join(' / ') : ''].filter(Boolean).join('；'));
 }
 // 与 task-1 的包发现层（scripts/dev-link-subpackages.mjs）交叉对账：存在就必须一致。
 const discoverMod = join(ROOT, 'scripts', 'dev-link-subpackages.mjs');
@@ -313,7 +313,7 @@ check('跨包服务面契约（HOST_SERVICE_NAME 字面量 / 6 键冻结 / schem
 // P-F：组件行出户后，组件宿主半边**也只**能从这个服务面取键（零主包说明符）⇒ 把每个已登记 id 的
 // 键面都真取一遍（数据驱动，不写死 about-notice）：声明面非空、且每个键都能取到值（缺键即抛）。
 const componentKeyIssues = [];
-// upstream-fork 形态（P1：packages/pet）的宿主半边**不消费**这张服务面 ⇒ 它的登记面必须**为空**，
+// upstream-fork 形态（P1：lib/components/pet）的宿主半边**不消费**这张服务面 ⇒ 它的登记面必须**为空**，
 // 且"为空"是被断言的事实（不是漏登记）：非空反而判红（伪造键 = 给未来越界留门）。
 // 判定读形态真源，不读包的自称字段。
 const forkConsumerIds = new Set();
@@ -326,7 +326,7 @@ if (mod && typeof mod.subpackageIds === 'function') {
 const emptyFaceIssues = [];
 if (mod && typeof mod.subpackageIds === 'function' && typeof mod.subpackageKeyNames === 'function') {
   for (const id of forkConsumerIds) {
-    if (!mod.subpackageIds().includes(id)) { emptyFaceIssues.push(id + ' 没有登记（S10.1 要求每个 packages/* 有一格）'); continue; }
+    if (!mod.subpackageIds().includes(id)) { emptyFaceIssues.push(id + ' 没有登记（S10.1 要求每个 lib/components/* 有一格）'); continue; }
     const names = mod.subpackageKeyNames(id);
     if (!Array.isArray(names) || names.length !== 0) {
       emptyFaceIssues.push(id + ' 的声明面应为空（它不消费服务面），实际 ' + JSON.stringify(names));
@@ -598,7 +598,7 @@ if (mod) {
     hostMutBad.length > 0, JSON.stringify(hostMutBad));
 }
 // 灰测回归：非主包前缀的内置桌宠也必须进入真实自检集合。
-check('灰测：自检覆盖 packages/ 中全部子包（包括内置桌宠）',
+check('灰测：自检覆盖 lib/components/ 中全部子包（包括内置桌宠）',
   JSON.stringify([...mod.subpackageSpecifiers(patchText, rootName)].sort())
     === JSON.stringify(discovered.map((d) => d.name).sort()));
 

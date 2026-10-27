@@ -11,7 +11,7 @@
  *   4. 这一关**只**动它自己那一行（其余行的路由账逐条不变）。
  * 关键量法：每行的"自己那份贡献" = 在**独立** table 里单独装载该行得到的键集合（不是累计快照）。
  * 行来源数据驱动：根 cordis.patch.yml 的 (id, name)；name 解析：
- *   裸包名 -> lib/index.js；<裸包>/<子> -> lib/components/<子>/index.js；子包真实包名 -> packages/<dir>/<main>。
+ *   裸包名 -> lib/index.js；<裸包>/<子> -> lib/components/<子>/index.js；子包真实包名 -> lib/components/<dir>/<main>。
  * 负对照（必须有牙）：
  *   a. 合成"只 return dispose 不交给 fiber"的插件 -> 本判据检测函数判红；
  *   b. 真源码变异体：把行入口里的**交接调用**（旧叶子形态 handOffTeardown( 或服务面形态
@@ -76,7 +76,7 @@ function discoverSubpackages() {
     if (!isFile(pj)) continue;
     let manifest;
     try { manifest = JSON.parse(readFileSync(pj, 'utf8')); } catch { manifest = null; }
-    out.push({ dir: 'packages/' + n, manifest });
+    out.push({ dir: 'lib/components/' + n, manifest });
   }
   return out;
 }
@@ -268,7 +268,7 @@ function specifiersOf(src) {
   return out;
 }
 /**
- * 出户的组件/子包真名 → `packages/<dir>/<main>` 的 file:// URL（映射不到返回 null）。
+ * 出户的组件/子包真名 → `lib/components/<dir>/<main>` 的 file:// URL（映射不到返回 null）。
  *
  * P-F 起主包门面按**裸包名**静态 import 出户的组件（`lib/index.js` → `dsh-plugin-folia-about-notice`，
  * 见 ADR-0014 §12「主包以精确版本依赖子包」）：真实 profile 里靠 `<profile>/node_modules/<name>` 解析，
@@ -345,8 +345,8 @@ check('主包跨包服务面可动态装载（mock ctx 用真 createSubpackageHo
   bootLoadErr ? ('装载 lib/subpackage-boot.js 失败：' + String(bootLoadErr.message || bootLoadErr).split('\n')[0]) : 'HOST_SERVICE=' + String(HOST_SERVICE));
 
 const unknown = rows.filter((r) => r.kind === 'unknown');
-check('每一行的 name 都能解析到宿主入口（子包必须能按包名找到 packages/<dir>）', unknown.length === 0,
-  unknown.map((r) => 'id=' + r.id + ' name=' + r.name + ' 在 packages/ 下找不到对应包').join('；'));
+check('每一行的 name 都能解析到宿主入口（子包必须能按包名找到 lib/components/<dir>）', unknown.length === 0,
+  unknown.map((r) => 'id=' + r.id + ' name=' + r.name + ' 在 lib/components/ 下找不到对应包').join('；'));
 const missingEntry = rows.filter((r) => r.rel && !isFile(join(ROOT, r.rel)));
 check('每个行入口文件都存在', missingEntry.length === 0, missingEntry.map((r) => r.name + ' -> ' + r.rel).join('；'));
 
@@ -958,7 +958,7 @@ function fontsSectionOwnershipProblems(t) {
       goodProbs.length === 0, goodProbs.join(' | ') || '0 条');
     console.log('    · 字体包客户端产物：' + (owned.fontsArtifact
       ? owned.fontsArtifactRel + '（' + owned.fontsArtifact.length + ' 字符）'
-      : '不在盘（等 fonts-pc 落 packages/fonts/src/client.js + client.build.json 后 npm run build）'));
+      : '不在盘（等 fonts-pc 落 lib/components/fonts/src/client.js + client.build.json 后 npm run build）'));
   }
 }
 

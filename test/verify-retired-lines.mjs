@@ -39,7 +39,7 @@ function walk(dir, out = []) {
   }
   return out;
 }
-// P-A：`packages/**` 是**新的顶层目录**（子包 = 出户的宿主半 + 浏览器半边）⇒ 必须登记进扫描面，
+// P-A：`lib/components/**` 是**新的顶层目录**（子包 = 出户的宿主半 + 浏览器半边）⇒ 必须登记进扫描面，
 // 否则搬走的实现落进一个"退役词不看"的盲区（表层登记见下方覆盖面地板）。
 const FILES = [...walk('lib'), ...walk('src'), ...walk('scripts'), ...walk('packages'), ...walk('test')]
   // 本脚本必须把退役词**拼出来**才能搜它们 ⇒ 扫自己必然是假阳性。只排除这一个文件，

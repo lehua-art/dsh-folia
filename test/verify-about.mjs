@@ -63,9 +63,9 @@ console.log('① 仓库地址：package.json ⇄ 客户端 ⇄ 宿主解析');
 const guardCode = (text) => stripComments(String(text));
 // P2-2b（拆环）：`hostKernel` / `BASE` / `PLUGIN_NAME` / `repoSlugFromPkg` 四个声明搬进了叶子
 // 模块 lib/host-boot.js ⇒ 读取面 + 该模块；**字面量 / 正则 / 判据名一字未动**。
-// P-F：组件行出户到 `packages/about-notice/`（宿主半边 + 两条路由族整体搬走）⇒ 读取面随之改路径，
+// P-F：组件行出户到 `lib/components/about-notice/`（宿主半边 + 两条路由族整体搬走）⇒ 读取面随之改路径，
 // **字面量 / 正则 / 判据名一字未动**。注册点形态仍是同一条（入口 `apply` 里那条调用）。
-const hostSrc = guardCode(read('lib/index.js')) + '\n' + guardCode(read('packages/about-notice/lib/index.js'))
+const hostSrc = guardCode(read('lib/index.js')) + '\n' + guardCode(read('lib/components/about-notice/lib/index.js'))
   + '\n' + guardCode(read('lib/host-boot.js'));
 /**
  * `owner/repo` 归一化：正则本体**从宿主实现里现抽**（`lib/index.js` 的 `repoSlugFromPkg`），
@@ -116,7 +116,7 @@ const commentedStarShape = [
 check('negative control(硬化): 注册点形态只出现在注释里 ⇒ 判据不看它（旧写法此处为真）',
   starShapeIn(commentedStarShape) === true && starShapeIn(guardCode(commentedStarShape)) === false);
 check('一键 star 不做：宿主侧没有任何写 GitHub 的调用',
-  !/user\/starred/.test(hostSrc) && !/method:\s*['"]PUT['"]/.test(read('packages/about-notice/lib/routes/github-stars.js')));
+  !/user\/starred/.test(hostSrc) && !/method:\s*['"]PUT['"]/.test(read('lib/components/about-notice/lib/routes/github-stars.js')));
 
 // ══ ② 路由行为（替身出站，不联网）════════════════════════════════════════════
 console.log('\n② /star-count 路由行为（替身 fetchJson）');
@@ -131,7 +131,7 @@ const { sendJson } = await import(pathToFileURL(join(ROOT, 'lib', 'json-response
 // ⚠️ 路由族模块（`lib/routes/*.js` ∪ 组件目录里的实现文件）带 `export const DEPS`（注入契约声明面，见
 // ADR-0013 的 D12②「每个路由族带一份显式声明键集，与调用点双向对账」；判据 = test/verify-inject-contracts.mjs）⇒ 判据不能停在"export 数量 == 1"，但也不能退化成"随便多导都行"：只放行
 // `DEPS` / `OPTIONAL_DEPS` 两个具名常量，多导一个函数或多导一个普通 const 都要红（见负对照）。
-const starSrc = read('packages/about-notice/lib/routes/github-stars.js');
+const starSrc = read('lib/components/about-notice/lib/routes/github-stars.js');
 const STAR_TTL_MS = Number((starSrc.match(/const STAR_TTL_MS = ([0-9_*\s]+);/) || [])[1].replace(/[\s_]/g, '').split('*').reduce((a, b) => a * Number(b), 1));
 const routeShapeOk = (src) => {
   const exportedFns = src.match(/^export\s+(?:async\s+)?function\s+\w+/gm) || [];
@@ -324,7 +324,7 @@ console.log('\n③ /about-qr 路由行为（白名单 / 304 / 405 / 404）');
 
 const { registerAboutQrRoutes } = await import(pathToFileURL(join(ROOT, 'packages', 'about-notice', 'lib', 'routes', 'about-qr.js')).href);
 const ABOUT_DIR = join(ROOT, 'lib', 'about');
-const aboutSrc = read('packages/about-notice/lib/routes/about-qr.js');
+const aboutSrc = read('lib/components/about-notice/lib/routes/about-qr.js');
 const pkgFiles = JSON.parse(read('package.json')).files || [];
 
 /** 装一台只含 QR 路由的 mock webServer；serveFile 用**真实现**（在 lib/index.js 里是内联函数，

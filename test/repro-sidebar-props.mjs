@@ -80,7 +80,7 @@ const pump = async (rounds) => {
     await new Promise((r) => { setImmediate(r); });
   }
 };
-const sandbox = { window: { __ModuleLoader__: { load: (h) => { sandbox.__handoff = h; } },
+const sandbox = { window: { __ModuleLoader__: { load: (h) => { if (!sandbox.__handoff) sandbox.__handoff = h; } },
     setTimeout: setT, clearTimeout(){}, setInterval: () => 0, clearInterval(){},
     addEventListener(){}, removeEventListener(){}, matchMedia: () => ({ matches: false, addEventListener(){}, removeEventListener(){} }),
     location: { search: '', href: 'http://x/' } },

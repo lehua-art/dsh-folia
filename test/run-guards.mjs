@@ -196,7 +196,7 @@ const VERIFY_STEPS = [
   step('test/verify-subpackage-client-half.mjs'),
   step('test/verify-subpackage-purity.mjs'),
   step('test/verify-subpackage-toggle-roundtrip.mjs'),
-  // ⑤ 子包包面（P2-5；2026-10-15 收口时**由软档升 hard**）：`packages/*/package.json` 的
+  // ⑤ 子包包面（P2-5；2026-10-15 收口时**由软档升 hard**）：`lib/components/*/package.json` 的
   //    name/version/main/exports/peer 与自带 patch 行、根 `exports` 三连对账（组件行 + 独立子包行两段）。
   //    按 ADR-0004 的分档判据，它守的是**发布面 / 打包面**：版本漂离主包、peer 范围与主包不逐字相等
   //    （I6：宿主整次安装被拒 + 回滚）、`dsh.client` ⟺ `exports['./client']` 失配（C2：浏览器半边静默不加载）

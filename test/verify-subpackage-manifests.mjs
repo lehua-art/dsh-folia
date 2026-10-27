@@ -31,10 +31,10 @@
  *
  * ⚠️ 本文件**不 import 任何裸包**（链上脚本零裸包依赖是 `verify-package-files` 的 P5 硬判据）。
  *
- * ── 第二段：`packages/*` 独立子包（fx / parallax / fonts）的**包面** ─────────────────
+ * ── 第二段：`lib/components/*` 独立子包（fx / parallax / fonts）的**包面** ─────────────────
  *
  * 上面这一整段（含 `manifestViolations()`）覆盖的是 `lib/components/<sub>` **组件行**：patch 用
- * **子路径名** `<根包名>/<sub>`，随主包一起发布。`packages/<pkg>/` 是另一种包 —— **独立子包行**：
+ * **子路径名** `<根包名>/<sub>`，随主包一起发布。`lib/components/<pkg>/` 是另一种包 —— **独立子包行**：
  * patch 用**真名** `<根包名>-<pkg>`，各自有自己的 `cordis.patch.yml` / `dsh.client` / 浏览器半边产物。
  * 早期守卫（purity / boot / client-half / toggle-roundtrip）盯的是**半边接线**，包面本身
  * （清单字段、行 ⇄ 自带 patch 对账、键表 / 构建表登记、发布两形态）此前**零判据** —— 本段补这个洞。
@@ -45,13 +45,13 @@
  *   S3.5 peer ⊆ 根 peer、`@deepseek-ai/*` 范围逐字取根、依赖里不得出现主包 / 子包名
  *   S3.6 `dsh.bundle.patch` === `./cordis.patch.yml` + 在盘 + `files` 覆盖清单三件
  *   S3.7 清单 LF / 无 BOM / 可 parse · S4.2 自带 patch 的 `(id, name)` 与主包行逐字相等
- *   S4.3 主包行 id === `folia-<pkg>` · S8.1 根 devDeps 有 `file:packages/<pkg>`、deps 无子包名
- *   S10.1 `SUBPACKAGE_KEY_TABLE` 每包一项、无多余 · S10.2 `dsh.client` ⇔ `packages/<pkg>/client.build.json`
+ *   S4.3 主包行 id === `folia-<pkg>` · S8.1 根 devDeps 有 `file:lib/components/<pkg>`、deps 无子包名
+ *   S10.1 `SUBPACKAGE_KEY_TABLE` 每包一项、无多余 · S10.2 `dsh.client` ⇔ `lib/components/<pkg>/client.build.json`
  *   一项，且 `artifact` === `exports['./client']`、产物在盘 · S10.3 配方形状：`entry` 与
  *   `inline[].file/why/markers` 齐备、`entry` / `file` 都在盘（T2 起字面量表搬进了逐包配方 JSON）
  *
  * ⚠️ 两个真源，读法不同：`lib/subpackage-boot.js` 的 `SUBPACKAGE_KEY_TABLE` 是**源码字面量**
- * （等长遮蔽后配对），`packages/<pkg>/client.build.json` 是**逐包配方 JSON**（T2 起取代了
+ * （等长遮蔽后配对），`lib/components/<pkg>/client.build.json` 是**逐包配方 JSON**（T2 起取代了
  * `scripts/build-client.mjs` 里的 `SUBPACKAGE_BUILDS` 字面量表）。**在盘但读不出来**的配方逐包点名判红
  * （静默跳过 = 登记面判据恒真）；「某包没有配方文件」不算缺陷 —— 那件事由 S10.2 按 `dsh.client`
  * 两向对账（host-only 子包本来就不编浏览器半边）。覆盖面另有一条**地板**：枚举包目录 < 3 或主包真名行 < 3 ⇒ 判红。
@@ -243,7 +243,7 @@ const bareRows = rows.filter((r) => r.name === rootPkg.name);
 const subs = [...new Set(rows
   .filter((r) => r.name && r.name.startsWith(rootPkg.name + '/'))
   .map((r) => r.name.slice(rootPkg.name.length + 1)))];
-// ⚠️ P-F 批 1c 起：三格组件已全部出户到 `packages/<pkg>/`，patch 里的 `name` 改成**真包名**
+// ⚠️ P-F 批 1c 起：三格组件已全部出户到 `lib/components/<pkg>/`，patch 里的 `name` 改成**真包名**
 // ⇒ **子路径形态的组件行**为 0 条，这是"形态已统一"的**预期终态**，不是"少了行"。据此本段拆成：
 //   · 声明面（`COMPONENT_VIEW_KEYS`）每一格都必须有一条**真名**行（出户后的形态，漏一条就点名）；
 //   · 子路径形态若还残留（未出户组件 / 将来有人按旧形态登记新组件），它仍必须过下面那套
@@ -368,7 +368,7 @@ check('覆盖面：派生的每个子路径组件目录都有一份可 parse 的
   check('negative control: CRLF 行尾 ⇒ 判红', crlf.some((x) => /CR/.test(x)), crlf.join(' | ') || '（没报出来）');
 }
 
-// ═══ 第二段：packages/* 独立子包行的包面（S* 条款 = docs/adr/0014-subpackage-contract.md）═══════
+// ═══ 第二段：lib/components/* 独立子包行的包面（S* 条款 = docs/adr/0014-subpackage-contract.md）═══════
 /** 独立子包目录的父路径（仓库根相对，正斜杠口径）。 */
 const PACKAGES_DIR = 'packages';
 
@@ -376,7 +376,7 @@ const PACKAGES_DIR = 'packages';
  * S3.8 模板（ADR-0014 S3.8）—— **显式常量是唯一真源**，不以任何一份现成清单为基准：
  * 拿某一份清单当基准，谁先漂移就跟谁走，判据会变成"跟漂移者对齐"。
  *
- * ① MANIFEST_TOP_KEY_TEMPLATE：packages/<pkg>/package.json 顶层键的规范**相对顺序**。
+ * ① MANIFEST_TOP_KEY_TEMPLATE：lib/components/<pkg>/package.json 顶层键的规范**相对顺序**。
  *    必选键必须全在且按序；optional 的键只允许**跨形态**缺失（host-only 包没有浏览器半边，
  *    也就没有 exports['./client'] / dsh.client；注入宿主 webServer 面的包才多出
  *    peerDependencies）—— 跨形态差异不是缺陷（S3.8 末句）。模板序外的顶层键一律判红。
@@ -492,7 +492,7 @@ function keyTableOf(src) {
   return ids.length ? ids : null;
 }
 
-/** 逐包构建配方文件名（`packages/<dir>/client.build.json`；T2 起是"浏览器半边怎么编"的真源）。 */
+/** 逐包构建配方文件名（`lib/components/<dir>/client.build.json`；T2 起是"浏览器半边怎么编"的真源）。 */
 const RECIPE_REL = 'client.build.json';
 /** 配方里每个内联源码项的必填字段（缺一 ⇒ S10.3 判红，不是"没有就跳过"）。 */
 const RECIPE_INLINE_FIELDS = ['file', 'why', 'markers'];
@@ -552,7 +552,7 @@ function recipeShapeProblems(dir, obj) {
 }
 
 /**
- * 逐包**构建配方**（`packages/<dir>/client.build.json`）→ `{ entries, problems }`。
+ * 逐包**构建配方**（`lib/components/<dir>/client.build.json`）→ `{ entries, problems }`。
  * `entries` = 读得出来的 `{ dir, artifact }`（给 S10.2 三角对账；与旧字面量表同形）；
  * `problems` = **在盘但读不出来 / 形状不对**的逐包问题（点名包与文件，不许静默跳过）；
  * 没有任何一份读得出来 ⇒ `entries` 为 null（由覆盖面判据判红）。
@@ -579,7 +579,7 @@ function buildTableOf(dirs) {
 }
 
 /**
- * 判据本体：packages/* 独立子包的**包面**（S2–S10）。生产路径（读磁盘）与全部负对照（内存里
+ * 判据本体：lib/components/* 独立子包的**包面**（S2–S10）。生产路径（读磁盘）与全部负对照（内存里
  * 改文本 / 换表）都只经过它。
  *
  * @param {{dirs: string[], texts: Map<string, string>, selfPatches: Map<string, string>, rootPkg: object,
@@ -601,14 +601,14 @@ function packagesViolations(input) {
 
   // 覆盖面地板：枚举面被削空（或两张声明面表读不出来）时，下面每一条都恒真 ⇒ 先钉住这条。
   if (dirs.length < 3) {
-    add('覆盖面', 'packages/ 下只枚举到 ' + dirs.length + ' 个包目录（< 3 ⇒ 本判据可能恒真；确实要收缩包数时，'
+    add('覆盖面', 'lib/components/ 下只枚举到 ' + dirs.length + ' 个包目录（< 3 ⇒ 本判据可能恒真；确实要收缩包数时，'
       + '同一次提交改这条地板；见 docs/adr/0014-subpackage-contract.md 的复核触发线）');
   }
   if (nameRows.length < 3) {
     add('覆盖面', '主包 cordis.patch.yml 只派生到 ' + nameRows.length + ' 条真名行（< 3 ⇒ 本判据可能恒真）');
   }
   if (!keyIds) add('覆盖面', '读不出 lib/subpackage-boot.js 的 SUBPACKAGE_KEY_TABLE（登记面判据不许静默跳过）');
-  if (!builds) add('覆盖面', '读不出任何 packages/*/client.build.json 构建配方（登记面判据不许静默跳过）');
+  if (!builds) add('覆盖面', '读不出任何 lib/components/*/client.build.json 构建配方（登记面判据不许静默跳过）');
   // 逐包配方问题（缺文件 / 解析失败 / 形状不对）**点名到包**：有问题的包不许被当成"没有浏览器半边"。
   for (const p of buildIssues) {
     const at = p.indexOf('：');
@@ -626,10 +626,10 @@ function packagesViolations(input) {
     }
   }
   if (keyIds) {
-    for (const k of keyIds) if (!dirs.includes(PACKAGES_DIR + '/' + k)) add('根清单', 'S10.1 SUBPACKAGE_KEY_TABLE 多了 ' + k + '：没有 packages/' + k + '/ 对应');
+    for (const k of keyIds) if (!dirs.includes(PACKAGES_DIR + '/' + k)) add('根清单', 'S10.1 SUBPACKAGE_KEY_TABLE 多了 ' + k + '：没有 lib/components/' + k + '/ 对应');
   }
   if (builds) {
-    for (const b of builds) if (!dirs.includes(b.dir)) add('根清单', 'S10.2 构建配方多了 ' + b.dir + '：不在 packages/ 枚举面里');
+    for (const b of builds) if (!dirs.includes(b.dir)) add('根清单', 'S10.2 构建配方多了 ' + b.dir + '：不在 lib/components/ 枚举面里');
   }
 
   for (const dir of dirs) {
@@ -651,7 +651,7 @@ function packagesViolations(input) {
     if (!m || typeof m !== 'object' || Array.isArray(m)) { add(dir, 'S3.7 清单不是 JSON 对象'); continue; }
 
     // S3.1 / S3.2 身份：name = 根名 + '-' + 目录名；version 与根同号
-    // ⚠️ upstream-fork（packages/pet）走**另一套**身份判据（固定派生身份 + 与已核来源同号版本，
+    // ⚠️ upstream-fork（lib/components/pet）走**另一套**身份判据（固定派生身份 + 与已核来源同号版本，
     // 见 S12）：它不是本仓自己写的 `<主包名>-<leaf>` 包，硬套这两条只会逼出"改名字/改版本"的假绿。
     // 判据没有放宽：S12 对 fork 的 name/version 反而更严（必须与 UPSTREAM_SOURCES 逐字对上）。
     if (!isUpstreamFork(dir)) {
@@ -754,7 +754,7 @@ function packagesViolations(input) {
       }
     }
 
-    // S8.1 开发形态：根 devDependencies 必须有 file:packages/<pkg> 这条链接
+    // S8.1 开发形态：根 devDependencies 必须有 file:lib/components/<pkg> 这条链接
     const wantSpec = 'file:' + dir;
     if (rootDev[m.name] !== wantSpec) {
       add(dir, 'S8.1 根 devDependencies[' + JSON.stringify(m.name) + ']=' + JSON.stringify(rootDev[m.name] ?? null)
@@ -766,7 +766,7 @@ function packagesViolations(input) {
     if (builds) {
       const build = builds.find((b) => b.dir === dir);
       if (declaresClient) {
-        if (!build) add(dir, 'S10.2 声明了 dsh.client 却没有 packages/<pkg>/client.build.json 配方（浏览器半边不会被编出来）');
+        if (!build) add(dir, 'S10.2 声明了 dsh.client 却没有 lib/components/<pkg>/client.build.json 配方（浏览器半边不会被编出来）');
         else {
           if (clientTarget && dropDot(build.artifact) !== dropDot(clientTarget)) {
             add(dir, 'S10.2 配方 artifact=' + JSON.stringify(build.artifact) + ' ≠ exports["./client"]=' + JSON.stringify(clientTarget));
@@ -820,7 +820,7 @@ function manifestHalfOf(m, dir) {
  *   - `peerDependencies` / `peerDependenciesMeta` **整块**（连键一起摘掉）：这两块由 ADR-0014 **S3.5**
  *     单独管辖（每个 peer 必须在主包 peer 里、`@deepseek-ai/*` 的范围逐字取根、依赖里不得出现主包 /
  *     子包名；正判据见 `packagesViolations` 的 S3.5 段），而 S3.8 ③ 的「同形态」管的是**字段集合与
- *     键序**，两件事。为什么不能改用「让 fonts 删掉 peer 块」来对齐：`packages/fonts` 的宿主半边要用
+ *     键序**，两件事。为什么不能改用「让 fonts 删掉 peer 块」来对齐：`lib/components/fonts` 的宿主半边要用
  *     `ctx.webServer`，声明 `@deepseek-ai/dsh-host-webserver` 是对的（主包 peer 里就有这一条，
  *     I6 的宿主 peer 校验也靠它）；fx/parallax 不需要。删 peer 是退让，掩码才是把两条判据各归其位。
  *     掩掉这两块后**剩余字段的键序仍须逐字相等**（下面的逐字对账照旧，只是不再拿 peer 块判形态）。
@@ -872,7 +872,7 @@ function firstDiff(aText, bText) {
 }
 
 /**
- * 判据本体：packages/* 清单的 **S3.8 模板一致性** —— 顶层键序 / files 单行与位置 /
+ * 判据本体：lib/components/* 清单的 **S3.8 模板一致性** —— 顶层键序 / files 单行与位置 /
  * 同形态逐字对账。生产路径（读磁盘文本）与全部负对照（内存里改文本）都只经过它。
  *
  * @param {{dirs: string[], texts: Map<string, string>}} input texts：目录 → 清单原文
@@ -901,7 +901,7 @@ function manifestTemplateViolations({ dirs, texts }) {
 
   for (const [dir, m] of parsed) {
     // ① 顶层键序：必选键全在、模板外键判红、相对顺序落在模板序里。
-    // ⚠️ upstream-fork（packages/pet）**不套这 12 键模板**：它必须带 _derived / _upstream 来源登记、
+    // ⚠️ upstream-fork（lib/components/pet）**不套这 12 键模板**：它必须带 _derived / _upstream 来源登记、
     // bin、engines、dependencies 等上游 npm 字段，硬套模板只会逼人删掉来源登记（那是把判据换成假绿）。
     // 它走 S12 自己的键序表（FORK_KEY_ORDER，见 test/tools/subpackage-shapes.mjs），
     // 且模板外键**只许**是登记白名单里的那些 —— 判据没有放宽，只是换了一套更贴合该形态的表。
@@ -979,7 +979,7 @@ function manifestTemplateViolations({ dirs, texts }) {
   }
 
   // ③ 同形态逐字对账：掩掉 name / description / exports['./client'] 目标 + peer 两块后整份字符串必须相等。
-  // ⚠️ upstream-fork（packages/pet）**不进任何同形态组**：它本来就与一般子包不同形态
+  // ⚠️ upstream-fork（lib/components/pet）**不进任何同形态组**：它本来就与一般子包不同形态
   // （固定派生身份、独立版本号、上游 npm 字段、预构建产物），把它塞进 client-half 组做逐字对账，
   // 结果只能是"要么把 pet 改成一般子包（丢来源登记），要么给整组开洞"。它的"同形态"对账在
   // S12 里做（对**登记表**逐字对账，比对一个现成清单更严）。它是否真的被判过，由调用方
@@ -1060,18 +1060,18 @@ const packagesInput = {
   buildProblems: recipeTable.problems,
 };
 
-check('派生：packages/ 目录数 ≥ 3 且主包 patch 真名行数 ≥ 3（地板；防判据恒真）',
+check('派生：lib/components/ 目录数 ≥ 3 且主包 patch 真名行数 ≥ 3（地板；防判据恒真）',
   packageDirs.length >= 3 && realRows.length >= 3,
   '目录 ' + packageDirs.length + ' 个 [' + packageDirs.join(' ') + '] · 真名行 ' + realRows.length + ' 条 · 键表 ' + (keyIds ? keyIds.join(' ') : '（读不出）') + ' · 配方 ' + (buildList ? buildList.map((b) => b.dir).join(' ') : '（读不出）'));
 
-// 发现层对账（Ruling 1 的**硬**落点）：`packages/` 下每个目录都必须是发现层认下的包
+// 发现层对账（Ruling 1 的**硬**落点）：`lib/components/` 下每个目录都必须是发现层认下的包
 // （`test/tools/packages.mjs` 的 standalone 枚举面 = 带 package.json 的直接子目录）。
 // 为什么要有这条：扫描面是**磁盘通配**（只许变大不许变小），而产物面来自发现层 —— 两者一旦发散，
 // 就会静默出现"扫得到、但没人认领"的目录：它下面的模块没有产物判据，也没进覆盖面。
 const discoveredModel = (() => { try { return discoverPackages(ROOT); } catch { return null; } })();
 const discoveredDirs = new Set((discoveredModel ? discoveredModel.packages : []).map((p) => p.dir));
 const divergentDirs = packageDirs.filter((d) => !discoveredDirs.has(d));
-check('发散判据：packages/ 下每个目录都是发现层认下的包（枚举面 ⇄ discoverPackages；发散时点名）',
+check('发散判据：lib/components/ 下每个目录都是发现层认下的包（枚举面 ⇄ discoverPackages；发散时点名）',
   discoveredModel !== null && divergentDirs.length === 0,
   discoveredModel === null
     ? 'discoverPackages() 抛错 ⇒ 枚举面与发现层无法对账'
@@ -1079,7 +1079,7 @@ check('发散判据：packages/ 下每个目录都是发现层认下的包（枚
       ? divergentDirs.join(' ') + '：有目录却没被认成包（缺 package.json / 没进发现层）'
       : packageDirs.length + ' 个目录全部认下 [' + packageDirs.join(' ') + ']'));
 check('negative control: 枚举面多一个没被发现的目录 ⇒ 发散判据点名（同一集合运算）',
-  [...packageDirs, 'packages/zzz-ghost'].filter((d) => !discoveredDirs.has(d)).join(' ') === 'packages/zzz-ghost');
+  [...packageDirs, 'lib/components/zzz-ghost'].filter((d) => !discoveredDirs.has(d)).join(' ') === 'lib/components/zzz-ghost');
 
 // 带显式安装器的包需要完整工具、素材和源码，不能误归入纯宿主壳包。
 for (const dir of packageDirs.filter(dir => JSON.parse(packageTexts.get(dir)).exports?.['./install'])) {
@@ -1225,7 +1225,7 @@ check('独立子包：登记面 / 根清单无违反（含覆盖面地板）', u
   check('negative control: 主包行 id 被改名 ⇒ 判红（S4.3）', hit(rowDrift, /S4\.3/), rowDrift.join(' | ') || '（没报出来）');
 
   const noLink = packagesViolations({ ...packagesInput, rootPkg: { ...rootPkg, devDependencies: {} } });
-  check('negative control: 根 devDependencies 少了 file:packages/<pkg> 链接 ⇒ 判红（S8.1）',
+  check('negative control: 根 devDependencies 少了 file:lib/components/<pkg> 链接 ⇒ 判红（S8.1）',
     hit(noLink, /S8\.1/), noLink.join(' | ') || '（没报出来）');
 
   const missingKey = packagesViolations({ ...packagesInput, keyTableIds: (keyIds || []).filter((k) => k !== leaf) });
@@ -1269,11 +1269,11 @@ check('独立子包：登记面 / 根清单无违反（含覆盖面地板）', u
     recipeBad.join(' | ') || '（没报出来）');
 
   // 新：读取层 / 形状判据本身有牙 —— 配方在盘但缺字段时必须**点名那个包**（不碰磁盘）。
-  const shapeBad = recipeShapeProblems('packages/zzz-ghost', {
+  const shapeBad = recipeShapeProblems('lib/components/zzz-ghost', {
     entry: 'src/zzz-entry.js', artifact: 'lib/client.zzz.js', inline: [{ why: 'w', markers: ['m'] }],
   });
   check('negative control: 配方形状判据对缺字段（inline[].file）点名到包 ⇒ 判红（S10.3）',
-    shapeBad.length >= 1 && shapeBad.every((x) => x.startsWith('packages/zzz-ghost：')) && shapeBad.some((x) => /inline\[0\] 缺 file/.test(x)),
+    shapeBad.length >= 1 && shapeBad.every((x) => x.startsWith('lib/components/zzz-ghost：')) && shapeBad.some((x) => /inline\[0\] 缺 file/.test(x)),
     shapeBad.join(' | ') || '（没报出来）');
 }
 
@@ -1325,8 +1325,8 @@ check('独立子包：登记面 / 根清单无违反（含覆盖面地板）', u
   // 有牙探针必须打在**没被掩掉**的字段上：license 在模板序里（同形态本该逐字相同），且不属任何掩码。
   const hostB = toHostOnly((o) => { o.license = 'Apache-2.0'; });
   const pairBad = manifestTemplateViolations({
-    dirs: ['packages/zzz-a', 'packages/zzz-b'],
-    texts: new Map([['packages/zzz-a', hostA], ['packages/zzz-b', hostB]]),
+    dirs: ['lib/components/zzz-a', 'lib/components/zzz-b'],
+    texts: new Map([['lib/components/zzz-a', hostA], ['lib/components/zzz-b', hostB]]),
   });
   check('negative control: 两份同形态（host-only）清单在未掩字段上不一致 ⇒ 判红（S3.8 ③ 同形态逐字对账有牙，不靠 host-only 包存在）',
     hostA !== hostB && hit(pairBad, /同形态/), pairBad.join(' | ') || '（没报出来）');
@@ -1336,8 +1336,8 @@ check('独立子包：登记面 / 根清单无违反（含覆盖面地板）', u
   // 这一步，三个包的同形态逐字对账会因为**正确**的 peer 声明而红（掩码两向都测）。
   const hostC = toHostOnly((o) => { o.peerDependencies = Object.assign({}, o.peerDependencies, { 'zzz-probe': '^1.0.0' }); });
   const peerOnly = manifestTemplateViolations({
-    dirs: ['packages/zzz-a', 'packages/zzz-b'],
-    texts: new Map([['packages/zzz-a', hostA], ['packages/zzz-b', hostC]]),
+    dirs: ['lib/components/zzz-a', 'lib/components/zzz-b'],
+    texts: new Map([['lib/components/zzz-a', hostA], ['lib/components/zzz-b', hostC]]),
   });
   check('negative control: 只差被掩的 peer 块 ⇒ 0 条（不误报；peer 归 S3.5 管，不拿来判形态）',
     hostA !== hostC && peerOnly.length === 0, peerOnly.join(' | ') || '0 条');
@@ -1346,15 +1346,15 @@ check('独立子包：登记面 / 根清单无违反（含覆盖面地板）', u
   const peerBase = toHostOnly((o) => { o.peerDependencies = Object.assign({}, o.peerDependencies, { '@deepseek-ai/dsh-host-webserver': '>=0.1.5-rc.1' }); });
   const maskBroken = peerBase.replace(/^(\s*)"peerDependencies"\s*:\s*\{/m, '$1"peerDependencies":\n  {');
   const maskBad = manifestTemplateViolations({
-    dirs: ['packages/zzz-a', 'packages/zzz-b'],
-    texts: new Map([['packages/zzz-a', peerBase], ['packages/zzz-b', maskBroken]]),
+    dirs: ['lib/components/zzz-a', 'lib/components/zzz-b'],
+    texts: new Map([['lib/components/zzz-a', peerBase], ['lib/components/zzz-b', maskBroken]]),
   });
   check('negative control: peer 块写法超出掩码器 ⇒ 判红（掩码失效地板，不静默漏比）',
     maskBroken !== peerBase && hit(maskBad, /掩码失效/), maskBad.join(' | ') || '（没报出来）');
 
   // 负对照 ③'：同形态组只剩一个成员时必须有覆盖面地板兜着（否则逐字对账恒真）。
   const lonely = manifestTemplateViolations({
-    dirs: ['packages/zzz-a'], texts: new Map([['packages/zzz-a', hostA]]),
+    dirs: ['lib/components/zzz-a'], texts: new Map([['lib/components/zzz-a', hostA]]),
   });
   check('negative control: 只有一份清单（无同形态对）⇒ 覆盖面地板判红（S3.8 ③ 不许恒真）',
     hit(lonely, /覆盖面/), lonely.join(' | ') || '（没报出来）');
@@ -1399,7 +1399,7 @@ check('独立子包：登记面 / 根清单无违反（含覆盖面地板）', u
   });
   check('字体包带浏览器半边且与 fx/parallax 同形态（P-C 契约 §1/§2：S3.4 两向 + S10.2 配方 + S3.8 ③ 同组对账都对它真的生效）',
     fHalf === 'client-half' && clientHalfDirs.length >= 2 && clientHalfDirs.includes(fdir),
-    'packages/fonts 形态=' + fHalf + ' · client-half 组=[' + clientHalfDirs.join(' ') + ']（P-C 未落地时这条应当红）');
+    'lib/components/fonts 形态=' + fHalf + ' · client-half 组=[' + clientHalfDirs.join(' ') + ']（P-C 未落地时这条应当红）');
 
   const fNoExport = fInput(ofFonts((o) => {
     o.dsh = Object.assign({}, o.dsh, { client: { platform: 'web' } });
@@ -1441,7 +1441,7 @@ check('独立子包：登记面 / 根清单无违反（含覆盖面地板）', u
   // 配方里的 artifact 是 package-relative（仓内三份配方都写 `lib/…` 不带 `./`），与 exports['./client'] 的
   // 目标比对必须先归一化（`./` 前缀不影响落点）—— 否则这条读数会因为写法差异恒红。
   const normRel = (s) => String(s == null ? '' : s).replace(/^\.\//, '');
-  check('字体包配方登记面读数（复算入口：packages/fonts/client.build.json）',
+  check('字体包配方登记面读数（复算入口：lib/components/fonts/client.build.json）',
     fontsBuild == null || normRel(fontsBuild.artifact) === normRel(fArtifact),
     '配方=' + JSON.stringify(fontsBuild) + '（未落地时上面那条正向判据负责判红）');
 }

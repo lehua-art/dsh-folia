@@ -291,7 +291,7 @@ assert.ok(!code.includes(clearGated(' [class*="_frame"]')) && !code.includes(cle
 assert.ok((blockBodyOf(clearGated(hostRoot + ' {')) || '').includes('background: transparent !important'),
   'the known host canvas still needs an effective transparent fallback');
 console.log('sidebar glass selectors are wallpaper-independent: true · page glass is anchored on data-we-glass-page: true');
-// A3 之后客户端产物不再只有主 bundle 一份：packages/{fx,parallax}/lib/client.*.js 各自在
+// A3 之后客户端产物不再只有主 bundle 一份：lib/components/{fx,parallax}/lib/client.*.js 各自在
 // 同一个 loader 上注册一份 bundle（id = 子包真实包名）。所以这里收**数组**，主 bundle = 第一份。
 const cap = { handoffs: [] };
 const sandbox = {
@@ -368,15 +368,15 @@ const exportsObj = factory(requireMock);
 // 求值顺序**故意反着来**（先 parallax 后 fx）：屏上顺序必须由 descriptor.order 决定，
 // 不许靠 bundle 求值顺序（三份 bundle 的到达顺序在真实 loader 里不保证）。
 const SUBPACKAGE_CLIENT_ARTIFACTS = [
-  ['../packages/parallax/lib/client.parallax.js', 'dsh-plugin-folia-parallax'],
-  ['../packages/fx/lib/client.fx.js', 'dsh-plugin-folia-fx'],
+  ['../lib/components/parallax/lib/client.parallax.js', 'dsh-plugin-folia-parallax'],
+  ['../lib/components/fx/lib/client.fx.js', 'dsh-plugin-folia-fx'],
   // P-C 第一刀：字体节（「字体自定义」那一节）已随子包出产物 —— 设置页/外观页要看到它，
   // 挂载台就必须像真实 loader 那样把这份 bundle 也求值掉（它的 factory 会往面板节注册表注册）。
-  ['../packages/fonts/lib/client.fonts.js', 'dsh-plugin-folia-fonts'],
+  ['../lib/components/fonts/lib/client.fonts.js', 'dsh-plugin-folia-fonts'],
   // pet-link 收口（2026-10-17）：桌宠联动的浏览器半边也出产物了。它的 factory 会调
   // 主 bundle 显式键集里的 registerPetLink 把服务登记回主包（门面缓冲 + 登记到达时补做）。
   // 求值在 apply() **之前** ⇒ 这里正是"子包先到"那一半的真实形态。
-  ['../packages/pet-link/lib/client.pet-link.js', 'dsh-plugin-folia-pet-link'],
+  ['../lib/components/pet-link/lib/client.pet-link.js', 'dsh-plugin-folia-pet-link'],
 ];
 const subRequireMock = (spec) => {
   if (spec === 'dsh-plugin-folia') return exportsObj;
@@ -4340,7 +4340,7 @@ setTimeout(async () => {
   // 作用域"从"主包页签族"变成"主包页签族 ∪ 字体包的节源码"。判据强度不变（还是同一批标记与
   // 声明序），只是取文来源跟着实现走 —— 不并上它，HELPERS 那五条会以"找不到"的形式假红。
   const fontsSectionSrc = readFileSync(
-    new URL('../packages/fonts/src/appearance-font-section.js', import.meta.url), 'utf8');
+    new URL('../lib/components/fonts/src/appearance-font-section.js', import.meta.url), 'utf8');
   const src = panelText() + '\n;\n' + fontsSectionSrc;   // 刀4：页签族并集（helper 声明顺序判据按构建序）。
   const bodyOf = (name) => {
     const i = src.indexOf('function ' + name + '(');

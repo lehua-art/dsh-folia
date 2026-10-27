@@ -148,7 +148,7 @@ function usedByClosure(dep, list = bare) {
  *  与 `test/verify-package-files.mjs:86` 的 `patchRowNames` 同一口径（逐字对齐其取词正则；
  *  那条正则与 `lib/subpackage-boot.js` 的 `subpackageSpecifiers` 同源）。逐行剥 `#` 注释。
  *
- *  为什么 ④ 要消费它（**别把这条当假阳性删掉**）：子包（`packages/**`）不是被主包 `import`
+ *  为什么 ④ 要消费它（**别把这条当假阳性删掉**）：子包（`lib/components/**`）不是被主包 `import`
  *  加载的 —— **宿主按 `cordis.patch.yml` 的行名加载**它们，主包活代码里因此永远不出现这些
  *  裸说明符（启动自检走的是变量 `resolve(name)`）。所以"一条声明依赖是否被加载"的证据集
  *  必须 = 可达闭包抓到的裸说明符 ∪ **patch 行名**；少了后半，三个子包依赖会被误判成
@@ -475,13 +475,13 @@ section('⑨ 发布形态自洽（开发期 ⇄ 发布期：全有或全无，�
     const inDev = list.filter((x) => Object.hasOwn(devDeps, x.name));
     for (const x of list) {
       if (!Object.hasOwn(deps, x.name) && !Object.hasOwn(devDeps, x.name)) {
-        problems.push('子包 ' + x.name + ' 两处形态都没登记（开发期应为 `file:packages/' + x.dir + '`）');
+        problems.push('子包 ' + x.name + ' 两处形态都没登记（开发期应为 `file:lib/components/' + x.dir + '`）');
       }
     }
     for (const x of inDev) {
-      if (String(devDeps[x.name]) !== 'file:packages/' + x.dir) {
+      if (String(devDeps[x.name]) !== 'file:lib/components/' + x.dir) {
         problems.push('devDependencies.' + x.name + ' = ' + devDeps[x.name]
-          + '，开发期必须是 `file:packages/' + x.dir + '`');
+          + '，开发期必须是 `file:lib/components/' + x.dir + '`');
       }
     }
     for (const x of inDeps) {
@@ -509,26 +509,26 @@ section('⑨ 发布形态自洽（开发期 ⇄ 发布期：全有或全无，�
     return { form, problems };
   };
   const live = publishForm(pkg, subs);
-  check('覆盖面：从 `packages/*` 清单读到 ≥3 个子包名（读不出来 ⇒ 下面的判据恒真）',
+  check('覆盖面：从 `lib/components/*` 清单读到 ≥3 个子包名（读不出来 ⇒ 下面的判据恒真）',
     subs.length >= 3, subs.map((x) => x.dir).join(', ') || '无');
-  check('根清单处于自洽的开发期形态（S8.1）：`dependencies` 无子包、三条 `file:packages/<pkg>` 齐备',
+  check('根清单处于自洽的开发期形态（S8.1）：`dependencies` 无子包、三条 `file:lib/components/<pkg>` 齐备',
     live.form === 'dev' && live.problems.length === 0,
     live.form + (live.problems.length ? '；' + live.problems.join('; ') : ''));
   // 负对照：同一判据对六种形态问题都有牙，对两个**合法**形态都不误报。
   const syn = [{ dir: 'a', name: 'main-a' }, { dir: 'b', name: 'main-b' }, { dir: 'c', name: 'main-c' }];
   const devM = {
     version: '1.0.0', dependencies: { x: '^2.0.0' },
-    devDependencies: { 'main-a': 'file:packages/a', 'main-b': 'file:packages/b', 'main-c': 'file:packages/c' },
+    devDependencies: { 'main-a': 'file:lib/components/a', 'main-b': 'file:lib/components/b', 'main-c': 'file:lib/components/c' },
   };
   const pubDeps = { x: '^2.0.0', 'main-a': '1.0.0', 'main-b': '1.0.0', 'main-c': '1.0.0' };
   const pubM = { version: '1.0.0', dependencies: pubDeps, devDependencies: {} };
   const negs = [
-    ['半发布（两条进 dependencies、file: 还留着）', { ...pubM, devDependencies: { 'main-c': 'file:packages/c' } }, /半发布形态/],
+    ['半发布（两条进 dependencies、file: 还留着）', { ...pubM, devDependencies: { 'main-c': 'file:lib/components/c' } }, /半发布形态/],
     ['范围规格（^1.0.0 而非同号精确）', { ...pubM, dependencies: { ...pubDeps, 'main-a': '^1.0.0' } }, /同号精确版本/],
     ['发布形态缺项（1/3 进 dependencies）', { ...pubM, dependencies: { x: '^2.0.0', 'main-a': '1.0.0' } }, /发布形态缺项/],
-    ['开发形态缺项（少一条 file:）', { ...devM, devDependencies: { 'main-a': 'file:packages/a', 'main-b': 'file:packages/b' } }, /开发形态缺项/],
+    ['开发形态缺项（少一条 file:）', { ...devM, devDependencies: { 'main-a': 'file:lib/components/a', 'main-b': 'file:lib/components/b' } }, /开发形态缺项/],
     ['devDependencies 里写了非 file: 规格', { ...devM, devDependencies: { ...devM.devDependencies, 'main-c': '^1.0.0' } }, /开发期必须是/],
-    ['dependencies 里出现 file:（S8.1 红线）', { ...pubM, dependencies: { ...pubDeps, 'main-a': 'file:packages/a' } }, /dependencies 里有/],
+    ['dependencies 里出现 file:（S8.1 红线）', { ...pubM, dependencies: { ...pubDeps, 'main-a': 'file:lib/components/a' } }, /dependencies 里有/],
   ];
   const missed = negs.filter(([, m, re]) => !re.test(publishForm(m, syn).problems.join(' | '))).map(([n]) => n);
   check('负对照：六种形态问题都被判出', missed.length === 0,

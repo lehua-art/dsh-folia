@@ -195,9 +195,9 @@ const hostBoot = await importRel(HOST_BOOT_REL);
 const sessionMod = await importRel(SESSION_REL);
 
 const COMPONENTS_DIR = 'lib/components';
-/** 组件入口落点：未出户 = `lib/components/<k>/index.js`；已出户（P-F）= `packages/<k>/lib/index.js`。 */
+/** 组件入口落点：未出户 = `lib/components/<k>/index.js`；已出户（P-F）= `lib/components/<k>/lib/index.js`。 */
 function componentEntryRel(name) {
-  for (const rel of [COMPONENTS_DIR + '/' + name + '/index.js', 'packages/' + name + '/lib/index.js']) {
+  for (const rel of [COMPONENTS_DIR + '/' + name + '/index.js', 'lib/components/' + name + '/lib/index.js']) {
     if (existsSync(join(ROOT, rel))) return rel;
   }
   return null;
@@ -212,18 +212,18 @@ const legacyComponentDirs = existsSync(join(ROOT, COMPONENTS_DIR))
     .sort()
   : [];
 // **组件清单的声明面真源 = 会话导出的 `COMPONENT_VIEW_KEYS`**（③ 要逐键对账的那一份），入口落点按
-// 上面两种形态现解析。为什么不再从 `lib/components/` 反推：P-F 起组件行可以出户到 `packages/<k>/`，
+// 上面两种形态现解析。为什么不再从 `lib/components/` 反推：P-F 起组件行可以出户到 `lib/components/<k>/`，
 // "组件"从此不是那个目录的同义词；而普通子包（fx / parallax / fonts）不在这份声明里 ⇒ 不会混进来。
 const components = Object.keys(sessionMod.COMPONENT_VIEW_KEYS || {}).sort().map((name) => {
   const rel = componentEntryRel(name);
   return { name, rel, src: rel ? stripComments(readFileSync(join(ROOT, rel), 'utf8')) : '' };
 });
 // ② 的路由族扫描面 = `host-route-index` 的候选文件面**同一份真源**（`lib/routes/*.js` ∪
-// `packages/<pkg>/lib/routes/*.js` ∪ 组件目录直接子文件）。写死 `lib/routes/` 会让随子包行出户的族
-// **静默掉出** M9 面（P-A：fonts 两族已在 `packages/fonts/lib/routes/`）—— 与下方覆盖面判据同源。
+// `lib/components/<pkg>/lib/routes/*.js` ∪ 组件目录直接子文件）。写死 `lib/routes/` 会让随子包行出户的族
+// **静默掉出** M9 面（P-A：fonts 两族已在 `lib/components/fonts/lib/routes/`）—— 与下方覆盖面判据同源。
 const routeRels = routeModuleCandidates();
 // 组件自己的实现文件面：未出户 = 目录下全部 `.js`（不只是 `index.js`；只认 `index.js` 会让那些
-// 路由实现**静默脱离** M9 判据，§10 风险 12 的同款）；已出户 = `packages/<k>/lib/**` 递归。
+// 路由实现**静默脱离** M9 判据，§10 风险 12 的同款）；已出户 = `lib/components/<k>/lib/**` 递归。
 function componentImplRelsOf(name) {
   const legacyDir = join(ROOT, COMPONENTS_DIR, name);
   if (existsSync(legacyDir)) {
@@ -238,7 +238,7 @@ function componentImplRelsOf(name) {
       else if (e.name.endsWith('.js')) out.push(rel + '/' + e.name);
     }
   };
-  walk(join(ROOT, 'packages', name, 'lib'), 'packages/' + name + '/lib');
+  walk(join(ROOT, 'packages', name, 'lib'), 'lib/components/' + name + '/lib');
   return out;
 }
 const componentImplRels = components.flatMap((c) => componentImplRelsOf(c.name));
@@ -307,8 +307,8 @@ section('② 组件与路由族不得直接消费内核对象（`const { … } =
   const candidates = routeModuleCandidates();
   const missed = candidates.filter((rel) => !scannedSet.has(rel));
   // 「多扫」= 扫到了既不是路由族候选、也不属于任何**已声明组件**落点的文件。出户后组件的入口与
-  // 支持模块（`packages/<k>/lib/**`）不落在路由候选面里（候选面只收 `lib/routes/*.js` 与
-  // `packages/<p>/lib/routes/*.js`），但它们仍是组件实现文件 ⇒ 按组件落点前缀放行；组件名一改、
+  // 支持模块（`lib/components/<k>/lib/**`）不落在路由候选面里（候选面只收 `lib/routes/*.js` 与
+  // `lib/components/<p>/lib/routes/*.js`），但它们仍是组件实现文件 ⇒ 按组件落点前缀放行；组件名一改、
   // walker 走错目录、或某文件被扫出组件面之外 ⇒ 这里点名。
   const compPrefixes = components.map((c) => (c.rel ? c.rel.replace(/\/[^/]+$/, '/') : null)).filter(Boolean);
   for (const d of legacyComponentDirs) compPrefixes.push(COMPONENTS_DIR + '/' + d + '/');
@@ -321,8 +321,8 @@ section('② 组件与路由族不得直接消费内核对象（`const { … } =
   // negative control：把扫描面塌回**出户前**的形态（`lib/routes/*.js` + 仍住在 `lib/components/` 的
   // 组件目录）⇒ 随子包行出户的族必须被**同一条**覆盖面判据点名（否则"覆盖面对账"只是把当前文件数
   // 复述一遍，没有牙）。⚠️ P-F 起不能用 `componentImplRels` 当"窄面"的那一半：出户组件的族已经在
-  // `packages/` 下，把它算进窄面会让这个负对照**恒绿**（塌陷实验自己把出户的族也覆盖了）。
-  const pkgRouteRels = candidates.filter((rel) => rel.startsWith('packages/'));
+  // `lib/components/` 下，把它算进窄面会让这个负对照**恒绿**（塌陷实验自己把出户的族也覆盖了）。
+  const pkgRouteRels = candidates.filter((rel) => rel.startsWith('lib/components/'));
   const legacyImplRels = components.filter((c) => c.rel && c.rel.startsWith(COMPONENTS_DIR + '/'))
     .flatMap((c) => componentImplRelsOf(c.name));
   const narrowedSet = new Set([...routeRels.filter((rel) => rel.startsWith('lib/routes/')), ...legacyImplRels]);
@@ -363,7 +363,7 @@ section('③ 组件视图声明面 ↔ 实际消费面逐键相等（双向；�
   check('会话从视图自取的 serve 依赖键 == SESSION_SERVE_KEYS（单一真源不漂移）',
     sameKeys(sessionKeys, sessionMod.SESSION_SERVE_KEYS || []),
     'view 解构 = [' + sessionKeys.join(',') + ']');
-  // P-F：组件清单由 `COMPONENT_VIEW_KEYS` 现解析（组件可以出户到 `packages/<k>/`），所以这条不再
+  // P-F：组件清单由 `COMPONENT_VIEW_KEYS` 现解析（组件可以出户到 `lib/components/<k>/`），所以这条不再
   // "从目录反推声明"，而是钉**两个方向都有牙**的实事：每条声明都解析到在盘入口（缺 = 死声明）、
   // `lib/components/` 下剩下的目录不能有未声明的（漏声明）。
   check('组件声明面 ⇄ 落点一一对应（每条声明都有在盘入口；`lib/components/` 下无未登记组件）',

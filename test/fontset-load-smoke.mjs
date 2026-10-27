@@ -128,7 +128,7 @@ function mount({ fetchImpl, store }) {
   const stubTimeout = (fn, ms) => { const t = { fn, ms, cleared: false }; timers.push(t); return t; };
   const sandbox = {
     window: {
-      __ModuleLoader__: { load: (h) => { cap.handoff = h; cap.handoffs.push(h); } },
+      __ModuleLoader__: { load: (h) => { if (!cap.handoff) cap.handoff = h; cap.handoffs.push(h); } },
       setTimeout: stubTimeout,
       clearTimeout: (t) => { if (t) t.cleared = true; },
       addEventListener() {}, removeEventListener() {},
@@ -146,7 +146,7 @@ function mount({ fetchImpl, store }) {
   // 子包产物也求值掉（它的 factory 用 require('主包名') 取主 bundle 的显式键集，再登记那一节）。
   // 少了这一步，面板上就没有「字体集预设」开关与字体节控件 —— 本 smoke 的 33 条会全红。
   {
-    const fontsRel = '../packages/fonts/lib/client.fonts.js';
+    const fontsRel = '../lib/components/fonts/lib/client.fonts.js';
     const before = cap.handoffs.length;
     new vm.Script(readFileSync(new URL(fontsRel, import.meta.url), 'utf8'), { filename: fontsRel })
       .runInContext(sandbox);

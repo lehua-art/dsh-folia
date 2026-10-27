@@ -10,7 +10,7 @@
  * 判据（全部**数据驱动**：组件清单与"谁拥有哪个文件"都现算，不写死组件名，也不维护
  * "组件名 → 目录"的硬编码清单 —— M5）：
  *   ① **M10 → 0**：patch 里有自己那一行的组件（P-F 出户后 = 声明面 `COMPONENT_VIEW_KEYS` 点名的
- *      每一格 → `packages/<pkg>/lib/index.js`；未出户仍落 `lib/components/<pkg>/index.js`），
+ *      每一格 → `lib/components/<pkg>/lib/index.js`；未出户仍落 `lib/components/<pkg>/index.js`），
  *      其**拥有**的路由实现模块**不得**位于 `lib/routes/`。"拥有"由**调用点派生**：组件入口调用
  *      哪个 `register…Routes(webServer, …)`，那个注册入口所在的文件就是它的实现。
  *   ② 组件目录下的**每一个文件**都必须被 `package.json` 的 `files` 覆盖（否则打包时静默漏发，
@@ -162,16 +162,16 @@ export function rowEntryGaps(rows, entryList, existsOnDisk) {
 
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 const files = Array.isArray(pkg.files) ? pkg.files : [];
-// ⚠️ P-F 批 1c：三格组件已全部出户到 `packages/<pkg>/` ⇒ 发现层的 `kind === 'subpath'`（旧
+// ⚠️ P-F 批 1c：三格组件已全部出户到 `lib/components/<pkg>/` ⇒ 发现层的 `kind === 'subpath'`（旧
 // `COMPONENT_MODULES`）为空数组**属预期形态**，"组件行"因此不再等于 `lib/components/` 那个目录，
-// 而是**声明面**点名的入口集合：出户落 `packages/<name>/lib/index.js`、未出户落
+// 而是**声明面**点名的入口集合：出户落 `lib/components/<name>/lib/index.js`、未出户落
 // `lib/components/<name>/index.js`（迁移窗口内两种落点并存）。组件清单与落点都**现算**，不写死名字。
 const { COMPONENT_VIEW_KEYS } = await import(pathToFileURL(join(ROOT, 'lib', 'kernel', 'component-session.js')).href);
 const COMPONENT_NAMES = Object.keys(COMPONENT_VIEW_KEYS || {}).sort();
 const componentEntryRel = (name) => (existsSync(join(ROOT, 'packages', name, 'lib', 'index.js'))
-  ? 'packages/' + name + '/lib/index.js' : 'lib/components/' + name + '/index.js');
+  ? 'lib/components/' + name + '/lib/index.js' : 'lib/components/' + name + '/index.js');
 const componentEntries = COMPONENT_NAMES.map(componentEntryRel);
-const isOutOfHouse = (rel) => rel.startsWith('packages/');
+const isOutOfHouse = (rel) => rel.startsWith('lib/components/');
 const built = buildIndex();
 const modules = built.modules;
 const orphanRels = new Set(built.orphanModules.map((m) => m.rel));
@@ -235,7 +235,7 @@ console.log('\n① 实现归属：已出户组件拥有的实现不得留在 `li
 console.log('\n② 组件目录下的文件逐条进 `package.json` 的 `files`');
 {
   // P-F：文件面 = 仍在 `lib/components/` 的（迁移期残留）+ **每个出户组件自己的包目录**
-  //     （出户后实现住 `packages/<name>/lib/**`，主包 `files` 不再负责它们）。
+  //     （出户后实现住 `lib/components/<name>/lib/**`，主包 `files` 不再负责它们）。
   const legacyComponentFiles = walkFiles(join(ROOT, 'lib', 'components'));
   const outOfHouseFiles = COMPONENT_NAMES.filter((n) => isOutOfHouse(componentEntryRel(n)))
     .flatMap((n) => walkFiles(join(ROOT, 'packages', n)));
@@ -258,7 +258,7 @@ console.log('\n② 组件目录下的文件逐条进 `package.json` 的 `files`'
   const pkgGaps = [];
   for (const n of COMPONENT_NAMES) {
     if (!isOutOfHouse(componentEntryRel(n))) continue;
-    const dir = 'packages/' + n + '/';
+    const dir = 'lib/components/' + n + '/';
     let ownFiles = [];
     try { ownFiles = JSON.parse(readFileSync(join(ROOT, dir, 'package.json'), 'utf8')).files || []; } catch { /* 缺清单由别的判据管 */ }
     pkgGaps.push(...fileCoverageGaps(ownFiles.map((f) => dir + f), walkFiles(join(ROOT, dir))));
@@ -338,7 +338,7 @@ console.log('\n③ 每个路由族文件（`lib/routes/` 与组件目录里的�
 }
 
 // ═══ ④ 每个子包行都必须解析到磁盘上存在的宿主入口（P-A：包发现层双向对账）══════════
-console.log('\n④ 子包行 ⇄ `packages/<dir>/package.json` 双向对账（行静默少一行 = 浏览器半边静默失效）');
+console.log('\n④ 子包行 ⇄ `lib/components/<dir>/package.json` 双向对账（行静默少一行 = 浏览器半边静默失效）');
 {
   const rows = patchRowNames();
   const manifests = subpackageManifests();
@@ -380,10 +380,10 @@ console.log('\n④ 子包行 ⇄ `packages/<dir>/package.json` 双向对账（�
     && independentDead.length === 1 && independentDead[0].includes('死行'));
 
   // 子包路由族必须在孤儿扫描面内（面塌回 `lib/routes/`-only ⇒ 搬走的族"文件在、没人调用"判不出来）。
-  const pkgRouteCandidates = routeModuleCandidates().filter((rel) => rel.startsWith('packages/') && rel.includes('/lib/routes/'));
+  const pkgRouteCandidates = routeModuleCandidates().filter((rel) => rel.startsWith('lib/components/') && rel.includes('/lib/routes/'));
   const routeFiles = routeModuleFiles();
   const built = buildIndex();
-  const builtPkgRoutes = new Set(built.routes.filter((r) => r.src && r.src.startsWith('packages/')).map((r) => r.src));
+  const builtPkgRoutes = new Set(built.routes.filter((r) => r.src && r.src.startsWith('lib/components/')).map((r) => r.src));
   const notInOrphanSurface = pkgRouteCandidates.filter((rel) => !routeFiles.includes(rel));
   check('覆盖面：子包路由族候选面非空且全在孤儿扫描面内（面塌陷 ⇒ 红）',
     pkgRouteCandidates.length > 0 && notInOrphanSurface.length === 0,

@@ -67,3 +67,6 @@ packages/*/lib/client.*.js
 /.migrate-pet-link.mjs
 /.pet-link-integration.patch
 *.rej
+
+# 单包化后组件半边的兼容产物（由 build-client 生成，不入库）
+lib/components/*/lib/client.*.js

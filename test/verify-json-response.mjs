@@ -32,7 +32,7 @@
  *   c) **跨包服务视图**（§5.1 ① 之后子包路由族的唯一形态）：本族 `DEPS` 声明 `'http'` 且真的用
  *      `c.http.sendJson(`，同时**包入口**把 `http: host.http` 传下来（`host = ctx.<HOST_SERVICE_NAME>`）。
  * 三条来路都设**棘轮**（调用点只许增，防"只剩一份实现"靠删调用点达成 —— 与
- * verify-body-caps 的 `READER_FLOOR` 同源）。判据面 = `lib/**` ∪ `packages/<pkg>/lib/**`（生成物除外）。
+ * verify-body-caps 的 `READER_FLOOR` 同源）。判据面 = `lib/**` ∪ `lib/components/<pkg>/lib/**`（生成物除外）。
  *
  * ── 判据必须有牙（正/负对照喂**同一个**判据函数）──────────────────────────────
  *   · 覆盖面地板：扫到的 `lib/` 下 .js 文件 ≥ 20 个（解析退化 ⇒ 当场红）；
@@ -260,7 +260,7 @@ const THIN_ALIAS = "const json = (code, payload) => sendJson(res, code, payload)
 }
 
 // ── ② 真实代码：从磁盘枚举（**共享实现本身不在判据面内**）────────────────────
-// 判据面 = `lib/**` ∪ `packages/<pkg>/lib/**`：P-A 起路由族随子包行出户（fonts 的两族），只扫 `lib/` 会让
+// 判据面 = `lib/**` ∪ `lib/components/<pkg>/lib/**`：P-A 起路由族随子包行出户（fonts 的两族），只扫 `lib/` 会让
 // 子包里的内联副本**静默脱离**本判据（面塌陷 ⇒ 判据恒真）。子包的 `src/**` 是浏览器半边，不进 Node 侧判据面。
 const PKGS = join(ROOT, 'packages');
 const packageLibFiles = existsSync(PKGS)
@@ -276,19 +276,19 @@ for (const file of files) {
   for (const h of inlineJsonHelpers(text)) hits.push({ ...h, file: rel });
 }
 
-console.log(`\n  扫描面：lib/**/*.js ∪ packages/<pkg>/lib/**/*.js（排除 ${[...EXCLUDE_DIRS].join(' / ')}`
+console.log(`\n  扫描面：lib/**/*.js ∪ lib/components/<pkg>/lib/**/*.js（排除 ${[...EXCLUDE_DIRS].join(' / ')}`
   + ` / ${[...EXCLUDE_FILES].join(' / ')} / ${SOLE_IMPLEMENTATION}） —— ${files.length} 个文件`);
 console.log(`  内联 JSON 应答助手：${hits.length} 处`);
 for (const h of hits) console.log(`    · ${h.file}:${h.line}（${h.name}）`);
 console.log('');
 
-check('覆盖面：判据面扫到 ≥ 20 个 .js（lib ∪ packages/<pkg>/lib；判据面为空即失败）', files.length >= 20, `实测 ${files.length}`);
+check('覆盖面：判据面扫到 ≥ 20 个 .js（lib ∪ lib/components/<pkg>/lib；判据面为空即失败）', files.length >= 20, `实测 ${files.length}`);
 // 覆盖面地板（子包那一半）：随子包行出户的路由族必须在判据面内 —— walk(packages) 静默返回空时这里点名。
 const judgedRels = files.map((f) => relative(ROOT, f).split('\\').join('/'));
-const subpackageRouteRels = routeModuleFiles().filter((rel) => rel.startsWith('packages/'));
+const subpackageRouteRels = routeModuleFiles().filter((rel) => rel.startsWith('lib/components/'));
 check('覆盖面：判据面包含全部子包路由族（塌回 `lib/`-only ⇒ 红）',
   subpackageRouteRels.length > 0 && subpackageRouteRels.every((rel) => judgedRels.includes(rel)),
-  '子包路由族 ' + subpackageRouteRels.length + ' 个 · 面内 packages 文件 ' + judgedRels.filter((r) => r.startsWith('packages/')).length + ' 个');
+  '子包路由族 ' + subpackageRouteRels.length + ' 个 · 面内 packages 文件 ' + judgedRels.filter((r) => r.startsWith('lib/components/')).length + ' 个');
 check(`唯一实现：${SOLE_IMPLEMENTATION} 之外**零**份内联 JSON 应答助手`,
   hits.length === 0, hits.map((h) => `${h.file}:${h.line}(${h.name})`).join(', ') || '零副本');
 
@@ -330,7 +330,7 @@ check(`唯一实现：${SOLE_IMPLEMENTATION} 之外**零**份内联 JSON 应答�
     if (!calls) continue;
     // c) 来路要**包入口**当证据：包入口把 `http: host.http` 传下来，跨包面才算真的到位。
     const pkg = /^packages\/([^/]+)\//.exec(rel);
-    const entryRel = pkg ? `packages/${pkg[1]}/lib/index.js` : '';
+    const entryRel = pkg ? `lib/components/${pkg[1]}/lib/index.js` : '';
     const entryCode = entryRel && existsSync(join(ROOT, entryRel))
       ? stripComments(readFileSync(join(ROOT, entryRel), 'utf8')) : '';
     callers.push({ rel, calls, ...sendJsonProvenance(code, { entryCode }) });
@@ -352,7 +352,7 @@ check(`唯一实现：${SOLE_IMPLEMENTATION} 之外**零**份内联 JSON 应答�
     leafView.httpView ? 'identity = ' + (leafView.httpView.sendJson === sharedMod.sendJson) : '叶子没有导出 httpView');
   const viaLeaf = callers.filter((c) => c.why === '叶子 httpView');
   const viaHttp = callers.filter((c) => c.why === 'c.http 宿主视图');
-  const subpackageCallers = callers.filter((c) => c.rel.startsWith('packages/'));
+  const subpackageCallers = callers.filter((c) => c.rel.startsWith('lib/components/'));
   check('服务面真源：lib/subpackage-boot.js 导出 HOST_SERVICE_NAME（读不到 = c 来路没法判）',
     HOST_SERVICE_NAME !== '', 'HOST_SERVICE_NAME=' + JSON.stringify(HOST_SERVICE_NAME));
   // 覆盖面无牙判据：子包调用点必须**全部**被已知来路解释，且 c 这一新形态必须真的被验到
@@ -377,7 +377,7 @@ check(`唯一实现：${SOLE_IMPLEMENTATION} 之外**零**份内联 JSON 应答�
   const httpVictim = viaHttp[0];
   if (httpVictim) {
     const pkg = /^packages\/([^/]+)\//.exec(httpVictim.rel);
-    const entryRel = pkg ? `packages/${pkg[1]}/lib/index.js` : '';
+    const entryRel = pkg ? `lib/components/${pkg[1]}/lib/index.js` : '';
     const realEntry = stripComments(readFileSync(join(ROOT, entryRel), 'utf8'));
     const realRoute = stripComments(readFileSync(join(ROOT, httpVictim.rel), 'utf8'));
     const inlineHttp = 'http: { sendJson: (res, code, payload) => {\n'

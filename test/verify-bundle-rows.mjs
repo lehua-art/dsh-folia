@@ -280,7 +280,7 @@ function rowViolations(inserts, bare, allowedSubpackages = new Set()) {
   if (nameless.length) out.push({ kind: 'name', detail: '每行都要有 name（第 ' + nameless.map((r) => r.line).join(', ') + ' 行没有）' });
   const bareRows = rows.filter((r) => r.name === bare);
   if (bareRows.length !== 1) out.push({ kind: 'bare', detail: '恰好 1 行的 name 等于裸包名 `' + bare + '`（实测 ' + bareRows.length + ' 行）' });
-  // P-A 起 patch 里有第二种子行：**子包真名**（宿主按包名加载 `packages/<pkg>/index.js`）。
+  // P-A 起 patch 里有第二种子行：**子包真名**（宿主按包名加载 `lib/components/<pkg>/index.js`）。
   // 判据不能只看前缀（"凭空多一行包名"会被静默放行），必须对着磁盘上真实的子包清单名来认。
   const bad = rows.filter((r) => r.name && r.name !== bare && !r.name.startsWith(bare + '/') && !allowedSubpackages.has(r.name));
   if (bad.length) out.push({ kind: 'subpath', detail: '其余行的 name 必须是 `' + bare + '/<子路径>`（组件行）或盘上真实存在的子包真名（P-A；第 ' + bad.map((r) => r.line).join(', ') + ' 行：' + bad.map((r) => r.name).join(' ') + '）' });
@@ -291,8 +291,8 @@ function rowViolations(inserts, bare, allowedSubpackages = new Set()) {
  * 行分类（P-A 起 patch 里有三种行；**P-F 起组件行也可以是真名行**，别再把它们混成一个集合）：
  *   · 裸行    `name === bare`                        → 整包门面 `lib/index.js`
  *   · 组件行  `name === '<bare>/<sub>'`（出户前）     → 宿主当独立 plugin 加载 `lib/components/<sub>/index.js`
- *             `name === '<bare>-<sub>'`（出户后，P-F）→ 加载 `packages/<sub>/lib/index.js`
- *   · 子包行  `name === '<bare>-<pkg>'`（非组件）     → P-A 拆出的子包，加载 `packages/<pkg>`（真名 ⇄ 清单名双射）
+ *             `name === '<bare>-<sub>'`（出户后，P-F）→ 加载 `lib/components/<sub>/lib/index.js`
+ *   · 子包行  `name === '<bare>-<pkg>'`（非组件）     → P-A 拆出的子包，加载 `lib/components/<pkg>`（真名 ⇄ 清单名双射）
  *
  * ⚠️ 出户后**组件行与子包行的名字形态完全一样**（都是真名），能分开它们的只有"这个名字是不是组件"——
  * 那份名单的唯一真源是会话模块的 `COMPONENT_VIEW_KEYS`（③ 段逐键对账用的那一份），不是目录、也不是前缀。
@@ -304,14 +304,14 @@ const COMPONENT_NAMES = (() => {
   return new Set([...m[1].matchAll(/(?:^|\n)\s*(?:'([^']+)'|"([^"]+)"|([A-Za-z_$][\w$]*))\s*:/g)]
     .map((x) => x[1] || x[2] || x[3]));
 })();
-/** 组件入口落点：未出户 = `lib/components/<sub>/index.js`；已出户（P-F）= `packages/<sub>/lib/index.js`。 */
+/** 组件入口落点：未出户 = `lib/components/<sub>/index.js`；已出户（P-F）= `lib/components/<sub>/lib/index.js`。 */
 const componentEntryRel = (sub) => {
   const legacy = 'lib/components/' + sub + '/index.js';
-  return existsSync(join(ROOT, legacy)) ? legacy : 'packages/' + sub + '/lib/index.js';
+  return existsSync(join(ROOT, legacy)) ? legacy : 'lib/components/' + sub + '/lib/index.js';
 };
 /** 组件**归属清单**：未出户 = 根清单（组件目录在主包 tarball 里）；已出户 = 该子包自己的清单。 */
 const componentManifestRel = (sub) => (existsSync(join(ROOT, 'lib', 'components', sub, 'index.js'))
-  ? 'package.json' : 'packages/' + sub + '/package.json');
+  ? 'package.json' : 'lib/components/' + sub + '/package.json');
 const componentNamesOf = (rows, bare) => {
   const named = new Set(rows.map((r) => r.name).filter(Boolean));
   return [...COMPONENT_NAMES].filter((sub) => named.has(bare + '/' + sub) || named.has(bare + '-' + sub));
@@ -335,7 +335,7 @@ const subpackageRowIssues = (rows, bare, diskNames) => {
   ];
 };
 
-/** 磁盘上已落盘的子包真名（`packages/<pkg>/package.json` 的 name；无 packages/ 时为空集）。 */
+/** 磁盘上已落盘的子包真名（`lib/components/<pkg>/package.json` 的 name；无 lib/components/ 时为空集）。 */
 function subpackageNamesOnDisk() {
   const dir = join(ROOT, 'packages');
   if (!existsSync(dir)) return new Set();
@@ -375,10 +375,10 @@ check('恰好一行 name 等于裸包名 `' + BARE + '`', ofKind('bare').length 
 check('其余行的 name 都是 `<裸包名>/<子路径>`（组件行）或盘上真实子包真名（P-A 子包行）', ofKind('subpath').length === 0,
   detailOr('subpath', rows.filter((r) => r.name && r.name !== BARE).map((r) => r.name).join(' ') || '（没有子行）'));
 {
-  // 子包行（P-A）⇄ 磁盘 `packages/*/package.json` 的 name **双向**对账：既不许行指向不存在的包，
+  // 子包行（P-A）⇄ 磁盘 `lib/components/*/package.json` 的 name **双向**对账：既不许行指向不存在的包，
   // 也不许盘上有包却没插行（后者是"装了但宿主永远不会加载它"的静默缺口）。
   const subIssues = subpackageRowIssues(rows, BARE, SUBPACKAGE_NAMES);
-  check('子包行 ⇄ packages/*/package.json 的 name 双向对账（P-A）',
+  check('子包行 ⇄ lib/components/*/package.json 的 name 双向对账（P-A）',
     subIssues.length === 0,
     subIssues.join('；') || subpackageRowsOf(rows, BARE).length + ' 行 ⇄ ' + SUBPACKAGE_NAMES.size + ' 包');
   // 负对照：调上面同一份判据（合成输入，两个方向各一条）。
@@ -499,7 +499,7 @@ section('⑥ 组件行（P2-1/P2-2，逐行数据驱动）：patch 子行 ⇄ ex
   for (const sub of subs) {
     const rel = componentManifestRel(sub);
     const own = manifestOf(rel);
-    const ownerDir = rel === 'package.json' ? '' : 'packages/' + sub + '/';
+    const ownerDir = rel === 'package.json' ? '' : 'lib/components/' + sub + '/';
     const keys = rel === 'package.json'
       ? ['./' + sub, './' + sub + '/package.json', './' + sub + '/locale/*.json']
       : ['.', './package.json', './locale/*.json'];
@@ -514,7 +514,7 @@ section('⑥ 组件行（P2-1/P2-2，逐行数据驱动）：patch 子行 ⇄ ex
     tripleMissing.length === 0, tripleMissing.join(' ') || subs.map((s) => componentManifestRel(s)).join(' '));
   check('每个组件行的 entry 指向的文件都在磁盘上', entryMissing.length === 0, entryMissing.join(' ') || '全部在');
   // locale 文件名规范：同目录的 .json 全会被读，非语言名 / 重复语言会让宿主报 duplicates。
-  // 目录也按归属走（出户后 locale 随包搬到 `packages/<sub>/locale/`）。
+  // 目录也按归属走（出户后 locale 随包搬到 `lib/components/<sub>/locale/`）。
   const LOCALE_RE = /^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/u;
   const localeSeen = [];
   const badLocale = [];
@@ -532,7 +532,7 @@ section('⑥ 组件行（P2-1/P2-2，逐行数据驱动）：patch 子行 ⇄ ex
     badLocale.join(' ') || localeSeen.join(' '));
   // `files` 必须覆盖组件目录的**每一个**文件（数据驱动：目录条目尾 `/` 按前缀、`*` 段内通配）。
   // 覆盖面也按归属清单算：未出户 = 根清单的 `files` 覆盖 `lib/components/<sub>/**`；
-  // 已出户 = 子包自己清单的 `files` 覆盖 `packages/<sub>/**`（根清单此时不再包含这个目录）。
+  // 已出户 = 子包自己清单的 `files` 覆盖 `lib/components/<sub>/**`（根清单此时不再包含这个目录）。
   const componentFiles = [];
   const walkComponent = (dir, prefix) => {
     if (!existsSync(dir)) return;
@@ -555,10 +555,10 @@ section('⑥ 组件行（P2-1/P2-2，逐行数据驱动）：patch 子行 ⇄ ex
   for (const sub of subs) {
     const ownRel = componentManifestRel(sub);
     const own = manifestOf(ownRel);
-    const pkgRoot = ownRel === 'package.json' ? 'lib/components/' + sub : 'packages/' + sub;
+    const pkgRoot = ownRel === 'package.json' ? 'lib/components/' + sub : 'lib/components/' + sub;
     walkComponent(join(ROOT, pkgRoot), pkgRoot);
     // `files` 条目是**相对清单所在目录**的：未出户时清单在仓库根 ⇒ 与仓库相对路径同形；
-    // 已出户后清单在 `packages/<sub>/` ⇒ 比对前必须把包前缀剥掉，否则整包都判"未覆盖"。
+    // 已出户后清单在 `lib/components/<sub>/` ⇒ 比对前必须把包前缀剥掉，否则整包都判"未覆盖"。
     const prefix = pkgRoot + '/';
     for (const f of componentFiles.filter((x) => x.startsWith(prefix))) {
       const ownPath = ownRel === 'package.json' ? f : f.slice(prefix.length);

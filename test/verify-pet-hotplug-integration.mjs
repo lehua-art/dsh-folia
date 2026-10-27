@@ -5,13 +5,13 @@ import { readFileSync } from 'node:fs';
 import { clientEntryFixture } from './tools/official-performer.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createSubpackageHost } from '../lib/subpackage-boot.js';
-import { name, inject, apply } from '../packages/pet-link/lib/index.js';
+import { name, inject, apply } from '../lib/components/pet-link/lib/index.js';
 
 const moduleUrl = process.env.PET_TEST_CORDIS_MODULE
   ? pathToFileURL(resolve(process.env.PET_TEST_CORDIS_MODULE)).href
   : import.meta.resolve('@deepseek-ai/cordis');
 const { Context, Service } = await import(moduleUrl);
-const entry = clientEntryFixture(readFileSync(new URL('../packages/pet-link/lib/client.pet-link.js', import.meta.url), 'utf8'));
+const entry = clientEntryFixture(readFileSync(new URL('../lib/components/pet-link/lib/client.pet-link.js', import.meta.url), 'utf8'));
 assert.deepEqual(entry.plugin.inject, [], '可选官方服务不得阻塞客户端激活');
 const page = new Context();
 const client = page.plugin({ name: 'official-pet-client-regression', ...entry.plugin });

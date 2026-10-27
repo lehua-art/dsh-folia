@@ -293,7 +293,7 @@ const apply = host.apply || (host.inject && host.apply);
 const dispose = apply(mockCtx);
 
 // P-A「一次翻」的两个方向：① 门面（`lib/index.js`）**零**字体族注册（实现已随子包行出户）；
-// ② 字体族由 `packages/fonts/lib/index.js` 那一行注册进**同一个** mockCtx 的路由表 ——
+// ② 字体族由 `lib/components/fonts/lib/index.js` 那一行注册进**同一个** mockCtx 的路由表 ——
 // 于是下面"字体集路由族已注册"的断言打的是**子包行**的注册面，而不是主包门面（两条都要钉住）。
 const facadeFontRoutes = routes
   .map((r) => String(r.path))
@@ -462,7 +462,7 @@ section('② 迁移前外观 golden（绝对锚点逐条比对）');
 // ── ③ 迁移前护栏 + 一次性迁移（惰性）─────────────────────────────────────────
 section('③ 迁移前护栏 + 一次性迁移（老 config.json → fontsets/default.json，判据 = ② 的 golden）');
 check('settings 路由已注册（否则本节的护栏无从谈起）', Boolean(settingsRoute), settingsRoute ? settingsRoute.kind : 'missing');
-check('字体集路由族已注册（一个 prefix 覆盖七个端点；注册者是子包行 packages/fonts/lib/index.js）',
+check('字体集路由族已注册（一个 prefix 覆盖七个端点；注册者是子包行 lib/components/fonts/lib/index.js）',
   Boolean(fontsetsRoute), fontsetsRoute ? fontsetsRoute.kind : 'missing（子包行没注册 / 没起）');
 check('apply() 本身一个字节都不写字体集（启动期零写盘 ⇒ 未隔离 DSH_FOLIA_DATA_DIR 的守卫不会被污染）',
   !existsSync(FONTSETS_DIR), existsSync(FONTSETS_DIR) ? 'fontsets/ 已存在' : '');
@@ -1618,7 +1618,7 @@ section('⑨ 字体集编辑器（面板可驱动：意图映射 / confirm 门�
       // 删字体集）全部走同一套面板内令牌（`armConfirm` + `renderConfirmRow`，见 src/client.js）。
       // 判据写成**等号**：0 是终态，回增必须红（`<= 0` 与 `=== 0` 等价，但等号才读得出这一点）。
       const confirmFiles = ['src/client.js', 'src/panel-tabs.js', 'src/picker-modal.js',
-        'src/picker-props-panel.js', 'src/media-prep.js', 'packages/fonts/src/fontset-editor.js', 'src/fontset-store.js'];
+        'src/picker-props-panel.js', 'src/media-prep.js', 'lib/components/fonts/src/fontset-editor.js', 'src/fontset-store.js'];
       const confirmSites = confirmFiles.reduce(
         (n, f) => n + ((readFileSync(join(root, f), 'utf8').match(/window\.confirm\(/g) || []).length), 0);
       // 只看**代码**：注释里可以提 window.confirm（说明为什么禁用），代码里不许出现。

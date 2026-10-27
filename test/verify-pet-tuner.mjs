@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs';
 import { performerFixture } from './tools/official-performer.mjs';
 import { parseInlineModules } from './tools/src-scope.mjs';
 import { stripExportBlocks } from './tools/js-text.mjs';
-const source = readFileSync(new URL('../packages/pet-link/src/pet-link-tuner.js', import.meta.url), 'utf8');
-const definitions = readFileSync(new URL('../packages/pet-link/src/pet-link.js', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../lib/components/pet-link/src/pet-link-tuner.js', import.meta.url), 'utf8');
+const definitions = readFileSync(new URL('../lib/components/pet-link/src/pet-link.js', import.meta.url), 'utf8');
 const make = new Function(definitions + '\n' + source + ';return createOfficialPetTuner;')();
 class Element {
   constructor(tag) { this.tag = tag; this.style = {}; this.attrs = new Map(); this.children = []; this.events = new Map(); }
