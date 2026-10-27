@@ -1,0 +1,304 @@
+name: verify
+
+# 本仓的铁律是「提交前必须绿」。这个 workflow 把它变成机器事实，并按**变更内容**分流：
+#   · `changes` 先用 scripts/ci-routing.mjs 给这次差异分类（docs / docs-assets / full）；
+#   · 纯文档 ⇒ 只跑 `docs` 快通道（冲突标记 / 尾随空白 / 本地断链 / 素材非空）；
+#   · 其它一切（代码、schema、依赖、CI 接线、生成契约、未知、取不到差异）⇒ `full` 完整链；
+#   · `ci/result` 是**唯一**的分支保护勾：用 test/tools/ci-routing.mjs 的 judgeResult 核验
+#     "这次该跑的作业真的 success"—— 失败、取消、缺失、意外跳过、未知 mode 都不放行。
+# 分类器全部 fail-closed：分类失败 = full（阻断），绝不"默认文档"（判据见 docs/wip/CI-GATE-SIMPLIFICATION-PLAN.md）。
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: 变更分类（changes）
+    runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.classify.outputs.mode }}
+    steps:
+      # 分类要取 merge-base(base, head) 的**整段 PR 差异**；浅克隆看不见 merge-base ⇒
+      # "完整差异"就变成"看不见差异"。fetch-depth: 0 是分类正确性的前提（判据：checkout-depth）。
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # 判据：`--github-output` 严格解析；取不到差异 / 参数错误 ⇒ 本作业红 ⇒ ci/result 不放行
+      # （分类失败绝不默认文档，判据在 scripts/ci-routing.mjs 与 test/tools/ci-routing.mjs）。
+      # 差异边界与 docs 腿**逐字符同一**（判据：diff-alignment），三种事件各有可审计范围与模式档：
+      #   · pull_request：base.sha/head.sha + `--base-mode merge-base` —— merge-base 的完整 PR 差异；
+      #   · push：before/after + `--base-mode exact` —— 本次推送的**精确范围**。force-push 后
+      #     before 不是 head 祖先，merge-base 会把 before 独有提交里的代码删除算漏（E2E force-push
+      #     幕实证）⇒ push 必须按 before→after 原样 diff；新分支首推 before 为全零 ⇒ git 取不到
+      #     差异 ⇒ exit 2 阻断（fail-closed）；
+      #   · workflow_dispatch：无事件边界 ⇒ github.sha/github.sha ⇒ 空差异 ⇒ 分类器保守 full。
+      # 表达式禁止 `|| ''` 空串回退：空值在 parseArgs 就 exit 2 阻断，注释里的 fallback 不算实现。
+      - name: 分类这次差异（docs / docs-assets / full，fail-closed）
+        id: classify
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
+            BASE_ARGS=(--base "${{ github.event.pull_request.base.sha }}" --head "${{ github.event.pull_request.head.sha }}" --base-mode merge-base)
+          elif [ -n "${{ github.event.before }}" ]; then
+            BASE_ARGS=(--base "${{ github.event.before }}" --head "${{ github.event.after }}" --base-mode exact)
+          else
+            BASE_ARGS=(--base "${{ github.sha }}" --head "${{ github.sha }}" --base-mode exact)
+          fi
+          node scripts/ci-routing.mjs check --github-output "${BASE_ARGS[@]}"
+
+  # ⚠️ `concurrency` 必须挂在**作业**上：`matrix` 只在作业上下文里存在。写在**工作流级**时
+  # GitHub 会把整个工作流文件判为无效 —— push 后 run **0 秒失败、jobs=[]**，页面只说
+  # "This run likely failed because of a workflow file issue"（实测 2026-10-02）。
+  # 组里带上 `matrix.os`：两条腿同属一次 run，而 `cancel-in-progress` 的语义是"同组里更早的
+  # 还在跑的就取消" —— 不带 os 时两条腿共组，容易被读成"它们会互取消"，也让"哪条腿被
+  # supersede"变得不可推理。带上 os 之后，一次新 push 取消的是**同一平台**的上一次 run。
+  # 判据：`test/verify-contracts.mjs` ⑤（工作流级表达式不得引用作业作用域上下文）。
+  full:
+    # ⚠️ 为什么要**两条腿**（P4-18）：守卫里有**平台条件分支**，而两半各在不同的平台上才有牙：
+    #   · `verify-scene` 的 unlink 失败用例：**只有 POSIX 的 chmod 能阻止 unlink**
+    #     （Windows 上模式位基本被忽略）⇒ 那一半在 win32 上**不执行**，而 win32 那一半
+    #     （ENOENT 幂等）在 POSIX 上不执行。
+    #   · `verify-scene-live` 的目录链接用 junction（win32）或 dir（POSIX）建。
+    #   · `verify-media-bridge` 有一处 win32 专用断言。
+    # 只跑一个平台 ⇒ 另一半**零覆盖**，而 `verify-scene` 自己就会把这件事打印成
+    # "这是覆盖差异，不是通过"（本仓实测：win32 上 5 条 platform-skipped）。
+    # 因此"换平台会改变被断言的那一半"不是**不换平台**的理由，恰恰是**两个都要跑**的理由。
+    # fail-fast: false —— 一条腿红了不该把另一条腿的结果藏起来（两条腿的结论要能分别读）。
+    # ⚠️ 完整链**不因分流缩水**（判据：full-coverage / step-floor）：删一步 = 静默少一颗牙。
+    if: needs.changes.outputs.mode == 'full'
+    needs: [changes]
+    concurrency:
+      group: verify-full-${{ github.ref }}-${{ matrix.os }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: 平台（判据按平台分支，日志里要能一眼看出这条腿断言了哪一半）
+        run: node -e "console.log(process.platform + '/' + process.arch + ' @ ' + process.version)"
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # 只装运行期依赖 `webwallgl`（宿主运行期从 node_modules 供给渲染引擎，verify-scene-live 要读它）：
+      # `--omit=peer` 跳过宿主 peer，避免 peer 解析带来与改动无关的红灯；`--ignore-scripts` 不跑安装钩子。
+      # build / verify / smoke 脚本本身仍只 import `node:` 内置模块与相对路径 ——
+      # 由 test/verify-package-files.mjs 的 P5 断言钉住。
+      - name: install —— 运行期依赖（webwallgl）
+        run: npm ci --omit=peer --ignore-scripts --no-audit --no-fund
+
+      # 静态门禁（ESLint + tsc）：**独立步骤**，刻意不并入 `verify` / `verify:all` ——
+      # `test/verify-package-files.mjs` 的 P5 断言整条链零裸依赖，而这两个工具是 devDependencies。
+      # 它也不是"零违规"而是**棘轮**：基线冻在 `test/fixtures/static-baseline.json`，任一格上涨即红，
+      # 有意收紧用 `npm run verify:static -- --write-baseline` 并**随同一次提交**入库。
+      # 放在 build 之前：解析错误 / 类型错配是最便宜的一类失败，没理由等完 4.4 MB 的产物重建才报。
+      - name: verify:static —— 静态门禁（ESLint / tsc 棘轮）
+        run: npm run verify:static
+
+      - name: build —— 重建 lib/client.js
+        run: npm run build
+
+      - name: verify —— 结构性守卫（含正/负对照）
+        run: npm run verify
+
+      # media-bridge 的端到端那一段（P3-13 的残留项）：`verify` 链里那一步带 `--allow-skip`
+      # ——缺前置时**显式**接受不跑（不是静默跳过），所以它在本机与 CI 都可能是"没跑"。
+      # 这一条用 `--provision` 先把产物下载到自检缓存再**真跑**（中间件自带 `--provider mock`，
+      # 不碰真播放器与系统音频权限，因此可 CI 化）；下载或断言失败即红，**不做
+      # continue-on-error** —— "CI 覆盖了这条通道"的定义就是这一步会失败。
+      # ⚠️ 这一步的红绿由 CI 入口按判词定（`npm run verify:bridge` → `test/verify-bridge-ci.mjs`）：
+      # 自检的退出码是 `0` / `3`（**唯一**失败来源是环境差异：探针判 environment + 产物可信）/ 其它失败为 `1`，
+      # 并在末尾打一行判词 `[media-bridge] verdict=ok|environment|regression|untrusted`。入口**只**把
+      # 「码 3 + 判词 `environment`」降级成 `::warning::` 注解式跳过并退出 0，同时**点名这条通道本次没有
+      # 断言覆盖**（跳过不与通过同形）；其它任何情况 —— 码 3 但判词不是 environment、看不出判词、
+      # 被信号结束、退出码不在 0/1/3 —— **一律非 0**（fail-closed，宁可红）。要严格口径
+      # （三种结局都非 0）用 `npm run verify:bridge:strict`。引导预算仍是 90s
+      #（宿主侧 `DSH_WE_MEDIA_BOOT_MS` 可覆盖，**现场默认 25s**），失败行会带子进程两路输出与 spawn 姿势。
+      - name: verify:bridge —— media-bridge 端到端（带 --provision）
+        run: npm run verify:bridge
+
+      - name: smoke —— 节点级冒烟
+        run: npm run smoke
+
+      # 软档（仓库内务 / 账本自洽 / 一次性清理的验收判据）：照跑、照打印 ✓/✗，但 **不拦 PR** ——
+      # 详见 docs/DEV-GUIDE.md §4.2。`continue-on-error` 是这一档的定义本身，不是权宜：
+      # 硬档的门槛是"能说出用户侧后果"，说不出后果的判据不该决定别人的改动能不会被合。
+      # `verify:docs` 内部已经用 `test/warn-only.mjs` 把每条守卫的退出码降级并打印原码；
+      # 这里再加一层是**双保险**（CI 上若有人改坏了那层包装，这步仍不会变红）。
+      # 判据：soft-tier —— continue-on-error 只允许且必须出现在这一步。
+      - name: verify:docs —— 软档（不拦 PR，只看结论）
+        continue-on-error: true
+        run: npm run verify:docs
+
+      # 产物出库（v1.4 起）：`lib/client.js` 不再入库 —— 分发路径（npm / Release tgz）
+      # 由 prepack 打包时构建，开发路径（link:）先 `npm run build`。因此这里判"没有被跟踪"
+      # 而不是"与源码同步"（同步由 verify 链首条 verify-client-sync 真跑构建逐字节判）。
+      # 判据：bash-artifact-step —— 非 npm 的 bash 步里必须真的在跑 git ls-files。
+      - name: 产物不入库（lib/client.js / docs/images 未被 git 跟踪）
+        shell: bash
+        run: |
+          tracked=$(git ls-files -- lib/client.js docs/images)
+          if [ -n "$tracked" ]; then
+            echo "::error::构建产物或展示图被 git 跟踪（产物出库策略）：$tracked"
+            exit 1
+          fi
+          echo "ok: lib/client.js 与 docs/images 均未被跟踪"
+
+      # ⚠️ 为什么**不是** `git diff --check`（本步原先就是它，实测**恒空 = 等于没跑**）：
+      #   它只看**未提交的 diff**，而 CI 全程不写任何被跟踪文件（`npm run build` 产物 lib/client.js
+      #   是 untracked/gitignore 的，`verify-client-sync` 跑完还会把内容原样写回）
+      #   ⇒ 工作树相对 HEAD 永远是干净的 ⇒ 这条"格式守卫"在 CI 里从来没有检查过任何东西。
+      # 改成对 **HEAD 树**现扫被跟踪文本文件（`git grep <rev>` 读的是树对象 ⇒
+      #   ① 与工作树的 eol 转换无关；② 不依赖 `HEAD^`，浅克隆/PR merge commit 下同样有效）。
+      # 两条路径豁免（各有理由，不是"为了变绿"；证据 = 下面三条命令的实测读数）：
+      #   · `*.md`：Markdown 用行尾两个空格表示**硬换行**，属内容。
+      #     实测 `git grep -I -E ' +$' HEAD -- '*.md'` ⇒ **0 命中**（当前树不需要豁免，属**预防性**；
+      #     留着是因为一旦有人写硬换行，这一步不该把他判红）。
+      #   · `assets/**`：随包美术资产是绘图工具导出的**数据**，不是手写代码。
+      #     实测 `git grep -c -I -E ' +$' HEAD -- 'assets/**'` ⇒ **1821 行**，全部在
+      #     `assets/mascot/vector-960x1024.svg`（该文件每行路径数据都以空格结尾）。
+      #     不豁免就等于让一条格式门去审查一份导出文件。
+      # 本机复算入口：CI 有 bash、本机没有 ⇒ 下面这几条 git 命令可直接照跑。
+      # 负对照：在树上临时造 2 处尾随空白 ⇒ 这一步必须红（否则它就是恒真的摆设）。
+      - name: 无尾随空白（扫被跟踪文件；`git diff --check` 在 CI 恒空，不是同一条判据）
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=0
+          # 空格与制表符分两条扫：不用 `[[:space:]]`（本机实测它会把以多字节字符结尾的行也命中，
+          # 假阳性一大片），只用**字面**的空格/制表符。
+          if git grep -n -I -E ' +$' HEAD -- ':!*.md' ':!assets/**'; then
+            echo "::error::以上被跟踪文件有**行尾空格**"
+            status=1
+          fi
+          if git grep -n -I -E "$(printf '\t')+\$" HEAD -- ':!*.md' ':!assets/**'; then
+            echo "::error::以上被跟踪文件有**行尾制表符**"
+            status=1
+          fi
+          # 冲突标记同样扫**整棵被跟踪树**（`git diff --check` 那一侧本来就顺带管它，别丢）。
+          # ⚠️ 只认两侧的 `<<<<<<<` / `>>>>>>>`，**不认** `=======`：Markdown 的 setext 标题下划线
+          #    就是一行 `=======`（属内容），拿它当冲突信号会制造假红（实测当前树上 0 处，
+          #    但这是**将来**一定会踩的坑）。
+          if git grep -n -I -E '^(<<<<<<< |>>>>>>> )' HEAD; then
+            echo "::error::以上被跟踪文件里残留冲突标记"
+            status=1
+          fi
+          if [ "$status" -ne 0 ]; then exit 1; fi
+          echo "ok: 被跟踪文件（.md / assets 除外）无行尾空白，且无冲突标记"
+
+  # 文档快通道：`changes` 判定纯文档时**只**跑文档检查。边界（判据：docs-fast-path）：
+  #   · 核心步是**真 docs CLI**（`node scripts/ci-routing.mjs docs`），不是六步 warn-only
+  #     内务 `npm run verify:docs` —— 内务拦不住冲突标记/断链/素材问题，快通道的存在目的
+  #     就是这份检查，拦 PR 的必须是它；
+  #   · 与 changes **同一份 PR 差异**再分类一遍：docs 于 full 差异 ⇒ exit 3 拒绝（不假成功）；
+  #   · 不装依赖 —— 文档检查零裸依赖（P5），装依赖既慢又给了快通道新的失败面；
+  #   · 有路径 if 守卫 —— 没有它这份检查就会在每条路径上乱跑。
+  # 这一步**不带** continue-on-error（判据：soft-tier 只允许它出现在 full 链的 verify:docs）：
+  # 崩溃级失败必须拦下 PR；六步内务的"软"由 npm run verify:docs 内部的 warn-only 降级承担，
+  # step 级双保险留在 full 链上。
+  # PR 事件取 merge-base 档的完整差异；push 取 before/after 精确范围（exact 档：force-push
+  # 后 before 非祖先，merge-base 会漏算 before 独有的代码删除）；workflow_dispatch 无事件
+  # 边界 ⇒ github.sha/github.sha ⇒ 空差异 ⇒ 分类器保守 full（不会进本腿）。三个事件分支与
+  # changes 腿**逐字符同一**（判据：diff-alignment），保证两腿审计的是同一份差异、同一模式档。
+  docs:
+    name: 文档快通道（docs）
+    if: needs.changes.outputs.mode == 'docs' || needs.changes.outputs.mode == 'docs-assets'
+    needs: [changes]
+    runs-on: ubuntu-latest
+    steps:
+      # checkout 显式 ref 到 --head 同一提交：保证被审计的 head 树与实际工作树一致
+      # （PR 默认 checkout 可能是 merge commit，树与 head.sha 不同 ⇒ 审错差异）。
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.event.after || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: docs —— 同一差异二次分类 + 文档审计（冲突标记 / 断链 / 素材）
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
+            BASE_ARGS=(--base "${{ github.event.pull_request.base.sha }}" --head "${{ github.event.pull_request.head.sha }}" --base-mode merge-base)
+          elif [ -n "${{ github.event.before }}" ]; then
+            BASE_ARGS=(--base "${{ github.event.before }}" --head "${{ github.event.after }}" --base-mode exact)
+          else
+            BASE_ARGS=(--base "${{ github.sha }}" --head "${{ github.sha }}" --base-mode exact)
+          fi
+          node scripts/ci-routing.mjs docs "${BASE_ARGS[@]}"
+
+  # 公告快通道：`changes` 判定"改动全落在两个公告文件内"时**只**跑内容级判定。
+  # 边界（判据：test/verify-notice-routing.mjs 36 条 + test/tools/ci-routing.mjs 的 judgeNoticeEdit）：
+  #   · 核心步是**真 notice CLI**（`node scripts/ci-routing.mjs notice`），它自己会再分类一遍
+  #     ——差异不是纯公告 ⇒ exit 3 明确拒绝，不是假成功；
+  #   · 判定是**内容级**的：公告文件的 `UPDATE NOTICE COPY` 区块**之外**逐字节一致、
+  #     区块**之内**代码骨架一致（只许改引号里的字）。增删条目 / 改 props / 加分支都会
+  #     让骨架变 ⇒ exit 1 ⇒ `ci/result` 不放行 ⇒ 作者必须回去跑 `npm run verify:all`；
+  #   · **允许只改单文件**（改中文措辞时英文常可原样复用）；漏译另有一条定向检查：
+  #     区块内每个 `weT("原文")` 都必须在词表族里有键（跨域查，含 i18n-copy-core.js）；
+  #   · 不装依赖、不跑任何 `npm run` 步 —— 这条通道的全部价值就是"不跑重活"，
+  #     而内容判据本身零依赖（纯字符串比对）；
+  #   · 必须 `fetch-depth: 0` + checkout 到 head 树：判据要 `git show <base>:<path>` 取**旧版内容**，
+  #     浅克隆取不到 ⇒ 判据 fail-closed 阻断（不是静默放行）。
+  notice:
+    name: 公告快通道（notice）
+    if: needs.changes.outputs.mode == 'notice'
+    needs: [changes]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.event.after || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: notice —— 内容级判定（区块外逐字节一致 · 区块内代码骨架一致）
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
+            BASE_ARGS=(--base "${{ github.event.pull_request.base.sha }}" --head "${{ github.event.pull_request.head.sha }}" --base-mode merge-base)
+          elif [ -n "${{ github.event.before }}" ]; then
+            BASE_ARGS=(--base "${{ github.event.before }}" --head "${{ github.event.after }}" --base-mode exact)
+          else
+            BASE_ARGS=(--base "${{ github.sha }}" --head "${{ github.sha }}" --base-mode exact)
+          fi
+          node scripts/ci-routing.mjs notice "${BASE_ARGS[@]}"
+
+  # 固定汇总作业：**唯一**该被分支保护要求的勾。if: always()（**作业级**）—— docs/notice/full
+  # 按设计会各跳过几条，汇总必须在跳过的情况下也跑起来，用 judgeResult 核验"这次该跑的作业
+  # 真的 success"：失败、取消、缺失、**意外跳过**、mode 未登记（outputs 没接上）都不放行
+  # （判据：test/tools/ci-routing.mjs 的 judgeResult；CLI：scripts/ci-routing.mjs judgeResult）。
+  result:
+    name: ci/result
+    if: always()
+    needs: [changes, docs, notice, full]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: ci/result —— 汇总核验（fail-closed）
+        run: |
+          node scripts/ci-routing.mjs judgeResult \
+            --mode "${{ needs.changes.outputs.mode }}" \
+            --changes "${{ needs.changes.result }}" \
+            --docs "${{ needs.docs.result }}" \
+            --notice "${{ needs.notice.result }}" \
+            --full "${{ needs.full.result }}" \
+            --github-output

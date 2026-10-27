@@ -1,0 +1,9 @@
+{
+  "upstream": "https://github.com/elysia395/dsh-wallpaper-engine",
+  "license": "MIT",
+  "slug": "folia",
+  "envPrefix": "DSH_FOLIA_",
+  "renamedAt": "2026-10-27T09:47:06.363Z",
+  "repo": "https://github.com/lehua-art/dsh-folia",
+  "updatedAt": "2026-10-27T10:05:31.128Z"
+}

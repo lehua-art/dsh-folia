@@ -1,0 +1,69 @@
+node_modules/
+*.log
+*.tgz
+.playwright-mcp/
+.test-cache/
+scene-diagnosis.tsv
+# Local ffmpeg (Windows static build, ~370MB) — used for transcode experiments;
+# never commit binaries (platform-specific + huge).
+/ffmpeg/
+# 渲染验证产物 (可再生): 帧序列/对比图不入库
+scene-layers-out/
+# 视觉工具工件
+.dsh-vision-router/
+
+
+
+
+/_refs/
+
+# README 展示图已迁至 GitHub Release 资产（media-v1，CDN 外链）；仓库与历史不再保留展示图。
+# 本地 docs/images/ 仅存源图 / 工作截图，一律不入库。
+/docs/images/*
+
+# 构建产物出库（v1.4）：lib/client.js 由 `npm run build` 现场生成（开发者 / CI / prepack 三条路径），
+# 不再入库。安装 npm 包与 Release tgz 时由打包期的 prepack 构建。
+/lib/client.js
+# P-A 起每包一产物（ADR-0003/0012 的同一口径）：子包的浏览器半边同样由 `npm run build` 现场生成。
+packages/*/lib/client.*.js
+
+/.git.bak-broken/
+
+
+
+/scripts/lwe-ref/
+
+
+# 渲染输出 (回归/调试用, 不入库)
+/scripts/out/
+
+# 逆向相关工具与诊断脚本 (本地研究用, 不入 GitHub 仓库)
+/scripts/reverse/
+/scripts/core/
+/scripts/anim/
+
+# ZCode 会话本地文件 (计划/缓存, 不入库)
+/.zcode/
+# ZCode video2code / video-agent 插件在仓库根写的 plugin_root 指针 (内容是本机绝对路径, 不入库)
+/.v2c/
+/.video_agent/
+
+# 临时预览/诊断脚本 (本地 QA 用, 不入库)
+/scripts/.tmp-*
+
+# 本地移交/取证笔记 (集成期间的报告、守卫实测、scratch 脚本; 属本机过程记录, 不入库)
+# 此前只写在 .git/info/exclude 里 —— 那是**每个 clone 各写一份**的本地配置,
+# 于是每个新工作区都会把 400+ 个笔记文件当未跟踪改动报出来。
+/.integration-notes/
+.DS_Store
+**/.DS_Store
+
+# npm 本地缓存（沙箱内 ~/.npm 不可写，改用仓内缓存）
+.npm-cache/
+
+# IDE 本地配置（.vscode/settings.json 等本机个性化设置，不入库；也未被 package.json files 收录）
+/.vscode/
+/.artifacts/
+/.migrate-pet-link.mjs
+/.pet-link-integration.patch
+*.rej
