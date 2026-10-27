@@ -27,7 +27,7 @@
     # /preview, …; docs/ROUTE-INDEX.md is the authoritative table — it is generated
     # and machine-checked, so the route count is deliberately not repeated here).
     - id: wallpaper-engine
-      name: 'dsh-plugin-wallpaper-engine'
+      name: 'dsh-folia-host'
     # Second row: the `about-notice` component's host half (C8′, P2-1). The host
     # loads it as its own plugin — its entry re-enters this bundle's
     # `applyComponent` — so disabling just this row removes the About tab's

@@ -1,6 +1,6 @@
 {
-  "name": "dsh-folia-wallpaper",
-  "version": "1.5.0",
+  "name": "dsh-folia",
+  "version": "1.5.1",
   "description": "Folia 壁纸引擎：在 dsh-plugin-wallpaper-engine（MIT, elysia395）基础上增加自建站点数据源",
   "type": "module",
   "engines": {
@@ -21,9 +21,6 @@
     "wallpaper",
     "webwallgl"
   ],
-  "publishConfig": {
-    "access": "public"
-  },
   "exports": {
     ".": {
       "types": "./lib/types/index.d.ts",
@@ -87,7 +84,8 @@
     "dsh-plugin-wallpaper-engine-mascot-avatar": "1.4.0",
     "dsh-plugin-wallpaper-engine-media-bridge": "1.4.0",
     "dsh-plugin-wallpaper-engine-parallax": "1.4.0",
-    "dsh-plugin-wallpaper-engine-pet-link": "1.4.0"
+    "dsh-plugin-wallpaper-engine-pet-link": "1.4.0",
+    "dsh-folia-host": "1.5.1"
   },
   "overrides": {
     "js-yaml": "4.3.2"

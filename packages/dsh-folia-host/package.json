@@ -1,0 +1,13 @@
+{
+  "name": "dsh-folia-host",
+  "version": "1.5.1",
+  "description": "dsh-folia 的宿主半边：壁纸扫描、媒体服务与 inventory 路由，作为独立插件提供",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT",
+  "files": ["index.js"],
+  "exports": { ".": "./index.js" },
+  "dependencies": { "dsh-folia": "1.5.1" },
+  "engines": { "node": ">=22.12.0" },
+  "publishConfig": { "access": "public" }
+}
