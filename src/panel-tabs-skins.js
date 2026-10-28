@@ -123,7 +123,11 @@ function SkinsTabPanel() {
         } else if (kind === "activate") {
           setNote({
             kind: "ok",
-            text: weT("已切换到「") + label + weT("」 —— 重启 DSH 后生效"),
+            text: weT("已切换到「") + label + weT("」"),
+            // 皮肤中心是在**页面启动时**拉 `/api/skin-center/v2/active` 再注入样式的，
+            // 所以"换皮肤"只需刷新这一页（不重启 DSH 进程）：下面的按钮就做这件事。
+            // 不自动刷：用户可能正在输入，突然刷新会打断。
+            reload: true,
           });
           // 不再整表重拉：本地标记已经对了，省掉那 600 ms 的"没反应"窗口。
         } else if (kind === "remove") {
@@ -209,8 +213,29 @@ function SkinsTabPanel() {
     children.push(React.createElement("div", {
       key: "note",
       className: "we-picker__hint",
-      style: { color: note.kind === "err" ? "#ff9a9a" : "#8ee6a8", margin: "6px 0 10px" },
-    }, note.text));
+      style: {
+        color: note.kind === "err" ? "#ff9a9a" : "#8ee6a8",
+        margin: "6px 0 10px",
+        display: "flex",
+        gap: "10px",
+        alignItems: "center",
+        flexWrap: "wrap",
+      },
+    },
+    React.createElement("span", null, note.text),
+    note.reload
+      ? React.createElement("button", {
+        type: "button",
+        className: "we-picker__btn we-picker__btn--primary",
+        style: { fontSize: "11.5px", padding: "3px 10px" },
+        onClick: () => {
+          // 只刷新这个前端页面（皮肤中心启动时重新拉 active），不必重启 DSH 进程。
+          try { window.location.reload(); } catch { /* 极端环境刷不动就留着让用户手动重启 */ }
+        },
+        title: weT("重新加载界面以应用新皮肤（对话与设置都在宿主侧，不会丢）"),
+      }, weT("立即生效"))
+      : null,
+    ));
   }
   children.push(React.createElement("div", {
     key: "search",
