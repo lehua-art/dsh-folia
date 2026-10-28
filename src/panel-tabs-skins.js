@@ -143,7 +143,7 @@ function SkinsTabPanel(props) {
         setNote({ kind: "ok", text: weT("已应用：「") + label + weT("」—— 皮肤中心已收敛（无需刷新）") });
         return;
       }
-      if (tries >= 5) {
+      if (tries >= 9) {   // 约 11 秒：host 会先写 null 再写目标 id（900ms），引擎每 2s 轮询一次
         clearInterval(pollRef.current); pollRef.current = null;
         setNote({
           kind: "err",
