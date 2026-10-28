@@ -425,6 +425,13 @@ function startSkinArbiter() {
     const id = await activeSkinIdFromHost();
     if (mine !== seq) return;                 // 期间又变了，放弃这次
     if (!id) return;
+    // ⭐ 关键：如果 `html[data-dsh-skin]` 已经等于当前皮肤，说明**皮肤中心自己在启动时
+    // 把它应用好了**（它会在页面加载时走完整流程：作用域化 CSS、六层、hooks、背景、
+    // 校验）。那种情况下我们**什么都不做** —— 任何额外注入都只会干扰它。
+    // 只有它没应用（我们拿不到它的应用路径 / 它没装）时，才用自建那套兜底。
+    try {
+      if (document.documentElement.getAttribute("data-dsh-skin") === id) return;
+    } catch { /* 读不到属性就按"未应用"处理 */ }
     try { await applySkinHot(id); } catch { /* 失败就保持原生外观 */ }
   };
   try {
@@ -506,17 +513,21 @@ function SkinsTabPanel(props) {
           let applyErr = "";
           let bgKind = "none";
           let hooksInfo = { ran: false, reason: "skipped" };
+          let reloadAfter = false;
           try {
             // ① 壁纸先让位：清掉 `id` 之后壁纸层撤下、`data-we-wallpaper` 消失，
             //    皮肤中心也不会再扣住皮肤。（反方向由 startSkinArbiter 负责。）
             if (typeof onClearWallpaper === "function") {
               try { await Promise.resolve(onClearWallpaper()); } catch { /* 清不掉也继续换肤 */ }
             }
-            // ② 应用皮肤
+            // ② 让**皮肤中心自己**应用：写完 active 之后重新加载页面，它启动时会走完整流程
+            //    （这是唯一 100% 正确的路径）。自建那套只在"刷新没发生/它没装"时兜底。
+            //    先做一次热应用，保证即使刷新被桌面壳吞掉，用户也立刻看到变化。
             const applied = await applySkinHot(id);
             info = applied.info;
             bgKind = applied.bg.kind;
             hooksInfo = applied.hooks;
+            reloadAfter = true;
           } catch (e) {
             applyErr = String((e && e.message) || e);
           }
@@ -535,6 +546,16 @@ function SkinsTabPanel(props) {
             // hooks 已经跑过了；reload 只是"整页重载"的可选入口（极少数皮肤依赖启动期布局）
             reload: true,
           });
+          // 刷新页面 = 把应用权交还给皮肤中心（它只在页面加载时应用）。
+          // 用 replace 而非 reload：桌面壳里 reload 有时被吞掉。失败也不影响已完成的
+          // 热应用 —— 用户至少能看到变化，只是缺动效那类要靠真刷新补齐。
+          if (reloadAfter) {
+            setTimeout(() => {
+              try { window.location.replace(window.location.href); } catch {
+                try { window.location.reload(); } catch { /* 两种都不可用：保留热应用结果 */ }
+              }
+            }, 900);
+          }
           // 不再整表重拉：本地标记已经对了，省掉那 600 ms 的"没反应"窗口。
         } else if (kind === "remove") {
           setNote({ kind: "ok", text: weT("已删除：") + label });
