@@ -168,6 +168,9 @@
   // 两页，外加壁纸页。
   const QP_TABS = [
     { id: "wallpaper", get label() { return weT("壁纸"); } },
+    // 「皮肤包」与设置页那个页签是**同一个组件**（SkinsTabPanel）：首页这里只是把它挂进抽屉，
+    // 不另写一份列表逻辑 —— 两份实现迟早会漂移。
+    { id: "skins", get label() { return weT("皮肤包"); } },
     { id: "appearance", get label() { return weT("外观"); } },
     { id: "playback", get label() { return weT("播放"); } },
   ];
@@ -813,11 +816,17 @@
           target: "playback",
           title: weT("在设置页打开「播放」页签 —— 出图来源 / 实时帧 / 帧率上限在那里"),
         }
-        : {
-          label: weT("壁纸引擎设置 ›"),
-          target: "",
-          title: weT("打开设置对话框的「壁纸引擎」分区（外观 / 播放 / 系统与全部配置）"),
-        };
+        : qpTab === "skins"
+          ? {
+            label: weT("皮肤包设置 ›"),
+            target: "skins",
+            title: weT("在设置页打开「皮肤包」页签 —— 下载 / 切换 / 删除皮肤包"),
+          }
+          : {
+            label: weT("壁纸引擎设置 ›"),
+            target: "",
+            title: weT("打开设置对话框的「壁纸引擎」分区（外观 / 播放 / 系统与全部配置）"),
+          };
 
     return React.createElement("div", { className: "we-qp we-qp--" + dock },
       qpRenderCurrent(sel, current, playbackLive),
@@ -847,7 +856,10 @@
           })
           : qpTab === "playback"
             ? qpRenderPlaybackPane(sel, switchQpTab)
-            : null),
+            // 皮肤包：直接挂设置页那个同一个组件（它自己管列表/下载/激活状态）。
+            : qpTab === "skins"
+              ? React.createElement(SkinsTabPanel, null)
+              : null),
         !(qpTab === "wallpaper" && userPropsPanelOpen() && propsAvailable) && qpTab === "wallpaper" && React.createElement(React.Fragment, null,
                 // ── 壁纸列表（搜索 + 视图切换 + 快切）──
                 // 库还没回来 / 扫描失败：**只有这一页**给一句话 —— 外观 / 播放两页不依赖库，

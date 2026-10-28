@@ -73,10 +73,15 @@ function SkinsTabPanel() {
     setLoading(true);
     setError(null);
     try {
-      const r = await apiJson("/skins" + (force ? "?refresh=1" : ""));
+      // ⚠️ `apiJson` 返回的是 **`{ ok, status, data, error }` 包装对象**，不是响应体本身
+      //（见 src/api-client.js 的 apiFetch）。最初按裸体取值 ⇒ `list=[] 且 error=null`，
+      // 界面显示"没有匹配的皮肤包"却没有任何错误提示 —— 静默空列表比报错难查得多。
+      // `parse: "always"` 让非 2xx 的 `{error}` 也能被读到。
+      const resp = await apiJson("/skins" + (force ? "?refresh=1" : ""), { parse: "always" });
+      const r = (resp && resp.data) || null;
       setList((r && r.skins) || []);
       setActive((r && r.active) || null);
-      setError((r && r.error) || null);
+      setError((r && r.error) || (resp && resp.error) || null);
       setHarnessFound(!r || r.harnessFound !== false);
     } catch (e) {
       setError("network");
@@ -93,8 +98,10 @@ function SkinsTabPanel() {
     setBusy(id);
     setNote(null);
     try {
-      const r = await apiPostJson("/skins/" + kind, { id });
-      if (r && r.ok) {
+      // 同样是包装对象：`ok` 是 HTTP 2xx，业务结论在 `data.ok`（宿主回 `{ok:false,error}`）。
+      const resp = await apiPostJson("/skins/" + kind, { id }, { parse: "always" });
+      const r = (resp && resp.data) || null;
+      if (resp && resp.ok && r && r.ok) {
         if (kind === "install") {
           setNote({ kind: "ok", text: weT("已安装：") + label });
           await load(true);
