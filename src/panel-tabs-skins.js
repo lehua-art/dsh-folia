@@ -529,8 +529,10 @@ function SkinsTabPanel(props) {
                 + ((info.source === "skin-center" || info.source === "local-scoped") ? weT("（已作用域化）") : weT("（未作用域化，可能显示不全）"))
                 + (bgKind === "none" ? weT("，无背景媒体") : weT("，背景：") + bgKind)
                 + (hooksInfo.ran ? weT("，动效已启动") : (hooksInfo.reason === "no-hooks" ? weT("，无动效") : weT("，动效未启动(") + hooksInfo.reason + ")"))
+                + weT("，主题：") + (skinThemeNow() === "dark" ? weT("深色") : weT("浅色"))
                 + (typeof onClearWallpaper === "function" ? weT("，壁纸已关闭") : ""),
-            // hooks 已经跑过了；这里只作为"整页重载"的可选入口（极少数皮肤依赖启动期布局）
+            // 主题与背景变体写进提示：皮肤有 light/dark 两套素材，不写清就会"图对不上"。
+            // hooks 已经跑过了；reload 只是"整页重载"的可选入口（极少数皮肤依赖启动期布局）
             reload: true,
           });
           // 不再整表重拉：本地标记已经对了，省掉那 600 ms 的"没反应"窗口。
@@ -698,7 +700,13 @@ function SkinsTabPanel(props) {
   if (shown.length > 0) {
     children.push(React.createElement("div", { key: "grid", style: SKINS_STYLE.grid },
       shown.map((s) => {
-        const previewRel = s.previewLight || s.previewDark || "";
+        // 预览图**跟随当前主题**：每套皮肤都有 light / dark 两份预览（例：居家模型娘的
+        // 白天房间 vs 夜晚房间）。之前一律取 light，于是"深色模式下看到的效果图"与
+        // "实际渲染的 dark 变体"完全是两张画 —— 用户自然会觉得对不上。
+        const darkNow = skinThemeNow() === "dark";
+        const previewRel = (darkNow
+          ? (s.previewDark || s.previewLight)
+          : (s.previewLight || s.previewDark)) || "";
         const previewSrc = previewRel
           ? apiUrl("/skins/preview?p=" + encodeURIComponent(previewRel))
           : "";
