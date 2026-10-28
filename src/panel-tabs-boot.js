@@ -105,7 +105,7 @@ function BootTabPanel() {
   ));
 
   children.push(React.createElement("div", { key: "hint", className: "we-picker__hint", style: { margin: "2px 0 6px", opacity: 0.75 } },
-    weT("首次使用没有任何动画。下载一条并「使用」后，之后每次启动都会先播它，然后淡出进入界面。点击或按 Esc 可立即跳过。")));
+    weT("下载一条并「使用」后，每次启动都会先播它；默认播完才淡出进入界面（想更快就切「界面就绪就进」）。点击或按 Esc 可立即跳过。")));
 
   if (state && state.error && !clips.length) {
     children.push(React.createElement("div", { key: "err", className: "we-picker__hint", style: { color: "#ff9a9a" } },
@@ -128,9 +128,23 @@ function BootTabPanel() {
       }, list.map(([v, t]) => React.createElement("option", { key: v, value: String(v) }, t))),
     );
     children.push(React.createElement("div", { key: "opts", style: { ...BOOT_STYLE.row, gap: "14px", flexWrap: "wrap", margin: "2px 0 8px" } },
+      // 进入方式：默认「播完再进」——之前只有「就绪即进」，15 秒的片子 1.2 秒就被掐掉。
+      React.createElement("label", { style: { display: "flex", gap: "4px", alignItems: "center", fontSize: "12px" } },
+        weT("进入方式"),
+        React.createElement("select", {
+          className: "we-picker__playlist-select",
+          value: String(state.enterMode || "tail"),
+          disabled: Boolean(busy),
+          onChange: (e) => act("settings", { enterMode: e.target.value }, ""),
+        },
+        React.createElement("option", { value: "tail" }, weT("播完再进（默认）")),
+        React.createElement("option", { value: "ready" }, weT("界面就绪就进")),
+        React.createElement("option", { value: "click" }, weT("点一下才进")),
+        ),
+      ),
       opt(weT("淡出时长"), "fadeMs", [[400, "0.4 秒"], [600, "0.6 秒"], [900, "0.9 秒"], [1200, "1.2 秒"], [1600, "1.6 秒"]]),
       opt(weT("最短显示"), "minShowMs", [[0, "不限制"], [600, "0.6 秒"], [1200, "1.2 秒"], [2000, "2 秒"]]),
-      opt(weT("最长停留"), "maxHoldMs", [[3000, "3 秒"], [6000, "6 秒"], [10000, "10 秒"]]),
+      opt(weT("最长停留"), "maxHoldMs", [[10000, "10 秒"], [20000, "20 秒（默认）"], [30000, "30 秒"], [60000, "60 秒"]]),
     ));
   }
 

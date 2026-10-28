@@ -61,6 +61,8 @@ try {
   check('list 默认未启用', l1.enabled === false);
   check('list 有候选（站点可达时 ≥1）', Array.isArray(l1.clips), 'clips=' + (l1.clips || []).length);
 
+  check('list 默认进入方式是 tail（播完再进）', l1.enterMode === 'tail', 'enterMode=' + l1.enterMode);
+
   // ② toggle：真实写请求体
   const t1 = await post('/boot/toggle', { enabled: true });
   check('toggle 接受 JSON 体（不再 bad-id）', t1.status === 200 && t1.json && t1.json.ok === true, JSON.stringify(t1.json));
@@ -98,6 +100,12 @@ try {
   check('settings 接受 JSON 体', st.status === 200 && st.json && st.json.ok === true, JSON.stringify(st.json));
   const b = readBoot();
   check('settings 落盘正确', b.fadeMs === 1200 && b.minShowMs === 600 && b.maxHoldMs === 3000, JSON.stringify(b));
+
+  // ⑥b enterMode：能改、能持久、非法值回落到 tail
+  const em = await post('/boot/settings', { enterMode: 'ready' });
+  check('settings 接受 enterMode', em.status === 200 && readBoot().enterMode === 'ready', JSON.stringify(readBoot()));
+  await post('/boot/settings', { enterMode: 'bogus' });
+  check('非法 enterMode 回落 tail', readBoot().enterMode === 'tail', readBoot().enterMode);
 
   // ⑦ 坏请求体不能 500
   const badBody = await fetch(base + '/boot/select', { method: 'POST', headers: { 'content-type': 'application/json' }, body: 'not json' });
