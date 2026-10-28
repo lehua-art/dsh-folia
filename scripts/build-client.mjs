@@ -30,7 +30,7 @@
  * Usage:  node scripts/build-client.mjs
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -542,29 +542,54 @@ function toPosix(rel) {
  *   · 配方的 `artifact` 经包目录拼接后必须**逐字等于**发现层的 `clientArtifact`（防两处漂移）。
  * 缺配方会让该包的浏览器半边**静默不产出**（页面白屏、构建却全绿），所以宁可让构建红。
  */
-/** 单包化之后，带浏览器半边的组件目录（相对 `lib/components/`）。 */
-const MERGED_CLIENT_COMPONENTS = ['fonts', 'fx', 'parallax', 'pet-link'];
-
 /**
- * 读全部带浏览器半边的组件配方。
+ * 读全部带浏览器半边的组件配方。**自动发现**，不再手写清单。
  *
  * ⚠️ 单包化（BUNDLE-MERGE）之后，配方来源从「发现层的 `packages/<pkg>/`」改成
  * 「本包内的 `lib/components/<name>/`」—— 组件不再是独立 npm 包，`discoverPackages()`
- * 找不到它们了。原先那套「缺配方 / 孤儿配方都判红」的双向对账仍然保留在这里的手写清单上：
- * 清单少一个组件 ⇒ 它的浏览器半边静默不产出（页面白屏而构建全绿），所以缺配方必须红。
+ * 找不到它们了。
+ *
+ * 发现规则（三条，按顺序判）：
+ *   1. 有 `client.build.json`              ⇒ 有浏览器半边，收进配方；
+ *   2. 没有配方但存在 `src/client.js`      ⇒ **构建红**。这正是过去靠手写清单堵的坑：
+ *      有人加了前端代码忘了登记，浏览器半边静默不产出，页面白屏而构建全绿；
+ *   3. 两者都没有                          ⇒ 纯宿主端组件（about-notice / mascot-avatar /
+ *      media-bridge），跳过。
+ *
+ * 于是「加一个功能」= 新建目录 + 放一个 client.build.json，不需要改这个脚本。
  */
 function loadSubpackageRecipes() {
+  const componentsRoot = resolve(root, 'lib/components');
+  if (!existsSync(componentsRoot)) {
+    console.error('[build-client] 找不到 lib/components/ —— 组件目录结构变了？');
+    process.exit(1);
+  }
+
+  // 排序保证产物可复现（readdir 的顺序在不同文件系统上不保证一致）
+  const names = readdirSync(componentsRoot, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name)
+    .sort();
+
   const recipes = [];
-  for (const name of MERGED_CLIENT_COMPONENTS) {
+  for (const name of names) {
     const relDir = `lib/components/${name}`;
-    const dirAbs = resolve(root, relDir);
+    const dirAbs = resolve(componentsRoot, name);
     const recipeAbs = resolve(dirAbs, RECIPE_FILE);
-    if (!existsSync(recipeAbs)) {
-      console.error(`[build-client] ${relDir} 缺构建配方 ${RECIPE_FILE}：该组件的浏览器半边`
-        + '会静默不产出（用户页面白屏，而构建/守卫全绿）。'
-        + '形状见任一别包的 client.build.json：{ entry, artifact, inline:[{file,why,markers}] }。');
-      process.exit(1);
+    const clientSrcAbs = resolve(dirAbs, 'src/client.js');
+    const hasRecipe = existsSync(recipeAbs);
+    const hasClientSrc = existsSync(clientSrcAbs);
+
+    if (!hasRecipe) {
+      if (hasClientSrc) {
+        console.error(`[build-client] ${relDir} 有 src/client.js 但缺构建配方 ${RECIPE_FILE}：`
+          + '该组件的浏览器半边会静默不产出（用户页面白屏，而构建/守卫全绿）。'
+          + '形状见任一别组件的 client.build.json：{ entry, artifact, inline:[{file,why,markers}] }。');
+        process.exit(1);
+      }
+      continue;   // 纯宿主端组件
     }
+
     const recipe = JSON.parse(readNormalized(recipeAbs));
     if (recipe.prebuilt != null) {
       console.error(`[build-client] ${relDir} 的 ${RECIPE_FILE} 声明了 prebuilt —— 单包化形态`
@@ -579,6 +604,11 @@ function loadSubpackageRecipes() {
       entry: typeof recipe.entry === 'string' && recipe.entry ? recipe.entry : DEFAULT_SUBPACKAGE_ENTRY,
       inline: recipe.inline || [],
     });
+  }
+
+  if (recipes.length === 0) {
+    console.error('[build-client] lib/components/ 下没有发现任何带配方的组件 —— 是不是路径变了？');
+    process.exit(1);
   }
   return recipes;
 }
