@@ -103,35 +103,61 @@ function SkinsTabPanel(props) {
 
   React.useEffect(() => { load(false); }, [load]);
 
-  // ── 「应用」= 写 active + 刷新页面 ─────────────────────────────────────────
-  // 皮肤中心**只在页面加载时**应用皮肤，而它的控制器没有导出（0.4.8 与 0.4.11 都
-  // 没有全局句柄 / activate API / 文件监听）。所以让用户"点一下就出效果"的唯一
-  // 可行做法，是让页面重新加载一次，触发它的 boot。
-  //
-  // 用 sessionStorage 留时间戳标记：页面确实重载了，标记就还在（同一标签页会话内
-  // 有效）—— 据此判断"刷新到底发生了没有"，而不是靠猜。刷新被桌面壳吞掉时，
-  // 标记留在原地，4 秒后给出明确的兜底提示。
-  React.useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem("folia.applyPending");
-      if (!raw) return;
-      sessionStorage.removeItem("folia.applyPending");
-      const o = JSON.parse(raw);
-      if (o && Date.now() - Number(o.at || 0) < 20000) {
+  // 轮询验证的清理（组件卸载/重新选中时别留下定时器）。
+  const pollRef = React.useRef(null);
+  React.useEffect(() => () => {
+    if (pollRef.current !== null) { clearInterval(pollRef.current); pollRef.current = null; }
+  }, []);
+
+  /**
+   * 写 active 之后**验证皮肤中心有没有真的应用**。
+   *
+   * 为什么不需要刷新页面：皮肤中心的客户端运行时自带轮询 ——
+   *
+   *   const SELECTION_POLL_MS = 2e3;
+   *   function watchPersistedSelection(store, intervalMs = SELECTION_POLL_MS) {
+   *     const tick = async () => {
+   *       const next = await readPersistedSelection(store);      // GET /api/skin-center/v2/active
+   *       if (next === undefined || next === applied) return;
+   *       applied = next;
+   *       await convergeOnSelection(store, next);                // ← 自动应用
+   *     };
+   *     store.window.setInterval(tick, intervalMs);               // 注意是 store.window.setInterval
+   *   }
+   *
+   * 那个 `/active` 读的就是我们刚写的 `skin-center-active.json`。所以写完之后它会在
+   * 2 秒内自己收敛过去 —— 之前"必须刷新"的假象，是我们自己的热注入在覆盖它的结果。
+   *
+   * 它的收敛成功标志很明确：`<html data-dsh-skin="<id>">`。我们就盯这个属性：
+   * 出现了 = 真的应用了；5 次（约 6 秒）还没出现 = 没应用，如实说。
+   */
+  function verifyApplied(id, label) {
+    if (pollRef.current !== null) { clearInterval(pollRef.current); pollRef.current = null; }
+    let tries = 0;
+    pollRef.current = setInterval(() => {
+      tries += 1;
+      let stamped = null;
+      try { stamped = document.documentElement.getAttribute("data-dsh-skin"); } catch { stamped = null; }
+      if (stamped === id) {
+        clearInterval(pollRef.current); pollRef.current = null;
+        setNote({ kind: "ok", text: weT("已应用：「") + label + weT("」—— 皮肤中心已收敛（无需刷新）") });
+        return;
+      }
+      if (tries >= 5) {
+        clearInterval(pollRef.current); pollRef.current = null;
         setNote({
-          kind: "ok",
-          text: weT("页面已重新加载，「") + (o.label || o.id)
-            + weT("」应由皮肤中心应用。若仍无变化，请到「设置 → 皮肤」点「应用」。"),
+          kind: "err",
+          text: weT("已写入「") + label + weT("」，但皮肤中心没有应用。可能原因：壁纸仍在台（皮肤会被抑制）或这套皮肤校验未通过。可到「设置 → 皮肤」点「应用」确认。"),
         });
       }
-    } catch { /* sessionStorage 不可用就跳过，不影响主流程 */ }
-  }, []);
+    }, 1200);
+  }
 
   /**
    * 执行一个动作。
    * · install / remove：宿主真正干活（下载解压 / 删目录）。
-   * · activate：**只写 active**（`skin-center-active.json`），然后告诉用户下一步。
-   *   不注入任何样式 —— 那一步归皮肤中心。
+   * · activate：**只写 active**（`skin-center-active.json`）—— 不注入任何样式，
+   *   应用由皮肤中心自己轮询完成，我们只负责验证结果。
    */
   async function act(kind, id, label) {
     if (busy) return;
@@ -147,31 +173,19 @@ function SkinsTabPanel(props) {
         } else if (kind === "activate") {
           setActive(id);
           setList((prev) => prev.map((x) => ({ ...x, active: x.id === id })));
-          // 皮肤与壁纸都在铺背景，必须互斥：先让壁纸让位。
+          // 皮肤与壁纸都在铺背景，必须互斥：皮肤中心在壁纸在台时会**主动抑制皮肤**，
+          // 所以这一步不是"顺手"，而是"应用能否成功"的前提。
           try {
             if (typeof onClearWallpaper === "function") await Promise.resolve(onClearWallpaper());
           } catch { /* 清壁纸失败不影响选中本身 */ }
-          setNote({
-            kind: "ok",
-            text: skinCenter
-              ? weT("已选中「") + label + weT("」，正在重新加载页面让皮肤生效…")
-              : weT("已选中「") + label + weT("」—— 未检测到皮肤中心，无法渲染；请安装 @linxin666/dsh-client-ui-skin-center 后重启"),
-          });
-          // 只有皮肤中心在台时，刷新才有意义（boot 时它会应用 active）。
           if (skinCenter) {
-            try {
-              sessionStorage.setItem("folia.applyPending", JSON.stringify({ id, label, at: Date.now() }));
-            } catch { /* 不可用就退化：不刷新，只给提示 */ }
-            setTimeout(() => {
-              try { window.location.reload(); } catch { /* 桌面壳拦了刷新 */ }
-            }, 700);
-            // 兜底：4 秒后页面还在（说明刷新被吞），明确告诉用户改用手动重启。
-            setTimeout(() => {
-              setNote({
-                kind: "err",
-                text: weT("页面没有自动刷新 —— 桌面壳可能拦了刷新。请手动重启 DSH 让「") + label + weT("」生效。"),
-              });
-            }, 4000);
+            setNote({ kind: "ok", text: weT("已选中「") + label + weT("」，等待皮肤中心应用（约 2 秒）…") });
+            verifyApplied(id, label);
+          } else {
+            setNote({
+              kind: "err",
+              text: weT("已写入「") + label + weT("」，但本机没有皮肤中心，无法渲染。请安装 @linxin666/dsh-client-ui-skin-center 后重启。"),
+            });
           }
         } else if (kind === "remove") {
           setNote({ kind: "ok", text: weT("已删除：") + label });
