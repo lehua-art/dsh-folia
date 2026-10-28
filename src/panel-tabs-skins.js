@@ -85,7 +85,13 @@ async function fetchSkinCss(id) {
     const viaHost = await apiFetch("/skins/scoped-css?id=" + enc, { parse: false, cache: "no-store" });
     if (viaHost && viaHost.ok && viaHost.response) {
       const text = await viaHost.response.text();
-      if (text && text.trim()) return { css: text, source: "skin-center" };
+      if (text && text.trim()) {
+        // 响应头说明这份是谁作用域化的：
+        //   skin-center = 拿到了皮肤中心加工的那份；local = 宿主自己做的（等价结果）
+        let via = "local";
+        try { via = viaHost.response.headers.get("x-folia-scoped") || "local"; } catch { /* 读不到按 local */ }
+        return { css: text, source: via === "skin-center" ? "skin-center" : "local-scoped" };
+      }
     }
   } catch { /* 代理不可用 ⇒ 继续走下面两条 */ }
 
@@ -520,7 +526,7 @@ function SkinsTabPanel(props) {
               ? weT("已切换为「") + label + weT("」，但样式注入失败：") + applyErr
               : weT("已切换到「") + label + weT("」—— 样式 ")
                 + Math.round(info.bytes / 1024) + " KB / " + info.rules + weT(" 条规则")
-                + (info.source === "skin-center" ? weT("（已作用域化）") : weT("（未作用域化，可能显示不全）"))
+                + ((info.source === "skin-center" || info.source === "local-scoped") ? weT("（已作用域化）") : weT("（未作用域化，可能显示不全）"))
                 + (bgKind === "none" ? weT("，无背景媒体") : weT("，背景：") + bgKind)
                 + (hooksInfo.ran ? weT("，动效已启动") : (hooksInfo.reason === "no-hooks" ? weT("，无动效") : weT("，动效未启动(") + hooksInfo.reason + ")"))
                 + (typeof onClearWallpaper === "function" ? weT("，壁纸已关闭") : ""),
