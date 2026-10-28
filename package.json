@@ -1,6 +1,6 @@
 {
     "name":  "dsh-folia",
-    "version":  "2.5.1",
+    "version":  "2.5.2",
     "description":  "Folia 壁纸引擎：把本机 Wallpaper Engine 壁纸搬进 DSH 界面（场景实时渲染 / 视频 / 网页），内置液态玻璃与 Folia 吉祥物，并可从自建站点拉取壁纸。单包形态（组件已合并）。",
     "type":  "module",
     "engines":  {
@@ -189,7 +189,9 @@
                     "verify:static":  "node test/verify-static.mjs",
                     "smoke":  "node test/run-guards.mjs smoke",
                     "verify:all":  "node test/run-guards.mjs all",
-                    "prepack":  "node scripts/prepare.mjs"
+                    "prepack":  "node scripts/prepare.mjs",
+                    "test:boot":  "node test/boot-http.mjs",
+                    "gate":  "node scripts/build-client.mjs \u0026\u0026 node test/run-guards.mjs smoke \u0026\u0026 node test/boot-http.mjs"
                 },
     "peerDependencies":  {
                              "@deepseek-ai/cordis":  "^4.0.4",
