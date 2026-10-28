@@ -103,6 +103,30 @@ function SkinsTabPanel(props) {
 
   React.useEffect(() => { load(false); }, [load]);
 
+  // ── 「应用」= 写 active + 刷新页面 ─────────────────────────────────────────
+  // 皮肤中心**只在页面加载时**应用皮肤，而它的控制器没有导出（0.4.8 与 0.4.11 都
+  // 没有全局句柄 / activate API / 文件监听）。所以让用户"点一下就出效果"的唯一
+  // 可行做法，是让页面重新加载一次，触发它的 boot。
+  //
+  // 用 sessionStorage 留时间戳标记：页面确实重载了，标记就还在（同一标签页会话内
+  // 有效）—— 据此判断"刷新到底发生了没有"，而不是靠猜。刷新被桌面壳吞掉时，
+  // 标记留在原地，4 秒后给出明确的兜底提示。
+  React.useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("folia.applyPending");
+      if (!raw) return;
+      sessionStorage.removeItem("folia.applyPending");
+      const o = JSON.parse(raw);
+      if (o && Date.now() - Number(o.at || 0) < 20000) {
+        setNote({
+          kind: "ok",
+          text: weT("页面已重新加载，「") + (o.label || o.id)
+            + weT("」应由皮肤中心应用。若仍无变化，请到「设置 → 皮肤」点「应用」。"),
+        });
+      }
+    } catch { /* sessionStorage 不可用就跳过，不影响主流程 */ }
+  }, []);
+
   /**
    * 执行一个动作。
    * · install / remove：宿主真正干活（下载解压 / 删目录）。
@@ -130,9 +154,25 @@ function SkinsTabPanel(props) {
           setNote({
             kind: "ok",
             text: skinCenter
-              ? weT("已选中「") + label + weT("」—— 请到「设置 → 皮肤」点「应用」完成（这是唯一完整生效的路径）")
+              ? weT("已选中「") + label + weT("」，正在重新加载页面让皮肤生效…")
               : weT("已选中「") + label + weT("」—— 未检测到皮肤中心，无法渲染；请安装 @linxin666/dsh-client-ui-skin-center 后重启"),
           });
+          // 只有皮肤中心在台时，刷新才有意义（boot 时它会应用 active）。
+          if (skinCenter) {
+            try {
+              sessionStorage.setItem("folia.applyPending", JSON.stringify({ id, label, at: Date.now() }));
+            } catch { /* 不可用就退化：不刷新，只给提示 */ }
+            setTimeout(() => {
+              try { window.location.reload(); } catch { /* 桌面壳拦了刷新 */ }
+            }, 700);
+            // 兜底：4 秒后页面还在（说明刷新被吞），明确告诉用户改用手动重启。
+            setTimeout(() => {
+              setNote({
+                kind: "err",
+                text: weT("页面没有自动刷新 —— 桌面壳可能拦了刷新。请手动重启 DSH 让「") + label + weT("」生效。"),
+              });
+            }, 4000);
+          }
         } else if (kind === "remove") {
           setNote({ kind: "ok", text: weT("已删除：") + label });
           await load(true);
