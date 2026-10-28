@@ -18,3 +18,21 @@
 - insert:
     - id: folia
       name: 'dsh-folia'
+
+# ── 内嵌皮肤中心（3.4.0 起）────────────────────────────────────────────────────
+# 皮肤的**渲染**由皮肤中心负责：catalog、强制作用域化 CSS、六层装饰、hooks 运行时、
+# 背景媒体、以及它自己的「设置 → 皮肤」页面（试穿 / 应用）。它的控制器不外露，所以
+# "完整应用"只能由它自己的前端半区完成 —— 而 DSH 是**按行派发前端模块**的，
+# 因此必须在这里给它一行，否则只有宿主路由、没有界面。
+#
+# 依赖已在 package.json 里声明（@linxin666/dsh-client-ui-skin-center），
+# 所以用户装本插件就自动带上，不需要单独安装。
+#
+# ⚠️ 如果另一个 bundle 也挂了同一个包（典型：@linxin666/dsh-web-all 的
+#     `web-ui-skin-center` 行），就会**重复挂载**。此时请二选一：
+#       · 保留本行，把 dsh-web-all 里的 web-ui-skin-center 关掉；或
+#       · 把本行标成 `disabled: true`
+#    本插件会在「皮肤包」页签顶部把这个冲突**显式报出来**，不会静默。
+- insert:
+    - id: folia-skin-center
+      name: '@linxin666/dsh-client-ui-skin-center'

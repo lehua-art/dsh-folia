@@ -458,6 +458,8 @@ function SkinsTabPanel(props) {
   const [harnessFound, setHarnessFound] = React.useState(true);
   // 皮肤中心是否在台：决定"应用"这一步交给谁（见文件头那段分工说明）
   const [skinCenter, setSkinCenter] = React.useState(false);
+  // 谁提供了皮肤中心行（用于检测重复挂载，见下方警示块）
+  const [providers, setProviders] = React.useState([]);
   const [busy, setBusy] = React.useState("");       // 正在安装 / 激活的那个 id
   const [note, setNote] = React.useState(null);      // 一次性提示（成功 / 失败原因）
   const [q, setQ] = React.useState("");
@@ -477,6 +479,7 @@ function SkinsTabPanel(props) {
       setError((r && r.error) || (resp && resp.error) || null);
       setHarnessFound(!r || r.harnessFound !== false);
       setSkinCenter(Boolean(r && r.skinCenter));
+      setProviders(Array.isArray(r && r.skinCenterProviders) ? r.skinCenterProviders : []);
     } catch (e) {
       setError("network");
       setList([]);
@@ -612,6 +615,23 @@ function SkinsTabPanel(props) {
       title: weT("重新从站点拉取列表"),
     }, loading ? weT("加载中…") : weT("刷新")),
   );
+
+  // ── 重复挂载警示（内嵌皮肤中心的副作用）────────────────────────────────────
+  // 我们的 patch 加了一行 folia-skin-center；如果用户还装着 dsh-web-all，它那行
+  // web-ui-skin-center 指向同一个包 ⇒ 同一个插件挂两次。DSH 不拦这种事，所以必须
+  // 在界面上说清楚"去关掉一处"，而不是让用户去猜为什么皮肤行为怪。
+  if (providers.length > 1) {
+    children.push(React.createElement("div", {
+      key: "dup",
+      className: "we-picker__hint",
+      style: {
+        margin: "4px 0 10px", padding: "7px 10px", borderRadius: "8px",
+        background: "rgba(255,120,120,0.14)", color: "#ff9a9a", lineHeight: 1.5,
+      },
+    }, weT("⚠️ 检测到 ") + providers.length + weT(" 处挂载了皮肤中心（")
+      + providers.map((p) => p.bundle).join(" / ")
+      + weT("）。请只保留一处：把 dsh-web-all 里的皮肤中心行关掉，或在插件管理里停用其一，否则会重复挂载。")));
+  }
 
   // 分工提示：皮肤中心在台 ⇒ 我们只做"选"，应用由它的设置页完成（原生路径，完整）。
   // 不在台 ⇒ 明说我们在兜底，避免用户以为"点了却坏了"。
