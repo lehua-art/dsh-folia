@@ -60,38 +60,69 @@ function skinsErrText(code) {
 }
 
 /**
+ * 取一套皮肤**最终该用的 CSS**。
+ *
+ * 关键：皮肤中心不是把皮肤目录里的 CSS 原样发出去的 ——
+ *   `GET /api/skin-center/v2/skins/<id>/stylesheet` → `transformSkinCss()`：**强制作用域化**
+ *   `GET /api/skin-center/v2/skins/<id>/patches`    → 同上（无则 404）
+ * 作用域化 = 把每条规则包进 `html[data-dsh-skin="<id>"]`。这一步直接决定成败：
+ * **包了作用域的规则特异性更高**，才压得过应用自身的面板/令牌规则。我们早先注入的是
+ * 目录里的裸 CSS，特异性与应用同级 ⇒ 大量规则输掉 ⇒ 配色变了一点、面板依旧不透明。
+ *
+ * 所以优先**直接用它加工好的那份**（同源，浏览器自带凭证）；只有拿不到才退回我们自己的
+ * `/folia/skins/css`（未作用域化，能变配色但压不住应用规则）。
+ *
+ * @returns {Promise<{ css: string, source: string }>}
+ */
+async function fetchSkinCss(id) {
+  const enc = encodeURIComponent(id);
+  const origin = (typeof location !== "undefined" && location.origin) ? location.origin : "";
+  const parts = [];
+  let source = "";
+  for (const part of ["stylesheet", "patches"]) {
+    try {
+      const r = await apiFetch(origin + "/api/skin-center/v2/skins/" + enc + "/" + part, {
+        parse: false,
+        cache: "no-store",
+      });
+      if (r && r.ok && r.response) {
+        const text = await r.response.text();
+        if (text && text.trim()) {
+          parts.push(text);
+          source = "skin-center";
+        }
+      }
+    } catch { /* 拿不到就试下一段 / 退回自己的路由 */ }
+  }
+  if (parts.length > 0) return { css: parts.join("\n/* ---- patches ---- */\n"), source };
+  const r2 = await apiFetch("/skins/css?id=" + enc + "&t=" + Date.now(), { parse: false, cache: "no-store" });
+  if (!r2 || !r2.ok || !r2.response) throw new Error("css-http-" + ((r2 && r2.status) || 0));
+  const text = await r2.response.text();
+  if (!text || !text.trim()) throw new Error("css-empty");
+  return { css: text, source: "folia-raw" };
+}
+
+/**
  * 把一套皮肤的样式**当场**挂进文档。
  *
- * 为什么是 `<style>` 而不是 `<link>`：
- *   · `<link rel=stylesheet>` 是**异步**的，加载完成的时机不定，容易输给皮肤中心随后
- *     重新注入的那份；
- *   · `<style>` 一赋值就参与样式计算，且追加到 `<body>` **末尾** ⇒ 文档顺序最后，
- *     同等特异性下后写的赢。这是"不刷新换肤"能真正看见的关键。
- *
- * 仍然不跑 `hooks.mjs`（粒子等动效），那部分只有整页重载才生效。
+ * 用 `<style>` 而不是 `<link>`：`<style>` 一赋值就参与样式计算，且追加到 `<body>` 末尾
+ * ⇒ 文档顺序最后、同等特异性下后写的赢；`<link>` 是异步的，顺序不由我们定。
  *
  * @param {string} id 皮肤 id
- * @returns {Promise<{ bytes: number, rules: number }>}
+ * @returns {Promise<{ bytes: number, rules: number, source: string }>}
  */
 async function applySkinCss(id) {
-  const resp = await apiFetch("/skins/css?id=" + encodeURIComponent(id) + "&t=" + Date.now(), {
-    parse: false,
-    cache: "no-store",
-  });
-  if (!resp || !resp.ok || !resp.response) throw new Error("css-http-" + ((resp && resp.status) || 0));
-  const css = await resp.response.text();
-  if (!css || !css.trim()) throw new Error("css-empty");
+  const { css, source } = await fetchSkinCss(id);
   let el = document.getElementById("folia-skin-hot");
   if (!el) {
     el = document.createElement("style");
     el.id = "folia-skin-hot";
-    // 挂 body 末尾（不是 head）：文档顺序最后 ⇒ 同等特异性下覆盖先前的规则。
     (document.body || document.head).appendChild(el);
   }
   el.textContent = css;
   let rules = 0;
   try { rules = (el.sheet && el.sheet.cssRules && el.sheet.cssRules.length) || 0; } catch { /* 读不到就报 0 */ }
-  return { bytes: css.length, rules };
+  return { bytes: css.length, rules, source };
 }
 
 /**
@@ -309,6 +340,84 @@ function clearSkinHot() {
   } catch { /* ignore */ }
 }
 
+/**
+ * 把一套皮肤**完整**应用上去（作用域 + 六层 + 样式 + 背景 + hooks）。
+ * 按钮和"壁纸撤下后自动恢复"走的是**同一个**函数 —— 两条路径不能各写一遍。
+ */
+async function applySkinHot(id) {
+  clearSkinHot();
+  try { document.documentElement.setAttribute("data-dsh-skin", id); } catch { /* ignore */ }
+  ensureSkinLayers();
+  const info = await applySkinCss(id);
+  const bg = await applySkinBackground(id);
+  let hooksInfo = { ran: false, reason: "skipped" };
+  try {
+    hooksInfo = await applySkinHooks(id);
+  } catch (e) {
+    hooksInfo = { ran: false, reason: String((e && e.message) || e) };
+  }
+  return { info, bg, hooks: hooksInfo };
+}
+
+/** 把皮肤**整个撤掉**，回到应用原生外观（壁纸接管背景时走这条）。 */
+function teardownSkin() {
+  clearSkinHot();
+  try { document.documentElement.removeAttribute("data-dsh-skin"); } catch { /* ignore */ }
+  try { document.body.removeAttribute("data-dsh-skin-center"); } catch { /* ignore */ }
+  for (const name of SKIN_LAYER_NAMES) {
+    try {
+      const el = document.querySelector('[data-dsh-skin-layer="' + name + '"]');
+      if (el) el.innerHTML = "";
+    } catch { /* ignore */ }
+  }
+}
+
+/** 向宿主问"当前选中的皮肤是哪个"（没选中返回空串）。 */
+async function activeSkinIdFromHost() {
+  try {
+    const resp = await apiJson("/skins");
+    const doc = (resp && resp.data) || null;
+    return (doc && typeof doc.active === "string") ? doc.active : "";
+  } catch {
+    return "";
+  }
+}
+
+let skinArbiterStarted = false;
+/**
+ * **皮肤与壁纸互斥的仲裁器**（两个方向都要管）。
+ *
+ * 现状：点「使用」时我们会主动清掉壁纸（一个方向）；但用户**反过来**点壁纸时，
+ * 没人撤掉我们热注入的皮肤 —— 于是皮肤那层不透明样式压在壁纸上面，壁纸看起来被"遮挡"。
+ *
+ * 这里盯 `body[data-we-wallpaper]` 这个标记（**壁纸插件自己在挂/摘**，是双方共同的事实源）：
+ *   · 标记出现 ⇒ 撤掉皮肤（teardownSkin）
+ *   · 标记消失 ⇒ 若选中过皮肤，重新完整应用（applySkinHot）
+ * 这样无论用户先点哪边，最后都是"只有一个在台"。
+ */
+function startSkinArbiter() {
+  if (skinArbiterStarted) return;
+  const body = (typeof document !== "undefined") ? document.body : null;
+  if (!body) { setTimeout(startSkinArbiter, 400); return; }
+  skinArbiterStarted = true;
+  let seq = 0;
+  const sync = async () => {
+    const mine = ++seq;
+    const wallpaperOn = body.hasAttribute("data-we-wallpaper");
+    if (wallpaperOn) { teardownSkin(); return; }
+    const id = await activeSkinIdFromHost();
+    if (mine !== seq) return;                 // 期间又变了，放弃这次
+    if (!id) return;
+    try { await applySkinHot(id); } catch { /* 失败就保持原生外观 */ }
+  };
+  try {
+    new MutationObserver(() => { sync().catch(() => {}); })
+      .observe(body, { attributes: true, attributeFilter: ["data-we-wallpaper"] });
+    // 启动时就跑一次：处理"上次退出时壁纸在台、皮肤被让位"这类残留状态
+    sync().catch(() => {});
+  } catch { /* 环境不支持观察就只保留按钮路径 */ }
+}
+
 function SkinsTabPanel(props) {
   // 壁纸让位：挂载点（设置页 / 首页抽屉）各自把"清掉当前壁纸"的回调传进来 ——
   // 皮肤和壁纸都在铺背景，必须二选一。本组件不直接碰设置，只调用传进来的入口。
@@ -374,51 +483,36 @@ function SkinsTabPanel(props) {
           setNote({ kind: "ok", text: weT("已安装：") + label });
           await load(true);
         } else if (kind === "activate") {
-          // **当场换肤**：把皮肤样式同步注入文档，不刷新、不重启。
-          // 注入结果直接写进提示里（字节数 / 规则条数）：万一样式还是没盖住皮肤中心，
-          // 这一行就是判断"是没注入"还是"注入了但被压住"的依据，不用再猜。
+          // **当场换肤**：作用域 + 六层 + 样式 + 背景 + hooks，全在 applySkinHot 里
+          //（与"壁纸撤下后自动恢复"共用同一实现，两条路径不会漂移）。
           let info = null;
           let applyErr = "";
           let bgKind = "none";
           let hooksInfo = { ran: false, reason: "skipped" };
           try {
-            // ① 先清掉上一次热切换留下的清理函数与注入样式（避免两套皮肤叠加）
-            clearSkinHot();
-            // ② 作用域属性：30/65 套皮肤的规则整段挂在 html[data-dsh-skin="<id>"] 下，
-            //    不设这个属性，那些规则一条都不匹配 —— 这是"显示不全"的最大来源。
-            try { document.documentElement.setAttribute("data-dsh-skin", id); } catch { /* ignore */ }
-            // ③ 六个装饰层（hooks 与部分皮肤 CSS 都要用）
-            ensureSkinLayers();
-            // ④ 样式、⑤ 背景、⑥ hooks
-            info = await applySkinCss(id);
-            const bg = await applySkinBackground(id);
-            bgKind = bg.kind;
-            try {
-              hooksInfo = await applySkinHooks(id);
-            } catch (e) {
-              hooksInfo = { ran: false, reason: String((e && e.message) || e) };
+            // ① 壁纸先让位：清掉 `id` 之后壁纸层撤下、`data-we-wallpaper` 消失，
+            //    皮肤中心也不会再扣住皮肤。（反方向由 startSkinArbiter 负责。）
+            if (typeof onClearWallpaper === "function") {
+              try { await Promise.resolve(onClearWallpaper()); } catch { /* 清不掉也继续换肤 */ }
             }
+            // ② 应用皮肤
+            const applied = await applySkinHot(id);
+            info = applied.info;
+            bgKind = applied.bg.kind;
+            hooksInfo = applied.hooks;
           } catch (e) {
             applyErr = String((e && e.message) || e);
           }
-          // ⑦ 壁纸让位：皮肤和壁纸都在铺背景，必须互斥。清掉 `id` 之后壁纸层会自己撤下
-          //    （同时 `data-we-wallpaper` 标记消失，皮肤中心也不会再扣住皮肤）。
-          let wallpaperCleared = false;
-          try {
-            if (typeof onClearWallpaper === "function") {
-              await Promise.resolve(onClearWallpaper());
-              wallpaperCleared = true;
-            }
-          } catch { /* 清壁纸失败不影响换肤本身 */ }
           setNote({
             kind: applyErr ? "err" : "ok",
             text: applyErr
               ? weT("已切换为「") + label + weT("」，但样式注入失败：") + applyErr
               : weT("已切换到「") + label + weT("」—— 样式 ")
                 + Math.round(info.bytes / 1024) + " KB / " + info.rules + weT(" 条规则")
+                + (info.source === "skin-center" ? weT("（已作用域化）") : weT("（未作用域化，可能显示不全）"))
                 + (bgKind === "none" ? weT("，无背景媒体") : weT("，背景：") + bgKind)
                 + (hooksInfo.ran ? weT("，动效已启动") : (hooksInfo.reason === "no-hooks" ? weT("，无动效") : weT("，动效未启动(") + hooksInfo.reason + ")"))
-                + (wallpaperCleared ? weT("，壁纸已关闭") : ""),
+                + (typeof onClearWallpaper === "function" ? weT("，壁纸已关闭") : ""),
             // hooks 已经跑过了；这里只作为"整页重载"的可选入口（极少数皮肤依赖启动期布局）
             reload: true,
           });
@@ -642,5 +736,10 @@ function SkinsTabPanel(props) {
 function renderSkinsTab(props) {
   return React.createElement(SkinsTabPanel, props || null);
 }
+
+// 模块加载即启动互斥仲裁（不依赖用户是否打开过皮肤包页签）：
+//   壁纸在台 ⇒ 撤掉皮肤；壁纸撤下 ⇒ 恢复选中的皮肤。
+// 放在模块作用域而不是 React effect 里，是因为它必须在**任何面板渲染之前**就守住这个不变量。
+try { startSkinArbiter(); } catch { /* 环境异常时退化为纯按钮路径 */ }
 
 export { SkinsTabPanel, renderSkinsTab };
