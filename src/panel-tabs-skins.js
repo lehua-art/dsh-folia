@@ -94,6 +94,78 @@ async function applySkinCss(id) {
   return { bytes: css.length, rules };
 }
 
+/**
+ * 搭出皮肤的**背景层**：`body > [data-dsh-skin-layer="background"]`，z-index -2，
+ * 里面放 `<video>`/`<img>`（object-fit: cover）+ 一层 scrim 渐变。
+ *
+ * 为什么必须自己搭：背景不在 CSS 里，而是 `contributes.backgroundMedia`；皮肤中心只在
+ * 启动时建这个元素。热切换时没人建 ⇒ 只剩下配色变了、背景还是一片空 ——
+ * 用户看到的"水墨丹青没有背景动画"就是这个（它是一段 21 MB 的循环视频）。
+ * 元素契约（z-index -2、媒体作直接子元素）从各皮肤 CSS 反推：
+ * `future-window` 写 `[data-dsh-skin-layer="background"] > img`，
+ * `ice-princess` 的注释直接写明"挂在 z-index -2 这层上"。
+ *
+ * @param {string} id 皮肤 id
+ * @returns {Promise<{ kind: string }>}
+ */
+async function applySkinBackground(id) {
+  const resp = await apiJson("/skins/manifest?id=" + encodeURIComponent(id));
+  const doc = (resp && resp.data) || null;
+  const media = doc && doc.backgroundMedia;
+  let dark = false;
+  try { dark = Boolean(document.body && document.body.hasAttribute("data-ds-dark-theme")); } catch { /* 取不到按浅色 */ }
+  const pick = media ? (dark ? (media.dark || media.light) : (media.light || media.dark)) : null;
+
+  const existing = document.querySelector('[data-dsh-skin-layer="background"]');
+  if (!pick || !pick.url) {
+    // 这套皮肤没有背景媒体：把上一次留下的层清掉，别串味。
+    if (existing) existing.remove();
+    return { kind: "none" };
+  }
+
+  let layer = existing;
+  if (!layer) {
+    layer = document.createElement("div");
+    layer.setAttribute("data-dsh-skin-layer", "background");
+    layer.style.cssText = "position:fixed;inset:0;z-index:-2;pointer-events:none;overflow:hidden;";
+    (document.body || document.documentElement).insertBefore(layer, document.body.firstChild);
+  }
+  layer.innerHTML = "";
+
+  let el;
+  if (pick.type === "video") {
+    el = document.createElement("video");
+    el.autoplay = true;
+    el.muted = true;
+    el.loop = true;
+    el.setAttribute("muted", "");
+    el.setAttribute("playsinline", "");
+    el.setAttribute("autoplay", "");
+    el.setAttribute("loop", "");
+  } else {
+    el = document.createElement("img");
+    el.alt = "";
+    el.setAttribute("draggable", "false");
+  }
+  el.src = pick.url;
+  // 皮肤 CSS 通过 `> img` / `> video` 选中它 ⇒ 必须是**直接子元素**。
+  el.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:cover;";
+  layer.appendChild(el);
+
+  if (pick.scrim) {
+    const scrim = document.createElement("div");
+    scrim.style.cssText = "position:absolute;inset:0;pointer-events:none;background-image:" + pick.scrim + ";";
+    layer.appendChild(scrim);
+  }
+
+  if (pick.type === "video") {
+    const kick = () => { try { const p = el.play(); if (p && typeof p.catch === "function") p.catch(() => {}); } catch { /* 自动播放被拒就静帧 */ } };
+    el.addEventListener("loadeddata", kick, { once: true });
+    kick();
+  }
+  return { kind: pick.type };
+}
+
 function SkinsTabPanel() {
   const [list, setList] = React.useState([]);
   const [active, setActive] = React.useState(null);
@@ -161,8 +233,13 @@ function SkinsTabPanel() {
           // 这一行就是判断"是没注入"还是"注入了但被压住"的依据，不用再猜。
           let info = null;
           let applyErr = "";
+          let bgKind = "none";
           try {
             info = await applySkinCss(id);
+            // 样式之后立刻搭背景层：没有它，凡是靠 backgroundMedia 的皮肤（水墨丹青、
+            // 鲸鱼娘、深海女仆工坊…）都只会"变配色不变画面"。
+            const bg = await applySkinBackground(id);
+            bgKind = bg.kind;
           } catch (e) {
             applyErr = String((e && e.message) || e);
           }
@@ -170,8 +247,9 @@ function SkinsTabPanel() {
             kind: applyErr ? "err" : "ok",
             text: applyErr
               ? weT("已切换为「") + label + weT("」，但样式注入失败：") + applyErr
-              : weT("已切换到「") + label + weT("」—— 已注入 ")
-                + Math.round(info.bytes / 1024) + " KB / " + info.rules + weT(" 条样式规则"),
+              : weT("已切换到「") + label + weT("」—— 样式 ")
+                + Math.round(info.bytes / 1024) + " KB / " + info.rules + weT(" 条规则")
+                + (bgKind === "none" ? weT("，该皮肤无背景媒体") : weT("，背景：") + bgKind),
             // hooks（粒子等动效）只有整页重载才会跑：给一个可选入口，不强制。
             reload: true,
           });
