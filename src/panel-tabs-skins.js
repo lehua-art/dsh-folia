@@ -623,9 +623,26 @@ function SkinsTabPanel(props) {
       style: { margin: "4px 0 8px", display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" },
     },
     React.createElement("span", null, weT("当前皮肤：") + activeName),
-    React.createElement("span", {
-      style: { fontSize: "11px", padding: "1px 6px", borderRadius: "999px", background: "rgba(142,230,168,0.16)", color: "#8ee6a8" },
-    }, weT("已应用")),
+    // 谁在应用这套皮肤？判据只有一个：皮肤中心自己会给 <html> 盖 `data-dsh-skin`。
+    //   属性 == 当前皮肤  ⇒ 它接管的（原生应用，完整）
+    //   属性 缺失/不等   ⇒ 我们复刻兜底的（可能不全）
+    // 把这层区别直接显示出来，省得"看起来不全"时无从判断该怪谁。
+    (() => {
+      let native = false;
+      try { native = document.documentElement.getAttribute("data-dsh-skin") === active; } catch { native = false; }
+      return React.createElement("span", {
+        style: {
+          fontSize: "11px",
+          padding: "1px 6px",
+          borderRadius: "999px",
+          background: native ? "rgba(142,230,168,0.16)" : "rgba(255,196,120,0.16)",
+          color: native ? "#8ee6a8" : "#ffd08a",
+        },
+        title: native
+          ? weT("皮肤中心在页面加载时应用的（原生路径，完整）")
+          : weT("皮肤中心没接手，用的是本插件的兜底注入（可能显示不全）"),
+      }, native ? weT("皮肤中心接管") : weT("本地兜底"));
+    })(),
     ));
   }
 
