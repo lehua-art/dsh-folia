@@ -442,6 +442,27 @@ function skinYieldActive() {
   try { return skinYielded === true; } catch { return false; }
 }
 
+/**
+ * 让路期间把**整张插件样式表**关掉。
+ *
+ * 为什么必须关整张：皮肤是一套完整的外观（自己的底色、圆角、字体色、边框）。我们的
+ * `styles-base.js` 给应用外壳铺透明/玻璃/自定义配色，选择器落在同一批元素上，于是皮肤
+ * 的规则被我们盖掉 —— 表现就是"皮肤显示不全，关掉插件就完整"。让路态此前只关了玻璃
+ * 效果族（`data-we-*` 属性门控），**样式表本体一直在**，所以这个洞一直存在。
+ *
+ * 用 `sheet.disabled` 而不是摘 `<style>`：摘了再插会触发整页重排；disabled 是零成本开关，
+ * 退出让路时立刻原样恢复。
+ */
+function syncPluginCssForSkin() {
+  try {
+    const tag = document.querySelector('style[data-plugin-css="dsh-folia/styles-v3"]');
+    if (tag === null) return;
+    const off = skinYieldActive() === true;
+    if (tag.sheet) tag.sheet.disabled = off;
+    else tag.disabled = off;
+  } catch { /* 拿不到 sheet（还在解析 / 被 CSP 拦）就跳过，不影响其它门控 */ }
+}
+
 /** 皮肤上台 ⇒ 退场（幂等）。 */
 function enterSkinYield(reason) {
   if (skinYielded) return;
@@ -456,6 +477,7 @@ function enterSkinYield(reason) {
   applySelection("");        // 清层：url=null ⇒ syncLayers 摘层 / 遮罩 / data-we-wallpaper
   persistSelection();
   applyEffects();            // 让路态里玻璃门控整族摘除
+  syncPluginCssForSkin();    // 连同整张样式表一起让位 —— 否则皮肤被我们的外框盖住（显示不全）
   emit();
   reportClientDiag("skin-yield", "enter · " + reason + " · restore=" + (skinYieldMemory.id || "-"));
 }
@@ -478,6 +500,7 @@ function exitSkinYield(reason, opts) {
   setSetting("skinYieldRestoreRotation", false);
   persistSelection();
   applyEffects();
+  syncPluginCssForSkin();    // 皮肤退场：把我们的样式表原样开回来
   emit();
   reportClientDiag("skin-yield", "exit · " + reason);
 }
@@ -597,6 +620,7 @@ function installSkinInterop() {
           rotationEnabled: rid ? selection.skinYieldRestoreRotation === true : selection.rotationEnabled === true,
         };
         applyEffects(); // 认领即刻摘玻璃门控（首次 applyEffects 可能已经跑过）
+        syncPluginCssForSkin(); // 启动即认领时也要让出样式表：否则一开机皮肤就被外框盖着
         reportClientDiag("skin-yield", "adopt · install/dom");
       } else if (!document.documentElement.hasAttribute("data-dsh-skin") && !selection.id
         && String(selection.skinYieldRestoreId || "")) {
@@ -618,6 +642,7 @@ function installSkinInterop() {
     try { unsubAdopt(); } catch { /* ignore */ }
     skinYielded = false;
     skinYieldMemory = null;
+    syncPluginCssForSkin(); // 清理后让路态清零 ⇒ 样式表恢复
   };
 }
 
