@@ -149,12 +149,13 @@ async function applySkinBackground(id) {
   }
   el.src = pick.url;
   // 皮肤 CSS 通过 `> img` / `> video` 选中它 ⇒ 必须是**直接子元素**。
+  el.setAttribute("aria-hidden", "true");
   el.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:cover;";
   layer.appendChild(el);
 
   if (pick.scrim) {
     const scrim = document.createElement("div");
-    scrim.style.cssText = "position:absolute;inset:0;pointer-events:none;background-image:" + pick.scrim + ";";
+    scrim.style.cssText = "position:absolute;inset:0;pointer-events:none;background:" + pick.scrim + ";";
     layer.appendChild(scrim);
   }
 
@@ -181,6 +182,24 @@ async function applySkinBackground(id) {
  */
 
 const SKIN_LAYER_NAMES = ["background", "ambient", "bottom", "sidebar", "top", "foreground"];
+/**
+ * 六层的**精确**样式：逐字对齐皮肤中心 `runtime/decoration-layers.ts` 的 `LAYER_STYLE`。
+ *
+ * 不能自己拍脑袋定层级 —— 它的注释写明了为什么：
+ *   · background 用 **-2**：负 z-index 元素画在 html/body 背景**之上**（皮肤自己的
+ *     不透明底色因此在画后面、艺术图在它前面），但**在所有面板之下**；
+ *   · ambient 30、top/bottom/sidebar 40、foreground 41：压在面板之上、官方浮层
+ *     （>=1000）之下。之前我把非背景层留成 auto ⇒ 装饰条落进文档流最底层，
+ *     表现正是"上面被面板盖住、只有下面露出背景"。
+ */
+const SKIN_LAYER_STYLE = {
+  background: "position:fixed;top:0;right:0;bottom:0;left:0;z-index:-2;pointer-events:none;will-change:transform;",
+  ambient: "position:fixed;top:0;right:0;bottom:0;left:0;z-index:30;pointer-events:none;",
+  top: "position:fixed;top:0;left:0;right:0;z-index:40;pointer-events:none;",
+  bottom: "position:fixed;bottom:0;left:0;right:0;z-index:40;pointer-events:none;",
+  sidebar: "position:fixed;top:0;bottom:0;left:0;z-index:40;pointer-events:none;",
+  foreground: "position:fixed;top:0;right:0;bottom:0;left:0;z-index:41;pointer-events:none;",
+};
 /** 本次激活注册的清理函数（切换皮肤时逐个跑掉，幂等）。 */
 let skinHotCleanups = [];
 
@@ -202,14 +221,17 @@ function ensureSkinLayers() {
     if (!el) {
       el = document.createElement("div");
       el.setAttribute("data-dsh-skin-layer", name);
-      // 只给最必要的几何 + 不吃事件；层级交给皮肤自己的 CSS
-      //（`background` 是契约里明写 z-index -2 的那层，其余留 auto）。
-      el.style.cssText = "position:fixed;inset:0;pointer-events:none;"
-        + (name === "background" ? "z-index:-2;" : "");
+      el.setAttribute("aria-hidden", "true");
       host.appendChild(el);
     }
+    // 与它的 ensureOne 同口径：**每次都对已有层重写样式** —— 皮肤中心的层可能带着
+    // 上一次激活留下的内联覆盖，只建不改会继承脏值。
+    el.style.cssText = SKIN_LAYER_STYLE[name];
     out[name] = el;
   }
+  // 皮肤中心自己会给 body 盖 `data-dsh-skin-center`（它的若干基础样式挂在这个前缀下），
+  // 缺了它，面板/列表那些"表面透明"的规则不生效 → 大片面板仍然不透明。
+  try { document.body.setAttribute("data-dsh-skin-center", ""); } catch { /* ignore */ }
   return out;
 }
 
