@@ -78,6 +78,18 @@ async function fetchSkinCss(id) {
   const enc = encodeURIComponent(id);
   const parts = [];
   let source = "";
+
+  // ① 宿主端代理由它自己去问皮肤中心（带上本次请求的 Cookie 与同源头）。
+  //    前端直连 `/api/skin-center/...` 会被 DSH 网关挡掉，实测一直落到"未作用域化"。
+  try {
+    const viaHost = await apiFetch("/skins/scoped-css?id=" + enc, { parse: false, cache: "no-store" });
+    if (viaHost && viaHost.ok && viaHost.response) {
+      const text = await viaHost.response.text();
+      if (text && text.trim()) return { css: text, source: "skin-center" };
+    }
+  } catch { /* 代理不可用 ⇒ 继续走下面两条 */ }
+
+  // ② 前端直连（皮肤中心同源路由，能通的话最省一次往返）
   for (const part of ["stylesheet", "patches"]) {
     try {
       // 根相对路径 + 原生请求：桌面壳可能跑在 `dsh-app://` 下（`location.origin` 是 "null"），
