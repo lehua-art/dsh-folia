@@ -60,30 +60,38 @@ function skinsErrText(code) {
 }
 
 /**
- * 把一套皮肤的样式**当场**挂进文档：`<link id="folia-skin-hot">` 追加到 `<head>` 末尾。
+ * 把一套皮肤的样式**当场**挂进文档。
  *
- * 为什么不用"刷新页面"：皮肤中心只在页面加载时应用皮肤，而桌面壳里 `location.reload()`
- * 常常被吞掉（用户看到的就是"点了没反应"）。直接注入 CSS 不依赖它 —— 后加载的规则
- * 覆盖先前的，于是不刷新也能换肤。代价：皮肤自带的 `hooks.mjs`（粒子等动效）不会跑，
- * 那部分仍然只有整页重载/重启才会生效；这一点在下方的提示里如实写明。
+ * 为什么是 `<style>` 而不是 `<link>`：
+ *   · `<link rel=stylesheet>` 是**异步**的，加载完成的时机不定，容易输给皮肤中心随后
+ *     重新注入的那份；
+ *   · `<style>` 一赋值就参与样式计算，且追加到 `<body>` **末尾** ⇒ 文档顺序最后，
+ *     同等特异性下后写的赢。这是"不刷新换肤"能真正看见的关键。
+ *
+ * 仍然不跑 `hooks.mjs`（粒子等动效），那部分只有整页重载才生效。
  *
  * @param {string} id 皮肤 id
+ * @returns {Promise<{ bytes: number, rules: number }>}
  */
-function applySkinCss(id) {
-  try {
-    const href = apiUrl("/skins/css?id=" + encodeURIComponent(id) + "&t=" + Date.now());
-    let el = document.getElementById("folia-skin-hot");
-    if (!el) {
-      el = document.createElement("link");
-      el.id = "folia-skin-hot";
-      el.rel = "stylesheet";
-      document.head.appendChild(el);
-    }
-    el.href = href;   // 带时间戳：绕过缓存，换皮肤立刻拿到新样式
-    return true;
-  } catch {
-    return false;
+async function applySkinCss(id) {
+  const resp = await apiFetch("/skins/css?id=" + encodeURIComponent(id) + "&t=" + Date.now(), {
+    parse: false,
+    cache: "no-store",
+  });
+  if (!resp || !resp.ok || !resp.response) throw new Error("css-http-" + ((resp && resp.status) || 0));
+  const css = await resp.response.text();
+  if (!css || !css.trim()) throw new Error("css-empty");
+  let el = document.getElementById("folia-skin-hot");
+  if (!el) {
+    el = document.createElement("style");
+    el.id = "folia-skin-hot";
+    // 挂 body 末尾（不是 head）：文档顺序最后 ⇒ 同等特异性下覆盖先前的规则。
+    (document.body || document.head).appendChild(el);
   }
+  el.textContent = css;
+  let rules = 0;
+  try { rules = (el.sheet && el.sheet.cssRules && el.sheet.cssRules.length) || 0; } catch { /* 读不到就报 0 */ }
+  return { bytes: css.length, rules };
 }
 
 function SkinsTabPanel() {
@@ -148,14 +156,22 @@ function SkinsTabPanel() {
           setNote({ kind: "ok", text: weT("已安装：") + label });
           await load(true);
         } else if (kind === "activate") {
-          // **当场换肤**：把皮肤样式直接注入文档，不刷新、不重启。
-          // （背景：皮肤中心只在页面加载时应用皮肤，而桌面壳会吞掉 location.reload。）
-          const applied = applySkinCss(id);
+          // **当场换肤**：把皮肤样式同步注入文档，不刷新、不重启。
+          // 注入结果直接写进提示里（字节数 / 规则条数）：万一样式还是没盖住皮肤中心，
+          // 这一行就是判断"是没注入"还是"注入了但被压住"的依据，不用再猜。
+          let info = null;
+          let applyErr = "";
+          try {
+            info = await applySkinCss(id);
+          } catch (e) {
+            applyErr = String((e && e.message) || e);
+          }
           setNote({
-            kind: "ok",
-            text: applied
-              ? weT("已切换到「") + label + weT("」—— 样式已即时应用")
-              : weT("已切换为「") + label + weT("」，但样式注入失败，请重启 DSH"),
+            kind: applyErr ? "err" : "ok",
+            text: applyErr
+              ? weT("已切换为「") + label + weT("」，但样式注入失败：") + applyErr
+              : weT("已切换到「") + label + weT("」—— 已注入 ")
+                + Math.round(info.bytes / 1024) + " KB / " + info.rules + weT(" 条样式规则"),
             // hooks（粒子等动效）只有整页重载才会跑：给一个可选入口，不强制。
             reload: true,
           });
@@ -357,8 +373,6 @@ function SkinsTabPanel() {
             : React.createElement("div", { style: SKINS_STYLE.thumb }),
           React.createElement("div", { style: SKINS_STYLE.body },
             React.createElement("div", { style: SKINS_STYLE.title }, s.name || s.id),
-            React.createElement("div", { style: SKINS_STYLE.meta },
-              (s.author ? s.author : weT("未知作者")) + " · " + skinsFmtBytes(s.zipBytes)),
             s.tagline ? React.createElement("div", { style: SKINS_STYLE.meta }, s.tagline) : null,
             (s.tags || []).length
               ? React.createElement("div", { style: SKINS_STYLE.tags },
