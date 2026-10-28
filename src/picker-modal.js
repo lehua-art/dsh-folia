@@ -363,7 +363,7 @@
   }
 
   function renderPickerFilterRow(ctx) {
-    const { sel, basePlayable, ratingCounts, typeCounts, onSearchInput, onRatingFilterChange, onTypeFilterChange } = ctx;
+    const { sel, basePlayable, ratingCounts, typeCounts, sourceCounts, onSearchInput, onRatingFilterChange, onTypeFilterChange, onSourceFilterChange } = ctx;
     return React.createElement("div", { className: "we-picker__row we-picker__filter-row" },
       // 标题搜索：几百上千张壁纸时最快的定位方式。输入即过滤，与分级/类型过滤叠加。
       React.createElement("input", {
@@ -373,6 +373,20 @@
         "aria-label": weT("搜索壁纸标题"),
         onInput: onSearchInput,
       }),
+      // 来源：本机 Wallpaper Engine 库 vs 我们站点。放在最前面 —— 它是最粗的一刀，
+      // 用户常常只想看其中一边（本机几十张 vs 站点几条，混在一起没法挑）。
+      React.createElement("span", { className: "we-picker__hint we-picker__label" }, weT("来源")),
+      React.createElement("select", {
+        className: "we-picker__playlist-select",
+        value: sel.sourceFilter || "all",
+        onChange: onSourceFilterChange,
+        "aria-label": weT("来源"),
+        title: weT("按来源过滤：本机 Wallpaper Engine 库，还是从我们站点拉下来的壁纸"),
+      },
+      React.createElement("option", { value: "all" }, weT("全部（{n}）", { n: basePlayable.length })),
+      React.createElement("option", { value: "local" }, weT("本机 Wallpaper Engine（{n}）", { n: (sourceCounts && sourceCounts.local) || 0 })),
+      React.createElement("option", { value: "site" }, weT("站点壁纸（{n}）", { n: (sourceCounts && sourceCounts.site) || 0 })),
+      ),
       React.createElement("span", { className: "we-picker__hint we-picker__label" }, weT("内容分级")),
       React.createElement("select", {
         className: "we-picker__playlist-select",

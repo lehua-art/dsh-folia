@@ -101,8 +101,25 @@ function isPlayableType(w) {
   return w.type === "scene" && Boolean(w.frameUrl);
 }
 
-function isRotatableWallpaper(w, ratingFilter, typeFilter) {
-  return isPlayableType(w) && matchesRatingFilter(w, ratingFilter) && matchesTypeFilter(w, typeFilter);
+/**
+ * 壁纸来源：`site` = 从我们站点拉下来的（inventory 里带 `source: "folia"`），
+ * 其余一律算 `local`（本机 Wallpaper Engine 库 / 用户上传 —— 它们都没有那个标记）。
+ *
+ * 为什么不给本机条目补一个 `source`：那要动宿主侧的 inventory 产出，而客户端只靠
+ * “有没有 folia 标记”就能判对，改面更小。
+ */
+function sourceOf(w) {
+  return w && w.source === "folia" ? "site" : "local";
+}
+
+function matchesSourceFilter(w, sourceFilter) {
+  if (!sourceFilter || sourceFilter === "all") return true;
+  return sourceOf(w) === sourceFilter;
+}
+
+function isRotatableWallpaper(w, ratingFilter, typeFilter, sourceFilter) {
+  return isPlayableType(w) && matchesRatingFilter(w, ratingFilter)
+    && matchesTypeFilter(w, typeFilter) && matchesSourceFilter(w, sourceFilter);
 }
 
 // 「正在应用的壁纸可以继续播」判据：可播放 ∧ 分级闸门，**不过滤类型**。过滤档分两种
@@ -126,9 +143,9 @@ function pageSlice(list, page) {
 }
 
 /** 可轮换列表：可播放类型 ∧ 命中两级过滤 ∧ 未隐藏（网格与轮换编辑器共用的那份）。 */
-function playableWallpapers(wallpapers, ratingFilter, typeFilter, hiddenIds) {
+function playableWallpapers(wallpapers, ratingFilter, typeFilter, hiddenIds, sourceFilter) {
   return wallpapers.filter(
-    (w) => isRotatableWallpaper(w, ratingFilter, typeFilter) && !isHiddenWallpaper(w.id, hiddenIds),
+    (w) => isRotatableWallpaper(w, ratingFilter, typeFilter, sourceFilter) && !isHiddenWallpaper(w.id, hiddenIds),
   );
 }
 
@@ -142,15 +159,19 @@ function pickerModel(input) {
   const hiddenIds = input.hiddenIds || [];
   const ratingFilter = input.ratingFilter;
   const typeFilter = input.typeFilter;
+  const sourceFilter = input.sourceFilter;
   // 标题搜索（选择器模态框）：在两级过滤之上再收窄可播放网格。大小写不敏感的**子串**匹配。
   const query = (input.search || "").trim().toLowerCase();
   // 只有可播放的 Video/Web/Image 才进网格 —— Scene/Application 不能嵌进 web UI，
   // 隐掉它们网格才有用。已隐藏（软删除）的壁纸离开这里去「已隐藏」区；两级过滤再收窄。
   const playableList = list.filter((w) =>
-    isRotatableWallpaper(w, ratingFilter, typeFilter) && !isHiddenWallpaper(w.id, hiddenIds)
+    isRotatableWallpaper(w, ratingFilter, typeFilter, sourceFilter) && !isHiddenWallpaper(w.id, hiddenIds)
     && (!query || String(w.title || "").toLowerCase().indexOf(query) !== -1));
   // 两个过滤下拉的分档计数（可播放、未隐藏）：反映实际可用量，与当前生效的过滤无关。
   const basePlayable = list.filter((w) => isPlayableType(w) && !isHiddenWallpaper(w.id, hiddenIds));
+  // 来源分档计数（可播放、未隐藏、**不受来源过滤影响** —— 它要能反映“切过去有多少张”）。
+  const sourceCounts = { local: 0, site: 0 };
+  for (const w of basePlayable) sourceCounts[sourceOf(w)] += 1;
   // 单遍聚合 —— 分档计数各刷一遍 basePlayable 是 10 次 O(n)（5 个分级档 + 5 个类型档）。
   const ratingCounts = { everyone: 0, pg13: 0, mature: 0, unrated: 0 };
   const typeCounts = { video: 0, web: 0, image: 0, scene: 0 };
@@ -159,7 +180,7 @@ function pickerModel(input) {
     ratingCounts[r] = (ratingCounts[r] || 0) + 1;
     typeCounts[w.type] = (typeCounts[w.type] || 0) + 1;
   }
-  const editorList = playableWallpapers(list, ratingFilter, typeFilter, hiddenIds);
+  const editorList = playableWallpapers(list, ratingFilter, typeFilter, hiddenIds, sourceFilter);
   const hiddenList = hiddenWallpapers(list, hiddenIds);
   return {
     query,
@@ -169,6 +190,7 @@ function pickerModel(input) {
     typeCounts,
     editorList,
     hiddenList,
+    sourceCounts,
     normalPage: pageSlice(playableList, input.page),
     hiddenPageView: pageSlice(hiddenList, input.hiddenPage),
     editorPageView: pageSlice(editorList, input.editorPage),
@@ -176,6 +198,8 @@ function pickerModel(input) {
 }
 
 export {
+  sourceOf,
+  matchesSourceFilter,
   isUploadedWallpaper,
   isDirWallpaper,
   ratingOf,

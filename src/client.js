@@ -3889,6 +3889,12 @@ const onTypeFilterChange = (e) => {
   setSetting("typeFilter", e.target.value);
   revalidateSelection();
 };
+// 来源筛选（本机 Wallpaper Engine 库 / 我们站点）：只筛列表与轮播候选，
+// 与类型档同一个效力 —— 不写进播放闸门，切换不会把正在播的壁纸掐掉。
+const onSourceFilterChange = (e) => {
+  setSetting("sourceFilter", e.target.value);
+  revalidateSelection();
+};
 // Card style: classic (CD-rack) vs fixed (overlap-proof).
 const onLayoutChange = (value) => {
   setSetting("pickerLayout", value);
@@ -4433,7 +4439,7 @@ function WallpaperPicker() {
   // 标题子串匹配（空查询 = 不过滤），每页 24 张，页号越界自动 clamp。这里只把状态喂
   // 进去、把结果取出来 —— 组件体不再就地算这些（分级/类型/隐藏的判定也在那边）。
   const {
-    query, playableList, basePlayable, ratingCounts, typeCounts, hiddenList,
+    query, playableList, basePlayable, ratingCounts, typeCounts, sourceCounts, hiddenList,
     editorPageView,
   } = pickerModel({
     wallpapers: list,
@@ -4441,6 +4447,7 @@ function WallpaperPicker() {
     search: sel.search,
     ratingFilter: sel.contentRatingFilter,
     typeFilter: sel.typeFilter,
+    sourceFilter: sel.sourceFilter,
     editorPage: sel.editorPage,
   });
   // CD-rack mode: compact one-page grid (no pagination, no virtualization —
@@ -4600,10 +4607,10 @@ function WallpaperPicker() {
       // 壁纸网格，ESC / 顶部「返回」退出，切页签也会退出（见 switchTab）。
       sel.pickerOpen ? renderPickerModal({
         sel, closePicker, current, playbackLive, playableList, hiddenList,
-        cdMode, query, basePlayable, ratingCounts, typeCounts,
+        cdMode, query, basePlayable, ratingCounts, typeCounts, sourceCounts,
         gridRef: pickerGridRef, vwin: pickerVwin,
         armedConfirm: sel.armedConfirm, onArmConfirm: armConfirm, onDisarmConfirm: disarmConfirm,
-        onClear, onRatingFilterChange, onTypeFilterChange,
+        onClear, onRatingFilterChange, onTypeFilterChange, onSourceFilterChange,
         onShowNormalView, onShowHiddenView,
         onToggleBatchMode, onArmBatchHide, onBatchHide, onBatchCancel, onSearchInput, onPickCard,
       }) : React.createElement(React.Fragment, null,

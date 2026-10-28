@@ -532,7 +532,17 @@
       );
   }
 
-  function qpRenderViewBar(sel, view, typeFilter, ratingFilter, switchView) {
+  // 来源档（本机 Wallpaper Engine 库 / 我们站点）：与设置页同一个键 `sourceFilter`，
+  // 同样"两处同步"——这里切，设置页跟着变，反之亦然。只筛列表，不拦正在播的壁纸。
+  function qpSources() {
+    return [
+      { id: "all", label: weT("全部来源") },
+      { id: "local", label: weT("本机") },
+      { id: "site", label: weT("站点") },
+    ];
+  }
+
+  function qpRenderViewBar(sel, view, typeFilter, ratingFilter, switchView, sourceFilter) {
     return React.createElement("div", { className: "we-qp__viewbar" },
       React.createElement("input", {
         className: "we-picker__text we-qp__search", type: "text",
@@ -565,6 +575,16 @@
         title: weT("按类型筛选壁纸列表（与设置页同一档）"),
       },
       ...qpTypes().map((t) => React.createElement("option", { key: t.id, value: t.id }, t.label)),
+      ),
+      // 来源筛选：本机 Wallpaper Engine 库 vs 我们站点（与设置页同一个键）。
+      React.createElement("select", {
+        className: "we-picker__select we-qp__source",
+        value: sourceFilter,
+        onChange: (e) => { setSetting("sourceFilter", e.target.value); emit(); },
+        "aria-label": weT("来源筛选"),
+        title: weT("按来源筛选：本机 Wallpaper Engine 库，还是从我们站点拉下来的壁纸"),
+      },
+      ...qpSources().map((s) => React.createElement("option", { key: s.id, value: s.id }, s.label)),
       ),
       // 列表 / 卡片：标签式切换（滑动胶囊做激活指示、无分段底 —— 样式见
       // .we-qp__viewtabs），偏好记 localStorage（QP_VIEW_KEY），两个壳共用一份。
@@ -631,7 +651,7 @@
     );
   }
 
-  function qpRenderLibrarySection(sel, view, typeFilter, ratingFilter, listRef, rows, cardsView, vTopH, vBtmH, q, switchView) {
+  function qpRenderLibrarySection(sel, view, typeFilter, ratingFilter, listRef, rows, cardsView, vTopH, vBtmH, q, switchView, sourceFilter) {
     return React.createElement("div", { className: "we-qp__section we-qp__library" },
       !sel.loaded
         ? React.createElement("span", { className: "we-picker__hint" }, weT("扫描 Wallpaper Engine…"))
@@ -645,7 +665,7 @@
               }, weT(sel.loading ? "刷新中…" : "重试")),
             )
           : React.createElement(React.Fragment, null,
-      qpRenderViewBar(sel, view, typeFilter, ratingFilter, switchView),
+      qpRenderViewBar(sel, view, typeFilter, ratingFilter, switchView, sourceFilter),
       qpRenderList(listRef, rows, view, cardsView, vTopH, vBtmH, q, ratingFilter, typeFilter, sel),
     ),
   );
@@ -765,8 +785,11 @@
     const ratingFilter = qpRatings().some((r) => r.id === sel.contentRatingFilter)
       ? sel.contentRatingFilter : "all";
     const playable = playableInventory();
+    const sourceFilter = qpSources().some((s) => s.id === sel.sourceFilter) ? sel.sourceFilter : "all";
     const filtered = playable.filter((w) => {
       if (typeFilter !== "all" && w.type !== typeFilter) return false;
+      // 站点条目带 `source: "folia"`；其余（本机工坊 + 上传）一律算本机。
+      if (sourceFilter !== "all" && ((w.source === "folia") ? "site" : "local") !== sourceFilter) return false;
       if (q && String(w.title || "").toLowerCase().indexOf(q) === -1) return false;
       return true;
     });
@@ -852,7 +875,7 @@
                 // ── 壁纸列表（搜索 + 视图切换 + 快切）──
                 // 库还没回来 / 扫描失败：**只有这一页**给一句话 —— 外观 / 播放两页不依赖库，
                 // 照常可用（不能整块替换掉，那样连外观都进不去）。
-                qpRenderLibrarySection(sel, view, typeFilter, ratingFilter, listRef, rows, cardsView, vTopH, vBtmH, q, switchView),
+                qpRenderLibrarySection(sel, view, typeFilter, ratingFilter, listRef, rows, cardsView, vTopH, vBtmH, q, switchView, sourceFilter),
                 // 声音（与播放页那份同源：同一份渲染器、同一状态）。包一层 .we-qp__section
                 // 只为保留这一节的分隔线与间距（渲染器自己那份 section 是给设置页排版的）。
                 React.createElement("div", { className: "we-qp__section" },

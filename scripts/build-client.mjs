@@ -369,7 +369,7 @@ const INLINE_MODULES = [
     file: 'src/picker-model.js',
     why: '选择器模型层：过滤判定 + 派生数据 + 分页切片（纯函数 / 显式入参 / 零 DOM）',
     markers: ['function ratingOf(w)', 'function isPlayableType(w)',
-      'function isRotatableWallpaper(w, ratingFilter, typeFilter)',
+      'function isRotatableWallpaper(w, ratingFilter, typeFilter, sourceFilter)',
       'function isHiddenWallpaper(id, hiddenIds)', 'const PICKER_PAGE_SIZE = 24',
       'function pageSlice(list, page)', 'function pickerModel(input)'],
   },
