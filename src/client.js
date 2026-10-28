@@ -454,6 +454,17 @@ function skinYieldActive() {
  * 退出让路时立刻原样恢复。
  */
 function syncPluginCssForSkin() {
+  // ⚠️ 默认**不**整表禁用。3.9.0 试过一次"皮肤在台就关掉整张样式表"，代价是：
+  //    我们的面板失去可读底色，皮肤的底图直接透上来，字全糊 —— 插件等于不能用了。
+  //    皮肤和壁纸是两个都在重绘整个界面的产品，CSS 层面无法各让一半：整表关掉
+  //    皮肤完整但我们不可用，整表开着我们可用但皮肤被压。折中只保留"玻璃效果族
+  //    退场"（它已经由 data-we-* 属性门控），样式表本体始终在 —— 保证可读性优先。
+  //    需要皮肤完全接管时，用环境变量 DSH_FOLIA_YIELD_CSS=1 显式开启整表让位。
+  // 前端没有 process.env（那是宿主侧的），开关放在 localStorage：
+  //   localStorage.setItem("folia.yieldCss", "1") → 刷新后启用整表让位
+  let want = false;
+  try { want = window.localStorage.getItem("folia.yieldCss") === "1"; } catch { want = false; }
+  if (!want) return;
   try {
     const tag = document.querySelector('style[data-plugin-css="dsh-folia/styles-v3"]');
     if (tag === null) return;
