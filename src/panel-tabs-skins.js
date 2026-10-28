@@ -93,10 +93,25 @@ function SkinsTabPanel() {
 
   React.useEffect(() => { load(false); }, [load]);
 
+  /**
+   * 执行一个动作（install / activate / remove）。
+   *
+   * ⚠️ **「使用」必须立刻有反馈**：切换皮肤只写 `skin-center-active.json`，host 端 6 ms 就应，
+   * 而皮肤要重启才生效 —— 如果等一次 `?refresh=1`（约 600 ms）再改标记，用户看到的就是
+   * "点了一下，半天没反应"。所以「使用」走**乐观更新**：先本地翻转 active 并把提示打出来，
+   * 请求失败再回滚重拉。装 / 删仍然要重拉（已装标记与体积都变了）。
+   */
   async function act(kind, id, label) {
     if (busy) return;
     setBusy(id);
     setNote(null);
+    const prevActive = active;
+    if (kind === "activate") {
+      // 乐观：先给反馈，再等网络
+      setActive(id);
+      setList((prev) => prev.map((x) => ({ ...x, active: x.id === id })));
+      setNote({ kind: "ok", text: weT("正在切换到「") + label + weT("」…") });
+    }
     try {
       // 同样是包装对象：`ok` 是 HTTP 2xx，业务结论在 `data.ok`（宿主回 `{ok:false,error}`）。
       const resp = await apiPostJson("/skins/" + kind, { id }, { parse: "always" });
@@ -106,9 +121,11 @@ function SkinsTabPanel() {
           setNote({ kind: "ok", text: weT("已安装：") + label });
           await load(true);
         } else if (kind === "activate") {
-          setActive(id);
-          setNote({ kind: "ok", text: weT("已切换到「") + label + weT("」，重启 DSH 后生效") });
-          await load(true);
+          setNote({
+            kind: "ok",
+            text: weT("已切换到「") + label + weT("」 —— 重启 DSH 后生效"),
+          });
+          // 不再整表重拉：本地标记已经对了，省掉那 600 ms 的"没反应"窗口。
         } else if (kind === "remove") {
           setNote({ kind: "ok", text: weT("已删除：") + label });
           await load(true);
@@ -117,9 +134,18 @@ function SkinsTabPanel() {
         const code = (r && r.error) || "failed";
         const detail = (r && r.detail) ? "（" + r.detail + "）" : "";
         setNote({ kind: "err", text: weT("操作失败：") + code + detail });
+        if (kind === "activate") {
+          // 回滚乐观更新
+          setActive(prevActive);
+          setList((prev) => prev.map((x) => ({ ...x, active: x.id === prevActive })));
+        }
       }
     } catch (e) {
       setNote({ kind: "err", text: weT("请求失败：") + (e && e.message ? e.message : weT("网络错误")) });
+      if (kind === "activate") {
+        setActive(prevActive);
+        setList((prev) => prev.map((x) => ({ ...x, active: x.id === prevActive })));
+      }
     } finally {
       setBusy("");
     }
@@ -156,6 +182,22 @@ function SkinsTabPanel() {
   }
 
   const children = [React.createElement("div", { className: "we-picker__section", key: "sec" }, header)];
+  // 常驻一行「当前皮肤」：切换只写文件、皮肤要重启才生效，不给这一行用户就无从判断
+  // 刚才那次点击到底成没成（这是"点了没反应"的一半原因）。
+  if (active) {
+    const activeName = (list.find((x) => x.id === active) || {}).name || active;
+    children.push(React.createElement("div", {
+      key: "active",
+      className: "we-picker__hint",
+      style: { margin: "4px 0 8px", display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" },
+    },
+    React.createElement("span", null, weT("当前皮肤：") + activeName),
+    React.createElement("span", {
+      style: { fontSize: "11px", padding: "1px 6px", borderRadius: "999px", background: "rgba(142,230,168,0.16)", color: "#8ee6a8" },
+    }, weT("重启 DSH 生效")),
+    ));
+  }
+
   if (error) {
     children.push(React.createElement("div", {
       key: "err",
