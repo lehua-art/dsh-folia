@@ -167,6 +167,8 @@
   // 对照很常见）。与设置页的页签表（PICKER_TABS）是两件事 —— 这里只镜像用户点名要的
   // 两页，外加壁纸页。
   const QP_TABS = [
+    // 开机动画放在「壁纸」左边：它和壁纸是并列的两种"开机时看到什么"，不是壁纸的子功能。
+    { id: "boot", get label() { return weT("开机动画"); } },
     { id: "wallpaper", get label() { return weT("壁纸"); } },
     { id: "appearance", get label() { return weT("外观"); } },
     { id: "playback", get label() { return weT("播放"); } },
@@ -824,7 +826,13 @@
     // 设置页同名页签 —— 玻璃详细调节仍只在侧栏（本页，折叠块），设置页那边留玻璃预设、
     // 全量配置与**字体节**（三次修订后字体节两档都画）；播放页的出图来源 /
     // 实时帧仍住设置页。
-    const foot = qpTab === "appearance"
+    const foot = qpTab === "boot"
+      ? {
+        label: weT("打开设置 ›"),
+        target: "",
+        title: weT("开机动画的全部参数都在侧栏「壁纸引擎」设置里"),
+      }
+      : qpTab === "appearance"
       ? {
         label: weT("更多外观设置 ›"),
         target: "appearance",
@@ -856,7 +864,9 @@
       React.createElement("div", { className: tabBodyClass, ref: qpPaneRef },
         qpTab === "wallpaper" && userPropsPanelOpen() && propsAvailable
           && React.createElement("div", { className: "we-qp__propsview we-qp__propsview--drill" }, renderUserPropsPanel()),
-        !(qpTab === "wallpaper" && userPropsPanelOpen() && propsAvailable) && (qpTab === "appearance"
+        // 开机动画档：整区就是那个面板（它自己管加载/下载/开关）。
+        qpTab === "boot" && React.createElement(BootTabPanel, null),
+        !(qpTab === "wallpaper" && userPropsPanelOpen() && propsAvailable) && qpTab !== "boot" && (qpTab === "appearance"
           ? qpRenderAppearancePane(sel, {
             fontOpen, onToggleFontSection: toggleFontSection,
             uiColorOpen, onToggleUiColorSection: toggleUiColorSection,

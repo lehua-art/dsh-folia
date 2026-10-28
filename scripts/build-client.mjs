@@ -388,6 +388,11 @@ const INLINE_MODULES = [
       'className: "we-picker__props-section"'],
   },
   {
+    file: 'src/panel-tabs-boot.js',
+    why: '「开机动画」页签：候选/下载/选择/开关。播放不在前端 —— 启动那一刻应用还没挂载，由宿主注入的脚本负责',
+    markers: ['function BootTabPanel()', 'function renderBootTab()', 'const BOOT_STYLE = '],
+  },
+  {
     file: 'src/quick-panel.js',
     why: '快捷播放面板（官方侧栏 tab 与低版本抽屉共用同一份内容）：当前壁纸 + 轮播 + 列表快切 + 声音 + 设置入口。列表虚拟滚动（spacer + 可视窗口）',
     markers: ['function qpFindScroller(', 'function qpVirtWindow(', 'function qpTypeLabel(', 'function QuickPanel(props)'],
