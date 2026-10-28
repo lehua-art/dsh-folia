@@ -1,5 +1,10 @@
 /**
- * panel-tabs-skins.js — 「皮肤包」页签：从**自建站**列皮肤包 → 下载 → 装到本地 → 激活。
+ * panel-tabs-skins.js — 「皮肤包」页签：从**自建站**列皮肤包 → 下载 → 装到本地 → 选择。
+ *
+ * ⚠️ **分工**（3.2.0 起）：皮肤"渲染"这件事归皮肤中心（@linxin666/dsh-client-ui-skin-center）。
+ * 本页签负责**管理**：列表 / 下载 / 删除 / 选中。选中后应用由皮肤中心的设置页完成 ——
+ * 那是唯一 100% 完整的路径（它的控制器不外露，外部没法调）。
+ * 皮肤中心不在台时才退回内置渲染（等价但不完整），并在界面上**明说**。
  *
  * 为什么是一个**真正的 React 组件**（而不是像别的页签那样是纯渲染函数）：
  * 这个页签有自己的异步状态（列表 / 加载中 / 下载中 / 错误），而页签渲染器是在
@@ -451,6 +456,8 @@ function SkinsTabPanel(props) {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(null);
   const [harnessFound, setHarnessFound] = React.useState(true);
+  // 皮肤中心是否在台：决定"应用"这一步交给谁（见文件头那段分工说明）
+  const [skinCenter, setSkinCenter] = React.useState(false);
   const [busy, setBusy] = React.useState("");       // 正在安装 / 激活的那个 id
   const [note, setNote] = React.useState(null);      // 一次性提示（成功 / 失败原因）
   const [q, setQ] = React.useState("");
@@ -469,6 +476,7 @@ function SkinsTabPanel(props) {
       setActive((r && r.active) || null);
       setError((r && r.error) || (resp && resp.error) || null);
       setHarnessFound(!r || r.harnessFound !== false);
+      setSkinCenter(Boolean(r && r.skinCenter));
     } catch (e) {
       setError("network");
       setList([]);
@@ -534,8 +542,10 @@ function SkinsTabPanel(props) {
           setNote({
             kind: applyErr ? "err" : "ok",
             text: applyErr
-              ? weT("已切换为「") + label + weT("」，但样式注入失败：") + applyErr
-              : weT("已切换到「") + label + weT("」—— 样式 ")
+              ? weT("已选中「") + label + weT("」，但预览注入失败：") + applyErr
+              : (skinCenter
+                ? weT("已选中「") + label + weT("」—— 请到 设置 → 皮肤 点「应用」完成（完整效果由皮肤中心渲染）· 预览：")
+                : weT("已切换到「") + label + weT("」—— 未检测到皮肤中心，使用内置渲染，可能显示不全 · 样式："))
                 + Math.round(info.bytes / 1024) + " KB / " + info.rules + weT(" 条规则")
                 + ((info.source === "skin-center" || info.source === "local-scoped") ? weT("（已作用域化）") : weT("（未作用域化，可能显示不全）"))
                 + (bgKind === "none" ? weT("，无背景媒体") : weT("，背景：") + bgKind)
@@ -602,6 +612,18 @@ function SkinsTabPanel(props) {
       title: weT("重新从站点拉取列表"),
     }, loading ? weT("加载中…") : weT("刷新")),
   );
+
+  // 分工提示：皮肤中心在台 ⇒ 我们只做"选"，应用由它的设置页完成（原生路径，完整）。
+  // 不在台 ⇒ 明说我们在兜底，避免用户以为"点了却坏了"。
+  if (list.length > 0) {
+    children.push(React.createElement("div", {
+      key: "division",
+      className: "we-picker__hint",
+      style: { margin: "2px 0 8px", opacity: 0.8 },
+    }, skinCenter
+      ? weT("应用皮肤由皮肤中心负责：在这里选中后，到 设置 → 皮肤 点「应用」")
+      : weT("未检测到皮肤中心：将使用内置渲染，效果可能不完整（建议安装 @linxin666/dsh-client-ui-skin-center）")));
+  }
 
   if (!harnessFound) {
     return React.createElement(React.Fragment, null,
@@ -762,7 +784,9 @@ function SkinsTabPanel(props) {
           actions.push(btn(isBusy ? weT("安装中…") : weT("下载安装"), () => act("install", s.id, s.name), false, true));
         } else {
           if (!s.active) {
-            actions.push(btn(isBusy ? weT("切换中…") : weT("使用"), () => act("activate", s.id, s.name), false, true));
+            actions.push(btn(
+            isBusy ? weT("切换中…") : (skinCenter ? weT("选择") : weT("使用")),
+            () => act("activate", s.id, s.name), false, true));
             actions.push(btn(weT("删除"), () => act("remove", s.id, s.name), isBusy, false));
           } else {
             actions.push(btn(weT("使用中"), () => {}, true, false));
