@@ -76,17 +76,16 @@ function skinsErrText(code) {
  */
 async function fetchSkinCss(id) {
   const enc = encodeURIComponent(id);
-  const origin = (typeof location !== "undefined" && location.origin) ? location.origin : "";
   const parts = [];
   let source = "";
   for (const part of ["stylesheet", "patches"]) {
     try {
-      const r = await apiFetch(origin + "/api/skin-center/v2/skins/" + enc + "/" + part, {
-        parse: false,
-        cache: "no-store",
-      });
-      if (r && r.ok && r.response) {
-        const text = await r.response.text();
+      // 根相对路径 + 原生请求：桌面壳可能跑在 `dsh-app://` 下（`location.origin` 是 "null"），
+      // 拼绝对 URL 会作废；`/api/...` 交给浏览器按文档解析才可靠
+      //（皮肤中心自己的客户端用的也是这种写法）。
+      const r = await apiRawResponse("/api/skin-center/v2/skins/" + enc + "/" + part);
+      if (r && r.ok) {
+        const text = await r.text();
         if (text && text.trim()) {
           parts.push(text);
           source = "skin-center";

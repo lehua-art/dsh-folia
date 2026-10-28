@@ -122,4 +122,32 @@ const apiPostJson = (path, payload, options) => apiFetch(path, Object.assign({
 /** DELETE（多数接口不返回体；需要时传 parse: true）。 */
 const apiDelete = (path, options) => apiFetch(path, Object.assign({ method: 'DELETE', parse: false }, options));
 
-export { BASE, apiUrl, apiFetch, apiJson, apiHead, apiPostJson, apiDelete };
+/**
+ * 根相对路径的**原生**请求（**不补 BASE**），返回原始 `Response`（失败给 null）。
+ *
+ * 用途：访问**同源其它插件**的路由 —— 典型是皮肤中心的 `/api/skin-center/v2/...`
+ *（它把皮肤 CSS 做了强制作用域化，只有那条路由给的版本才能压过应用自身规则）。
+ *
+ * 为什么必须是**根相对路径**而不是 `location.origin + path`：桌面壳里文档可能跑在
+ * 自定义协议下（`dsh-app://…`），此时 `location.origin` 是 `"null"`，拼出来的绝对 URL
+ * 直接作废。`/api/...` 交给浏览器按文档解析，两种协议下都成立 —— 皮肤中心自己的客户端
+ * 用的也正是这种写法。
+ *
+ * @param {string} path 以 `/` 开头的同源路径
+ * @param {{ method?: string, cache?: string, headers?: object, fetch?: Function }} [options]
+ * @returns {Promise<Response|null>}
+ */
+async function apiRawResponse(path, options) {
+  const o = options || {};
+  const doFetch = pickFetch(o.fetch);
+  if (!doFetch) return null;
+  const init = { method: o.method || 'GET', cache: o.cache || 'no-store' };
+  if (o.headers) init.headers = o.headers;
+  try {
+    return await doFetch(String(path), init);
+  } catch {
+    return null;
+  }
+}
+
+export { BASE, apiUrl, apiFetch, apiJson, apiHead, apiPostJson, apiDelete, apiRawResponse };
