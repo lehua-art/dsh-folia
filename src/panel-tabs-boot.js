@@ -115,7 +115,7 @@ function BootTabPanel() {
   ));
 
   children.push(React.createElement("div", { key: "hint", className: "we-picker__hint", style: { margin: "2px 0 6px", opacity: 0.75 } },
-    weT("下载一条并「使用」后，每次启动都会先播它；默认播完才淡出进入界面（想更快就切「界面就绪就进」）。点击或按 Esc 可立即跳过。")));
+    weT("下载一条并「使用」后，每次启动都会先播它；默认播完才淡出进入界面。点击或按 Esc 可立即跳过。「带声音」若被浏览器的自动播放策略拦下，会自动退回静音播放。")));
 
   if (state && state.error && !clips.length) {
     children.push(React.createElement("div", { key: "err", className: "we-picker__hint", style: { color: "#ff9a9a" } },
@@ -153,6 +153,17 @@ function BootTabPanel() {
         ),
       ),
       opt(weT("淡出时长"), "fadeMs", [[400, "0.4 秒"], [600, "0.6 秒"], [900, "0.9 秒"], [1200, "1.2 秒"], [1600, "1.6 秒"]]),
+      // 声音：默认关（带声音的自动播放会被浏览器策略拦）。打开后若仍被拦，
+      // 脚本会自动退回静音播放 —— 画面优先，不会黑屏。
+      React.createElement("label", { style: { display: "flex", gap: "6px", alignItems: "center", fontSize: "12px" } },
+        React.createElement("input", {
+          type: "checkbox",
+          checked: Boolean(state.sound),
+          disabled: Boolean(busy),
+          onChange: (e) => act("settings", { sound: e.target.checked }, ""),
+        }),
+        weT("带声音"),
+      ),
       opt(weT("最短显示"), "minShowMs", [[0, "不限制"], [600, "0.6 秒"], [1200, "1.2 秒"], [2000, "2 秒"]]),
       opt(weT("最长停留"), "maxHoldMs", [[10000, "10 秒"], [20000, "20 秒（默认）"], [30000, "30 秒"], [60000, "60 秒"]]),
     ));
