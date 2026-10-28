@@ -297,7 +297,7 @@
       React.createElement("span", { className: "we-qp__item-thumb" },
         w.preview
           ? React.createElement("img", {
-              src: w.preview, alt: "", loading: "lazy",
+              src: w.preview, alt: "", loading: "lazy", decoding: "async",
               onError: (e) => { e.target.style.display = "none"; },
               onLoad: (e) => { e.target.style.opacity = "1"; },
             })
@@ -325,7 +325,7 @@
     },
       w.preview
         ? React.createElement("img", {
-            src: w.preview, alt: "", loading: "lazy",
+            src: w.preview, alt: "", loading: "lazy", decoding: "async",
             onError: (e) => { e.target.style.display = "none"; },
             onLoad: (e) => { e.target.style.opacity = "1"; },
           })

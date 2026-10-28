@@ -36,6 +36,9 @@ function BootTabPanel() {
   const [state, setState] = React.useState(null);
   const [busy, setBusy] = React.useState("");
   const [note, setNote] = React.useState(null);
+  // 下载没有进度通道（宿主一次性 fetch 完才返回），但等待必须"看得见"：
+  // 每秒 +1 的秒表足以让用户知道它没卡死。
+  const [tick, setTick] = React.useState(0);
 
   const load = React.useCallback(async (force) => {
     try {
@@ -49,9 +52,16 @@ function BootTabPanel() {
 
   React.useEffect(() => { load(false); }, [load]);
 
+  React.useEffect(() => {
+    if (!busy) return undefined;
+    const t = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [busy]);
+
   async function act(kind, payload, label) {
     if (busy) return;
     setBusy(payload && payload.id ? payload.id : kind);
+    setTick(0);
     setNote(null);
     try {
       const resp = await apiPostJson("/boot/" + kind, payload || {}, { parse: "always" });
@@ -165,7 +175,7 @@ function BootTabPanel() {
         }, label);
         const actions = [];
         if (!c.installed) {
-          actions.push(btn(isBusy ? weT("下载中…") : weT("下载"), () => act("download", { id: c.id }, c.title), false, true));
+          actions.push(btn(isBusy ? (weT("下载中… ") + tick + "s") : weT("下载"), () => act("download", { id: c.id }, c.title), false, true));
         } else if (!isActive) {
           actions.push(btn(weT("使用"), () => act("select", { id: c.id }, c.title), false, true));
           actions.push(btn(weT("删除"), () => act("remove", { id: c.id }, c.title), isBusy, false));
