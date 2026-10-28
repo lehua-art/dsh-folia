@@ -59,6 +59,33 @@ function skinsErrText(code) {
   return code;
 }
 
+/**
+ * 把一套皮肤的样式**当场**挂进文档：`<link id="folia-skin-hot">` 追加到 `<head>` 末尾。
+ *
+ * 为什么不用"刷新页面"：皮肤中心只在页面加载时应用皮肤，而桌面壳里 `location.reload()`
+ * 常常被吞掉（用户看到的就是"点了没反应"）。直接注入 CSS 不依赖它 —— 后加载的规则
+ * 覆盖先前的，于是不刷新也能换肤。代价：皮肤自带的 `hooks.mjs`（粒子等动效）不会跑，
+ * 那部分仍然只有整页重载/重启才会生效；这一点在下方的提示里如实写明。
+ *
+ * @param {string} id 皮肤 id
+ */
+function applySkinCss(id) {
+  try {
+    const href = apiUrl("/skins/css?id=" + encodeURIComponent(id) + "&t=" + Date.now());
+    let el = document.getElementById("folia-skin-hot");
+    if (!el) {
+      el = document.createElement("link");
+      el.id = "folia-skin-hot";
+      el.rel = "stylesheet";
+      document.head.appendChild(el);
+    }
+    el.href = href;   // 带时间戳：绕过缓存，换皮肤立刻拿到新样式
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function SkinsTabPanel() {
   const [list, setList] = React.useState([]);
   const [active, setActive] = React.useState(null);
@@ -121,25 +148,17 @@ function SkinsTabPanel() {
           setNote({ kind: "ok", text: weT("已安装：") + label });
           await load(true);
         } else if (kind === "activate") {
+          // **当场换肤**：把皮肤样式直接注入文档，不刷新、不重启。
+          // （背景：皮肤中心只在页面加载时应用皮肤，而桌面壳会吞掉 location.reload。）
+          const applied = applySkinCss(id);
           setNote({
             kind: "ok",
-            text: weT("已切换到「") + label + weT("」，正在刷新界面…"),
-            // 皮肤中心**只在页面加载时**应用皮肤：它的 `POST /v2/active` 也只写状态文件，
-            // 不重绘。所以"真的换肤"只有重新加载这一页一条路 —— 见下面的自动跳转。
+            text: applied
+              ? weT("已切换到「") + label + weT("」—— 样式已即时应用")
+              : weT("已切换为「") + label + weT("」，但样式注入失败，请重启 DSH"),
+            // hooks（粒子等动效）只有整页重载才会跑：给一个可选入口，不强制。
             reload: true,
           });
-          // 一次点击就完成：这里自动重新加载，不再让用户点第二次。
-          // 用 `location.replace(href)` 而非 `reload()`：桌面壳里 reload 有时被吞掉
-          //（表现正是"点了没反应"），硬跳转更容易生效，且 replace 不往历史里塞条目。
-          try {
-            setTimeout(function tryApply() {
-              try {
-                window.location.replace(window.location.href);
-              } catch (e1) {
-                try { window.location.reload(); } catch (e2) { /* 交给手动按钮 */ }
-              }
-            }, 700);
-          } catch { /* 环境不支持 → 手动按钮兜底 */ }
           // 不再整表重拉：本地标记已经对了，省掉那 600 ms 的"没反应"窗口。
         } else if (kind === "remove") {
           setNote({ kind: "ok", text: weT("已删除：") + label });
@@ -209,7 +228,7 @@ function SkinsTabPanel() {
     React.createElement("span", null, weT("当前皮肤：") + activeName),
     React.createElement("span", {
       style: { fontSize: "11px", padding: "1px 6px", borderRadius: "999px", background: "rgba(142,230,168,0.16)", color: "#8ee6a8" },
-    }, weT("重启 DSH 生效")),
+    }, weT("已应用")),
     ));
   }
 
@@ -272,8 +291,8 @@ function SkinsTabPanel() {
             try { window.location.reload(); } catch { /* 极端环境刷不动就让用户手动重启 */ }
           }
         },
-        title: weT("重新加载界面以应用新皮肤（对话与设置都在宿主侧，不会丢）"),
-      }, weT("立即生效"))
+        title: weT("整页重载 —— 皮肤动效（粒子等）需要重载才跑；纯配色已即时生效"),
+      }, weT("重载以播放动效"))
       : null,
     ));
   }
