@@ -1888,6 +1888,9 @@ function weAudioVolume() {
 const PICKER_TAB_KEY = "dsh-folia:picker-tab";
 const PICKER_TABS = [
   { id: "library", get label() { return weT("壁纸库"); } },
+  // 「皮肤包」挨着「壁纸库」：两者都是"给背景换东西"，用户心智在同一处。
+  // 它列的是**自建站**上的皮肤包（宿主端 /skins 族），不是皮肤中心的内置列表。
+  { id: "skins", get label() { return weT("皮肤包"); } },
   { id: "appearance", get label() { return weT("外观"); } },
   { id: "playback", get label() { return weT("播放"); } },
   { id: "system", get label() { return weT("系统"); } },
@@ -4504,6 +4507,9 @@ function WallpaperPicker() {
       onReopenNotice: () => { noticeReopenRequest = true; emit(); },
     });
     if (activeTab === "extensions") return renderExtensionsTab(extensionCtx());
+    // 「皮肤包」自带异步状态（列表 / 下载中 / 错误），所以它是一个**真组件**而不是
+    // 纯渲染函数 —— 薄包装只负责挂上去（理由见 src/panel-tabs-skins.js 文件头）。
+    if (activeTab === "skins") return renderSkinsTab();
     if (activeTab === "appearance") return renderAppearanceTab({
       setSetting, setTransient,
       fontSet: fontSetCtx(),

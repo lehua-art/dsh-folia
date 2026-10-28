@@ -366,6 +366,14 @@ const INLINE_MODULES = [
       'renderWallpaperTab, renderAppearanceTab, renderAudioTab, renderMascotTab, renderEffectsTab, renderAdvancedTab,'],
   },
   {
+    // 「皮肤包」页签：与别的 panel-tabs-* 不同，它导出的是**真组件**（自带 hooks 与异步状态），
+    // 因为页签渲染器是在 renderActiveTab 里被条件调用的普通函数，放 hooks 会违反对齐顺序。
+    file: 'src/panel-tabs-skins.js',
+    why: '「皮肤包」页签：从自建站列皮肤包 → 下载 → 装到 harness/skins → 激活（宿主端 /skins 族）',
+    markers: ['function SkinsTabPanel() {', 'function renderSkinsTab(ctx) {',
+      'export { SkinsTabPanel, renderSkinsTab };'],
+  },
+  {
     file: 'src/picker-model.js',
     why: '选择器模型层：过滤判定 + 派生数据 + 分页切片（纯函数 / 显式入参 / 零 DOM）',
     markers: ['function ratingOf(w)', 'function isPlayableType(w)',
