@@ -123,12 +123,23 @@ function SkinsTabPanel() {
         } else if (kind === "activate") {
           setNote({
             kind: "ok",
-            text: weT("已切换到「") + label + weT("」"),
-            // 皮肤中心是在**页面启动时**拉 `/api/skin-center/v2/active` 再注入样式的，
-            // 所以"换皮肤"只需刷新这一页（不重启 DSH 进程）：下面的按钮就做这件事。
-            // 不自动刷：用户可能正在输入，突然刷新会打断。
+            text: weT("已切换到「") + label + weT("」，正在刷新界面…"),
+            // 皮肤中心**只在页面加载时**应用皮肤：它的 `POST /v2/active` 也只写状态文件，
+            // 不重绘。所以"真的换肤"只有重新加载这一页一条路 —— 见下面的自动跳转。
             reload: true,
           });
+          // 一次点击就完成：这里自动重新加载，不再让用户点第二次。
+          // 用 `location.replace(href)` 而非 `reload()`：桌面壳里 reload 有时被吞掉
+          //（表现正是"点了没反应"），硬跳转更容易生效，且 replace 不往历史里塞条目。
+          try {
+            setTimeout(function tryApply() {
+              try {
+                window.location.replace(window.location.href);
+              } catch (e1) {
+                try { window.location.reload(); } catch (e2) { /* 交给手动按钮 */ }
+              }
+            }, 700);
+          } catch { /* 环境不支持 → 手动按钮兜底 */ }
           // 不再整表重拉：本地标记已经对了，省掉那 600 ms 的"没反应"窗口。
         } else if (kind === "remove") {
           setNote({ kind: "ok", text: weT("已删除：") + label });
@@ -202,6 +213,32 @@ function SkinsTabPanel() {
     ));
   }
 
+  // ⚠️ **壁纸在台时皮肤不会生效** —— 这是皮肤中心写死的行为，不是我们的 bug：
+  //   · host 侧：peer（= 本插件）持久化的壁纸选择非空时，它从文档里**扣住**皮肤；
+  //   · client 侧：它盯 `body[data-we-wallpaper]`，只要那个标记在，就把皮肤让位
+  //     （源码注释：`an active WE wallpaper suppresses skin media`）。
+  // 于是"点了使用但界面没变"最可能的原因就是**壁纸还开着**。这里直接读那个标记，
+  // 命中就把话说清楚，并告诉用户该先做什么。
+  let wallpaperOn = false;
+  try {
+    wallpaperOn = Boolean(document.body && document.body.hasAttribute("data-we-wallpaper"));
+  } catch { /* 拿不到 DOM 就当没有 */ }
+  if (wallpaperOn) {
+    children.push(React.createElement("div", {
+      key: "wpwarning",
+      className: "we-picker__hint",
+      style: {
+        margin: "4px 0 10px",
+        padding: "7px 10px",
+        borderRadius: "8px",
+        background: "rgba(255,196,120,0.12)",
+        color: "#ffd08a",
+        lineHeight: 1.5,
+      },
+    }, weT("⚠️ 当前有壁纸在台：皮肤会被壁纸让位，切换不会生效。")
+    + weT(" 先到「壁纸」页签点「清除」，再回来切换皮肤。")));
+  }
+
   if (error) {
     children.push(React.createElement("div", {
       key: "err",
@@ -229,8 +266,11 @@ function SkinsTabPanel() {
         className: "we-picker__btn we-picker__btn--primary",
         style: { fontSize: "11.5px", padding: "3px 10px" },
         onClick: () => {
-          // 只刷新这个前端页面（皮肤中心启动时重新拉 active），不必重启 DSH 进程。
-          try { window.location.reload(); } catch { /* 极端环境刷不动就留着让用户手动重启 */ }
+          // 与自动那条路一致：优先硬跳转，退而 reload。只重载前端页面 ——
+          // 对话与设置都在宿主侧，不会丢。
+          try { window.location.replace(window.location.href); } catch {
+            try { window.location.reload(); } catch { /* 极端环境刷不动就让用户手动重启 */ }
+          }
         },
         title: weT("重新加载界面以应用新皮肤（对话与设置都在宿主侧，不会丢）"),
       }, weT("立即生效"))
