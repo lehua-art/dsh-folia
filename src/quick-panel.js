@@ -858,7 +858,7 @@
             ? qpRenderPlaybackPane(sel, switchQpTab)
             // 皮肤包：直接挂设置页那个同一个组件（它自己管列表/下载/激活状态）。
             : qpTab === "skins"
-              ? React.createElement(SkinsTabPanel, null)
+              ? React.createElement(SkinsTabPanel, { onClearWallpaper: () => setSetting("id", "") })
               : null),
         !(qpTab === "wallpaper" && userPropsPanelOpen() && propsAvailable) && qpTab === "wallpaper" && React.createElement(React.Fragment, null,
                 // ── 壁纸列表（搜索 + 视图切换 + 快切）──

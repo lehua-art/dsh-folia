@@ -370,7 +370,7 @@ const INLINE_MODULES = [
     // 因为页签渲染器是在 renderActiveTab 里被条件调用的普通函数，放 hooks 会违反对齐顺序。
     file: 'src/panel-tabs-skins.js',
     why: '「皮肤包」页签：从自建站列皮肤包 → 下载 → 装到 harness/skins → 激活（宿主端 /skins 族）',
-    markers: ['function SkinsTabPanel() {', 'function renderSkinsTab(ctx) {',
+    markers: ['function SkinsTabPanel(props) {', 'function renderSkinsTab(props) {',
       'export { SkinsTabPanel, renderSkinsTab };'],
   },
   {

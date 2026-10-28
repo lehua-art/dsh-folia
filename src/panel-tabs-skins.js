@@ -166,7 +166,131 @@ async function applySkinBackground(id) {
   return { kind: pick.type };
 }
 
-function SkinsTabPanel() {
+/* ── 热切换运行时：作用域属性 + 六个装饰层 + hooks ───────────────────────────────
+ *
+ * 皮肤不是"一份 CSS"。它有三层，缺一层就"显示不全"：
+ *   ① 样式：`stylesheet` + `patches`
+ *   ② 背景：`contributes.backgroundMedia`
+ *   ③ 作用域与装饰层：`html[data-dsh-skin="<id>"]` + 六个 `[data-dsh-skin-layer=...]`
+ *
+ * 第 ③ 项是"大部分皮肤看起来没生效"的真正原因 —— 65 套里有 **30 套**把规则整段挂在
+ * `html[data-dsh-skin]` 下面，属性不设，那些规则一条都不匹配；另有 **28 套**带
+ * `hooks.mjs`（粒子/交互），契约见皮肤中心 `contracts/hooks-api.d.ts`：
+ *   apply({ skinId, scopeAttr, assetBase, layers{...}, theme{get,subscribe}, onCleanup })
+ * 所以这里补齐作用域属性、六个层，并按契约跑 hooks（失败只降级）。
+ */
+
+const SKIN_LAYER_NAMES = ["background", "ambient", "bottom", "sidebar", "top", "foreground"];
+/** 本次激活注册的清理函数（切换皮肤时逐个跑掉，幂等）。 */
+let skinHotCleanups = [];
+
+function skinThemeNow() {
+  try {
+    return (document.body && document.body.hasAttribute("data-ds-dark-theme")) ? "dark" : "light";
+  } catch {
+    return "light";
+  }
+}
+
+/** 建立/复用六个装饰层，返回契约里那个 `layers` 对象。 */
+function ensureSkinLayers() {
+  const host = document.body || document.documentElement;
+  const out = {};
+  for (const name of SKIN_LAYER_NAMES) {
+    let el = null;
+    try { el = document.querySelector('[data-dsh-skin-layer="' + name + '"]'); } catch { el = null; }
+    if (!el) {
+      el = document.createElement("div");
+      el.setAttribute("data-dsh-skin-layer", name);
+      // 只给最必要的几何 + 不吃事件；层级交给皮肤自己的 CSS
+      //（`background` 是契约里明写 z-index -2 的那层，其余留 auto）。
+      el.style.cssText = "position:fixed;inset:0;pointer-events:none;"
+        + (name === "background" ? "z-index:-2;" : "");
+      host.appendChild(el);
+    }
+    out[name] = el;
+  }
+  return out;
+}
+
+/**
+ * 按契约跑一套皮肤的 hooks。失败**只降级**（返回原因），绝不打断样式/背景。
+ * @returns {Promise<{ ran: boolean, reason?: string }>}
+ */
+async function applySkinHooks(id) {
+  const resp = await apiJson("/skins/manifest?id=" + encodeURIComponent(id));
+  const doc = (resp && resp.data) || null;
+  const rel = doc && doc.hooks;
+  if (!rel) return { ran: false, reason: "no-hooks" };
+
+  const encoded = String(rel).split("/").map(encodeURIComponent).join("/");
+  const r = await apiFetch("/skins/files/" + encodeURIComponent(id) + "/" + encoded, {
+    parse: false,
+    cache: "no-store",
+  });
+  if (!r || !r.ok || !r.response) return { ran: false, reason: "hooks-http-" + ((r && r.status) || 0) };
+  const source = await r.response.text();
+  if (!source || !source.trim()) return { ran: false, reason: "hooks-empty" };
+
+  const blobUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+  try {
+    const mod = await import(blobUrl);
+    const factory = mod && typeof mod.default === "function" ? mod.default : null;
+    if (!factory) return { ran: false, reason: "no-default-export" };
+    const hooks = factory();
+    if (!hooks || typeof hooks.apply !== "function") return { ran: false, reason: "no-apply" };
+
+    const layers = ensureSkinLayers();
+    const unsubs = [];
+    const ctx = {
+      skinId: id,
+      scopeAttr: id,
+      assetBase: apiUrl("/skins/files/" + encodeURIComponent(id) + "/"),
+      layers,
+      theme: {
+        get: skinThemeNow,
+        subscribe(listener) {
+          try {
+            const obs = new MutationObserver(() => {
+              try { listener(skinThemeNow()); } catch { /* 监听方出错不影响别人 */ }
+            });
+            obs.observe(document.body, { attributes: true, attributeFilter: ["data-ds-dark-theme"] });
+            const off = () => { try { obs.disconnect(); } catch { /* ignore */ } };
+            unsubs.push(off);
+            return off;
+          } catch {
+            return () => {};
+          }
+        },
+      },
+      onCleanup(fn) { if (typeof fn === "function") skinHotCleanups.push(fn); },
+    };
+    hooks.apply(ctx);
+    if (typeof hooks.dispose === "function") {
+      skinHotCleanups.push(() => { try { hooks.dispose(); } catch { /* 幂等 */ } });
+    }
+    skinHotCleanups.push(() => { for (const off of unsubs) { try { off(); } catch { /* ignore */ } } });
+    return { ran: true };
+  } finally {
+    setTimeout(() => { try { URL.revokeObjectURL(blobUrl); } catch { /* ignore */ } }, 10000);
+  }
+}
+
+/** 撤掉上一次热切换留下的东西（清理函数 + 注入样式）。作用域属性由下一次直接覆盖。 */
+function clearSkinHot() {
+  for (const fn of skinHotCleanups.splice(0).reverse()) {
+    try { fn(); } catch { /* 清理幂等，单个失败不影响其余 */ }
+  }
+  try {
+    const el = document.getElementById("folia-skin-hot");
+    if (el) el.remove();
+  } catch { /* ignore */ }
+}
+
+function SkinsTabPanel(props) {
+  // 壁纸让位：挂载点（设置页 / 首页抽屉）各自把"清掉当前壁纸"的回调传进来 ——
+  // 皮肤和壁纸都在铺背景，必须二选一。本组件不直接碰设置，只调用传进来的入口。
+  const onClearWallpaper = props && props.onClearWallpaper;
   const [list, setList] = React.useState([]);
   const [active, setActive] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
@@ -234,23 +358,46 @@ function SkinsTabPanel() {
           let info = null;
           let applyErr = "";
           let bgKind = "none";
+          let hooksInfo = { ran: false, reason: "skipped" };
           try {
+            // ① 先清掉上一次热切换留下的清理函数与注入样式（避免两套皮肤叠加）
+            clearSkinHot();
+            // ② 作用域属性：30/65 套皮肤的规则整段挂在 html[data-dsh-skin="<id>"] 下，
+            //    不设这个属性，那些规则一条都不匹配 —— 这是"显示不全"的最大来源。
+            try { document.documentElement.setAttribute("data-dsh-skin", id); } catch { /* ignore */ }
+            // ③ 六个装饰层（hooks 与部分皮肤 CSS 都要用）
+            ensureSkinLayers();
+            // ④ 样式、⑤ 背景、⑥ hooks
             info = await applySkinCss(id);
-            // 样式之后立刻搭背景层：没有它，凡是靠 backgroundMedia 的皮肤（水墨丹青、
-            // 鲸鱼娘、深海女仆工坊…）都只会"变配色不变画面"。
             const bg = await applySkinBackground(id);
             bgKind = bg.kind;
+            try {
+              hooksInfo = await applySkinHooks(id);
+            } catch (e) {
+              hooksInfo = { ran: false, reason: String((e && e.message) || e) };
+            }
           } catch (e) {
             applyErr = String((e && e.message) || e);
           }
+          // ⑦ 壁纸让位：皮肤和壁纸都在铺背景，必须互斥。清掉 `id` 之后壁纸层会自己撤下
+          //    （同时 `data-we-wallpaper` 标记消失，皮肤中心也不会再扣住皮肤）。
+          let wallpaperCleared = false;
+          try {
+            if (typeof onClearWallpaper === "function") {
+              await Promise.resolve(onClearWallpaper());
+              wallpaperCleared = true;
+            }
+          } catch { /* 清壁纸失败不影响换肤本身 */ }
           setNote({
             kind: applyErr ? "err" : "ok",
             text: applyErr
               ? weT("已切换为「") + label + weT("」，但样式注入失败：") + applyErr
               : weT("已切换到「") + label + weT("」—— 样式 ")
                 + Math.round(info.bytes / 1024) + " KB / " + info.rules + weT(" 条规则")
-                + (bgKind === "none" ? weT("，该皮肤无背景媒体") : weT("，背景：") + bgKind),
-            // hooks（粒子等动效）只有整页重载才会跑：给一个可选入口，不强制。
+                + (bgKind === "none" ? weT("，无背景媒体") : weT("，背景：") + bgKind)
+                + (hooksInfo.ran ? weT("，动效已启动") : (hooksInfo.reason === "no-hooks" ? weT("，无动效") : weT("，动效未启动(") + hooksInfo.reason + ")"))
+                + (wallpaperCleared ? weT("，壁纸已关闭") : ""),
+            // hooks 已经跑过了；这里只作为"整页重载"的可选入口（极少数皮肤依赖启动期布局）
             reload: true,
           });
           // 不再整表重拉：本地标记已经对了，省掉那 600 ms 的"没反应"窗口。
@@ -465,9 +612,13 @@ function SkinsTabPanel() {
   return React.createElement(React.Fragment, null, children);
 }
 
-/** 页签薄包装：`renderActiveTab` 只认这个签名（与别的 `render*Tab(ctx)` 一致）。 */
-function renderSkinsTab(ctx) {
-  return React.createElement(SkinsTabPanel, null);
+/**
+ * 页签薄包装：`renderActiveTab` 只认这个签名（与别的 `render*Tab(ctx)` 一致）。
+ * 传进来的 `props` 原样转交给组件 —— 目前只有 `onClearWallpaper`（皮肤与壁纸互斥，
+ * 由挂载点提供"清掉当前壁纸"的入口；本文件不直接碰设置）。
+ */
+function renderSkinsTab(props) {
+  return React.createElement(SkinsTabPanel, props || null);
 }
 
 export { SkinsTabPanel, renderSkinsTab };

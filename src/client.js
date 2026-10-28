@@ -4509,7 +4509,7 @@ function WallpaperPicker() {
     if (activeTab === "extensions") return renderExtensionsTab(extensionCtx());
     // 「皮肤包」自带异步状态（列表 / 下载中 / 错误），所以它是一个**真组件**而不是
     // 纯渲染函数 —— 薄包装只负责挂上去（理由见 src/panel-tabs-skins.js 文件头）。
-    if (activeTab === "skins") return renderSkinsTab();
+    if (activeTab === "skins") return renderSkinsTab({ onClearWallpaper: () => setSetting("id", "") });
     if (activeTab === "appearance") return renderAppearanceTab({
       setSetting, setTransient,
       fontSet: fontSetCtx(),
