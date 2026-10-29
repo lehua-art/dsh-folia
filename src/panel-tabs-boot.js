@@ -194,6 +194,14 @@ function BootTabPanel() {
           actions.push(btn(weT("使用中"), () => {}, true, false));
         }
         return React.createElement("div", { key: c.id, style: BOOT_STYLE.card },
+          // 封面：站点给了真正的缩略图才显示；老条目没有就留空（不显示破图）。
+          c.cover
+            ? React.createElement("img", {
+                src: c.cover, alt: "", loading: "lazy", decoding: "async",
+                style: { width: "100%", aspectRatio: "16 / 9", objectFit: "cover", borderRadius: "6px", background: "rgba(0,0,0,0.3)" },
+                onError: (e) => { e.target.style.display = "none"; },
+              })
+            : null,
           React.createElement("div", { style: BOOT_STYLE.title }, c.title || c.id),
           React.createElement("div", { style: BOOT_STYLE.meta },
             [c.durationSec ? Number(c.durationSec).toFixed(1) + "s" : null,
