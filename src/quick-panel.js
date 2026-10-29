@@ -172,6 +172,8 @@
     { id: "wallpaper", get label() { return weT("壁纸"); } },
     { id: "appearance", get label() { return weT("外观"); } },
     { id: "playback", get label() { return weT("播放"); } },
+    // 桌宠是"桌面上多出来的一只东西"，与壁纸/开机动画并列，不是它们的子功能。
+    { id: "pets", get label() { return weT("桌宠"); } },
   ];
   // 页签记忆（同 picker-tab / qp-view 口径：仅 UI 状态，localStorage，不进 config.json）。
   const QP_TAB_KEY = "dsh-folia:qp-tab";
@@ -886,6 +888,7 @@
           && React.createElement("div", { className: "we-qp__propsview we-qp__propsview--drill" }, renderUserPropsPanel()),
         // 开机动画档：整区就是那个面板（它自己管加载/下载/开关）。
         qpTab === "boot" && React.createElement(BootTabPanel, null),
+        qpTab === "pets" && React.createElement(PetsTabPanel, null),
         !(qpTab === "wallpaper" && userPropsPanelOpen() && propsAvailable) && qpTab !== "boot" && (qpTab === "appearance"
           ? qpRenderAppearancePane(sel, {
             fontOpen, onToggleFontSection: toggleFontSection,

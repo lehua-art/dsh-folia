@@ -6210,6 +6210,10 @@ function apply(ctx) {
   if (ctx.effect && typeof document !== "undefined") {
     ctx.effect(() => installSkinInterop() || undefined);
   }
+  // 3c. 桌宠层：自己拉 /pets/list 决定是否出宠物，随 fiber 注销（不依赖面板打开过）。
+  if (ctx.effect && typeof document !== "undefined") {
+    ctx.effect(() => mountPetLayer() || undefined);
+  }
 
   // 3. Chat-interface rope dock: the draggable pull-cord + glass repo side
   //    panel, portalled onto <body> under its own React root — independent of

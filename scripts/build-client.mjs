@@ -393,6 +393,16 @@ const INLINE_MODULES = [
     markers: ['function BootTabPanel()', 'function renderBootTab()', 'const BOOT_STYLE = '],
   },
   {
+    file: 'src/panel-tabs-pets.js',
+    why: '「桌宠」页签：站点清单/安装/使用/卸载/开关 — 渲染由 pet-layer.js 负责，这里只管动作',
+    markers: ['function PetsTabPanel()', 'function renderPetsTab()', 'const PET_STYLE = '],
+  },
+  {
+    file: 'src/pet-layer.js',
+    why: '桌宠渲染层：canvas 逐帧绘 sprite2d 雪碧图 + 拖动 + 状态机（自渲染，不依赖第三方宠物插件）',
+    markers: ['function mountPetLayer()', 'function createPetLayer(', 'const PET_ROW = '],
+  },
+  {
     file: 'src/quick-panel.js',
     why: '快捷播放面板（官方侧栏 tab 与低版本抽屉共用同一份内容）：当前壁纸 + 轮播 + 列表快切 + 声音 + 设置入口。列表虚拟滚动（spacer + 可视窗口）',
     markers: ['function qpFindScroller(', 'function qpVirtWindow(', 'function qpTypeLabel(', 'function QuickPanel(props)'],
