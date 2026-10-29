@@ -309,6 +309,19 @@
     );
   }
 
+  /**
+   * 这张图是不是"预览尺寸"（当壁纸会糊）。
+   *
+   * 判据用**短边 < 1280**：站点上实测有 192×192 / 254×254 / 1024×1024 的条目，
+   * 它们标题里就写着「（预览）」。用户看不到分辨率，就会把它当壁纸用，然后觉得"糊"。
+   * 视频不判（分辨率高但体积大是另一类问题，不该混在一起提示）。
+   */
+  function qpIsLowRes(w) {
+    if (!w || w.type !== 'image') return false;
+    const shortSide = Math.min(Number(w.width) || 0, Number(w.height) || 0);
+    return shortSide > 0 && shortSide < 1280;
+  }
+
   function qpRenderCard(w, sel) {
     // ── 卡：缩略图网格形态（视图切换的「卡片」档；点击语义与列表行一致）──
     return React.createElement("div", {
@@ -331,6 +344,13 @@
           })
         : React.createElement("span", { className: "we-qp__card-empty" }, weT("无预览")),
       React.createElement("span", { className: "we-qp__card-type" }, CARD_TYPE_LABELS[w.type] || weT("壁纸")),
+      qpIsLowRes(w)
+        ? React.createElement("span", {
+            className: "we-qp__card-badge",
+            style: { right: "auto", left: "6px", background: "rgba(255,196,120,0.9)", color: "#3a2600" },
+            title: weT("这张图只有 ") + w.width + "×" + w.height + weT("，当壁纸会糊 —— 建议在站点上传原图"),
+          }, weT("预览尺寸"))
+        : null,
       w.id === sel.id && React.createElement("span", { className: "we-qp__card-badge" }, weT("当前")),
       React.createElement("span", { className: "we-qp__card-title" }, w.title),
     );
