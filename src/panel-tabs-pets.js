@@ -53,7 +53,9 @@ function PetsTabPanel() {
   React.useEffect(() => { load(false); }, [load]);
 
   const act = async (kind, payload, label) => {
-    setBusy(kind + ":" + (payload.id || ""));
+    // 只有安装/卸载/导入这类**结构性**操作才锁 UI；开关与大小是幂等的。
+    const structural = kind === "install" || kind === "remove" || kind === "import";
+    if (structural) setBusy(kind + ":" + (payload.id || ""));
     setNote(null);
     try {
       const resp = await apiPostJson("/pets/" + kind, payload || {}, { parse: "always" });
@@ -63,7 +65,13 @@ function PetsTabPanel() {
         if (kind === "remove") setNote({ ok: true, text: weT("已卸载：{name}", { name: label || "" }) });
         if (kind === "import") setNote({ ok: true, text: weT("已导入并启用：{name}", { name: label || "" }) });
         if (kind === "config") setNote({ ok: true, text: weT("已保存") });
-        await load(true);
+        // config 的响应里带新的 config（{ ok, config }）⇒ 直接并进 state，
+        // 不再 load(true) 重拉整个清单（那次重拉会让所有按钮先禁用再恢复 = 闪动）。
+        if (kind === "config" && r && r.config) {
+          setState((prev) => (prev ? { ...prev, config: r.config } : prev));
+        } else {
+          await load(true);
+        }
       } else {
         const code = (r && r.error) || "failed";
         setNote({ ok: false, text: weT("操作失败：{code}", { code }) });
@@ -149,13 +157,16 @@ function PetsTabPanel() {
     ),
   ));
 
-  if (note) {
-    children.push(React.createElement("div", {
-      key: "note",
-      className: "we-picker__hint",
-      style: { color: note.ok ? "rgba(120,220,150,0.95)" : "rgba(255,140,140,0.95)", margin: "2px 0 8px" },
-    }, note.text));
-  }
+  // 与开机动画页签同理：提示行常驻占位，避免开关时整块高度跳动。
+  children.push(React.createElement("div", {
+    key: "note",
+    className: "we-picker__hint",
+    style: {
+      color: note && !note.ok ? "rgba(255,140,140,0.95)" : "rgba(120,220,150,0.95)",
+      margin: "2px 0 8px", minHeight: "18px", lineHeight: "18px",
+      opacity: note ? 1 : 0, transition: "opacity 120ms linear",
+    },
+  }, note ? note.text : "\u00a0"));
 
   const btn = (text, onClick, disabled) => React.createElement("button", {
     type: "button", className: "we-picker__btn", disabled: Boolean(disabled),

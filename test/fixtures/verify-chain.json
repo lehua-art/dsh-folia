@@ -773,6 +773,22 @@
         {
           "kind": "guard",
           "npm": null,
+          "file": "test/verify-panel-interactions.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/inventory-types.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
           "file": "test/boot-http.mjs",
           "args": [],
           "tier": "hard",
@@ -1675,6 +1691,22 @@
           "kind": "guard",
           "npm": null,
           "file": "test/verify-settings-ownership.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-panel-interactions.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/inventory-types.mjs",
           "args": [],
           "tier": "hard",
           "probe": false

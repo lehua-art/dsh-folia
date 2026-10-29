@@ -60,7 +60,9 @@ function BootTabPanel() {
 
   async function act(kind, payload, label) {
     if (busy) return;
-    setBusy(payload && payload.id ? payload.id : kind);
+    // 只有结构性操作（下载 / 选择 / 删除）才锁 UI；开关与参数是幂等的，锁了反而闪。
+    const structural = kind === "download" || kind === "select" || kind === "remove";
+    if (structural) setBusy(payload && payload.id ? payload.id : kind);
     setTick(0);
     setNote(null);
     try {
@@ -72,7 +74,13 @@ function BootTabPanel() {
         if (kind === "remove") setNote({ ok: true, text: weT("已删除：{name}", { name: label }) });
         if (kind === "toggle") setNote({ ok: true, text: payload.enabled ? weT("开机动画已开启") : weT("开机动画已关闭") });
         if (kind === "settings") setNote({ ok: true, text: weT("已保存") });
-        await load(true);
+        // 开关/参数类：宿主把整份 boot 配置回给我们（{ ok, ...boot }），直接并进 state，
+        // **不再 load(true) 重拉整表** —— 那次重拉会让所有控件先禁用再恢复，视觉上就是闪一下。
+        if (kind === "toggle" || kind === "settings") {
+          setState((prev) => (prev ? { ...prev, ...r } : prev));
+        } else {
+          await load(true);
+        }
       } else {
         const code = (r && r.error) || "failed";
         setNote({ ok: false, text: r && r.detail ? weT("操作失败：{code}（{detail}）", { code, detail: String(r.detail) }) : weT("操作失败：{code}", { code }) });
@@ -105,13 +113,18 @@ function BootTabPanel() {
   },
   React.createElement("label", { style: { display: "flex", gap: "6px", alignItems: "center", fontSize: "12px" } },
     React.createElement("input", {
-      type: "checkbox", checked: enabled, disabled: Boolean(busy) || !activeId,
+      type: "checkbox", checked: enabled,
+        // 不因"还没选片"而禁用：开关本身是幂等的，宿主在无选片时不会注入任何脚本。
+        // （实测反馈：勾不动，因为此时 activeId 为空 —— 那是把两件事绑在一起了。）
+        disabled: Boolean(busy),
       onChange: (e) => act("toggle", { enabled: e.target.checked }, ""),
     }),
     weT("启用（下次启动播放）"),
   ),
   React.createElement("span", { className: "we-picker__hint" },
-    activeId ? weT("当前：{name}", { name: (clips.find((c) => c.id === activeId) || {}).title || activeId }) : weT("未选择")),
+    activeId
+      ? weT("当前：{name}", { name: (clips.find((c) => c.id === activeId) || {}).title || activeId })
+      : (enabled ? weT("已开启，但还没有选片 —— 下载一条后点「使用」") : weT("未选择"))),
   ));
 
   children.push(React.createElement("div", { key: "hint", className: "we-picker__hint", style: { margin: "2px 0 6px", opacity: 0.75 } },
@@ -122,9 +135,17 @@ function BootTabPanel() {
       weT("候选清单读不到：{msg}", { msg: String(state.error) })));
   }
 
-  if (note) {
-    children.push(React.createElement("div", { key: "note", className: "we-picker__hint", style: { color: note.ok ? "#8ee6a8" : "#ff9a9a", margin: "4px 0 8px" } }, note.text));
-  }
+  // 提示行**常驻且占位**：它出现/消失会改变面板高度，视觉上就是"点一下闪一下"。
+  // 固定 minHeight 之后文案变了、布局不动。
+  children.push(React.createElement("div", {
+    key: "note",
+    className: "we-picker__hint",
+    style: {
+      color: note && !note.ok ? "#ff9a9a" : "#8ee6a8",
+      margin: "4px 0 8px", minHeight: "18px", lineHeight: "18px",
+      opacity: note ? 1 : 0, transition: "opacity 120ms linear",
+    },
+  }, note ? note.text : "\u00a0"));
 
   // 淡出 / 停留
   if (state) {

@@ -465,6 +465,8 @@ const WE_I18N_EN_PANEL = {
   "Qwen": "Qwen",
   "Folia": "Folia",
   "…": "…",
+  // 开机动画：已开启但无选片时的提示（4.8.2）
+  "已开启，但还没有选片 —— 下载一条后点「使用」": "Enabled, but no clip is selected yet — download one, then press Use",
 };
 
 export { WE_I18N_EN_PANEL };
