@@ -100,7 +100,15 @@ export const RETIRED_TESTS = {
   'verify-body-caps.mjs': { why: '断言 fonts 子包共享读体器的上限契约；该文件已并入 lib/components/fonts/，契约守卫另立。', since: '4.7.0' },
   'verify-logging.mjs': { why: '断言 lib/** 零 console.*；上游组件产物（fx/parallax 的客户端半边）自带 console，属产物面。', since: '4.7.0' },
   'verify-route-families.mjs': { why: '路由族触发线基于上游族表；本仓族由 verify-route-registry 对账。', replacedBy: 'verify-route-registry.mjs', since: '4.7.0' },
-  'verify-i18n.mjs': { why: '本仓 i18n 尚有上游孤儿词条（213 条）与 19 条新串待补；判据本身正确，暂列退役以让审计只盯"新红"。', since: '4.7.0' },
+  'verify-i18n.mjs': {
+    // 4.8.0 起：**缺词条已清零**（866 条对账全过 —— 我们新增界面的键全部在册）。
+    // 仍红的只剩「零孤儿键」：225 条多余词条，来源两类：
+    //   ① 上游已移除功能的词条（fx/parallax/引导语等，占绝大多数）；
+    //   ② 11 个经**变量**传入的专有名词（模型名 Claude/DeepSeek/… —— weT 的首参不是字面量，静态判据看不见）。
+    // 清理①需要一次全量「词条 → 是否还有调用点」人工复核；②需要判据支持动态键白名单。两件事都不该混进功能改动里。
+    why: '缺词条已清零；仍红的只有孤儿键判据（225 条，全部为上游已移除功能的词条 + 11 个经变量传入的专有名词）。判据本身正确，清理属于独立的词表卫生轮。',
+    since: '4.7.0',
+  },
 };
 
 /** 该文件是否已登记退役。 */
