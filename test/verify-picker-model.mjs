@@ -45,7 +45,7 @@ const callsTo = (fn, args, want) => fn(...args) === want;
 /** 判据：模型 API 是否齐全（防切出来的段落是空的 ⇒ 下面每条都在空跑）。 */
 const hasModelApi = (M) => ['ratingOf', 'matchesRatingFilter', 'matchesTypeFilter',
   'isPlayableType', 'isRotatableWallpaper', 'keepPlayingWallpaper', 'isHiddenWallpaper',
-  'isUploadedWallpaper', 'isDirWallpaper', 'playableWallpapers', 'packageWallpapers', 'hiddenWallpapers',
+  'isUploadedWallpaper', 'isDirWallpaper', 'playableWallpapers', 'hiddenWallpapers',
   'pageSlice', 'pickerModel']
   .every((k) => typeof M[k] === 'function') && typeof M.PICKER_PAGE_SIZE === 'number';
 
@@ -146,7 +146,7 @@ const code = readFileSync(process.env.DSH_MUT_LIB || new URL('../lib/client.js',
 
 const MODEL_API_NAMES = '{ ratingOf, matchesRatingFilter, matchesTypeFilter, isPlayableType,'
   + ' isRotatableWallpaper, keepPlayingWallpaper, isHiddenWallpaper, isUploadedWallpaper,'
-  + ' isDirWallpaper, playableWallpapers, packageWallpapers, hiddenWallpapers, pageSlice, pickerModel,'
+  + ' isDirWallpaper, playableWallpapers, hiddenWallpapers, pageSlice, pickerModel,'
   + ' PICKER_PAGE_SIZE }';
 /** 该模块的完整导出清单（与 `src/picker-model.js` 末尾的 `export { … }` 逐字相同）。
  *
@@ -159,7 +159,7 @@ const MODEL_API_NAMES = '{ ratingOf, matchesRatingFilter, matchesTypeFilter, isP
  *    多一枚少一枚都判红）。 */
 const MODEL_EXPORTS = ['sourceOf', 'matchesSourceFilter', 'ratingOf', 'matchesRatingFilter', 'matchesTypeFilter', 'isPlayableType',
   'isRotatableWallpaper', 'keepPlayingWallpaper', 'isHiddenWallpaper', 'isUploadedWallpaper',
-  'isDirWallpaper', 'playableWallpapers', 'packageWallpapers', 'pageSlice', 'pickerModel',
+  'isDirWallpaper', 'playableWallpapers', 'pageSlice', 'pickerModel',
   'PICKER_PAGE_SIZE'];
 
 /** 把切出来的段落包进一个函数作用域求值 —— 返回模型 API（纯函数，无需宿主环境）。 */

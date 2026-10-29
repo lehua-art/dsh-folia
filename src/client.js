@@ -4091,50 +4091,7 @@ const onBatchHide = () => {
 };
 const onBatchCancel = () => { disarmConfirm(); setTransient("batchMode", false); setTransient("batchSelected", []); emit(); };
 const onSearchInput = (e) => { setTransient("search", e.target.value); emit(); };
-/**
- * 把一个站点工程包**解码成本机 WE 工程目录**并立刻应用（"点一下就用"）。
- *
- * 为什么放在点击里而不是"先下载再点"：用户要的是"点这张壁纸就是背景"。
- * 第一次点会多等几秒（下载 + 解包），之后同一条目已在盘上 ⇒ 宿主直接 reused，几乎瞬时。
- */
-async function installSitePackage(w) {
-  selection.packageInstalling = w.id;
-  selection.packageNote = weT("正在解码工程包…（首次会下载，之后立即生效）");
-  emit();
-  try {
-    const res = await apiPostJson("/site-package/install", { url: w.media, name: w.title }, { parse: "always" });
-    const d = (res && res.data) || null;
-    if (!(res && res.ok && d && d.ok)) {
-      const code = (d && d.error) || "failed";
-      selection.packageNote = code === "application-package"
-        ? weT("这个工程包是可执行程序（application），不能当壁纸")
-        : weT("解码失败：{code}", { code: String(code) });
-      return;
-    }
-    await loadInventory();
-    const list = (selection.inventory && selection.inventory.wallpapers) || [];
-    const target = list.find((x) => x && x.id === d.id);
-    if (target) {
-      selection.packageNote = weT("已就绪：{name}", { name: target.title || w.title || "" });
-      applySelection(target.id, { fromManual: true });
-    } else {
-      selection.packageNote = weT("已解码，但清单里还没出现 —— 点「刷新」重试");
-    }
-  } catch (e) {
-    selection.packageNote = weT("解码失败：{code}", { code: (e && e.message) ? e.message : weT("网络错误") });
-  } finally {
-    selection.packageInstalling = "";
-    emit();
-  }
-}
-
 const onPickCard = (w) => {
-  // 工程包（站点上的 WE 工程包 zip）：点它不该"切过去"—— 它还不能播。
-  // 这里的语义是「解码一次，然后切过去」：用户看到的是"点一下就能用"，没有单独的下载步骤。
-  if (w && w.type === "package" && !selection.batchMode && !(selection.pickerDraft && selection.editing)) {
-    void installSitePackage(w);
-    return;
-  }
   // 轮播编辑器的下钻（pickerDraft）：点卡片 = 加入/移出**草稿**，不切当前壁纸；
   // 草稿对象被就地增删（与 importPlaylistIntoDraft / 面板编辑器同一口径），
   // 「保存」时才由 saveEditingGroup 落盘。
@@ -4483,7 +4440,7 @@ function WallpaperPicker() {
   // 进去、把结果取出来 —— 组件体不再就地算这些（分级/类型/隐藏的判定也在那边）。
   const {
     query, playableList, basePlayable, ratingCounts, typeCounts, sourceCounts, hiddenList,
-    packageList, packageCount, editorPageView,
+    editorPageView,
   } = pickerModel({
     wallpapers: list,
     hiddenIds: selection.hiddenIds,
@@ -4656,12 +4613,6 @@ function WallpaperPicker() {
         onClear, onRatingFilterChange, onTypeFilterChange, onSourceFilterChange,
         onShowNormalView, onShowHiddenView,
         onToggleBatchMode, onArmBatchHide, onBatchHide, onBatchCancel, onSearchInput, onPickCard,
-        // 站点工程包（type=package）：来自上面 pickerModel 的解构值（本作用域已有），
-        // 点击走 onPickCard 的解码分支（installSitePackage）。
-        packageList: packageList || [],
-        packageCount: packageCount || 0,
-        packageInstalling: sel.packageInstalling || "",
-        packageNote: sel.packageNote || "",
       }) : React.createElement(React.Fragment, null,
         // 页签内容 → **每个页签末尾一个重置**（issue #192 用户口径：重置指定选项卡）→
         // 全局重置（只在「系统」页签末尾，即设置页里最接近"最底部"的位置）。
