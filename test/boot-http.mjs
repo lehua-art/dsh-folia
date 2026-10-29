@@ -16,7 +16,7 @@ const HOME = join(tmpdir(), 'folia-boot-test-' + Date.now());
 process.env.DSH_FOLIA_HOME = HOME;
 
 const { registerBootRoutes } = await import('../lib/routes/boot.js');
-const { readBoot, writeBoot, clipFile, bootDir } = await import('../lib/boot/index.js');
+const { readBoot, writeBoot, clipFile, clipMetaFile, bootDir } = await import('../lib/boot/index.js');
 
 const routes = [];
 const fakeWeb = {
@@ -110,6 +110,27 @@ try {
   // ⑦ 坏请求体不能 500
   const badBody = await fetch(base + '/boot/select', { method: 'POST', headers: { 'content-type': 'application/json' }, body: 'not json' });
   check('坏 JSON → 400（不崩）', badBody.status === 400, 'status=' + badBody.status);
+
+  // ⑦b 非 ASCII id（站点 slug 允许中文，实测有「痘印」）：必须能选中、能列回来。
+  writeFileSync(clipFile('痘印'), Buffer.alloc(2048, 5));
+  writeFileSync(clipMetaFile('痘印'), JSON.stringify({ id: '痘印', title: '抖音', durationSec: 16.5 }));
+  const cnSel = await post('/boot/select', { id: '痘印' });
+  check('中文 id 可以选中', cnSel.status === 200, JSON.stringify(cnSel.json));
+  check('中文 id 落盘后 clipId 正确', readBoot().clipId === '痘印', readBoot().clipId);
+  const cnList = await (await fetch(base + '/boot/list')).json();
+  check('中文 id 能从列表按原 id 找回', (cnList.clips || []).some((c) => c.id === '痘印' && c.installed));
+  const cnClip = await fetch(base + '/boot/clip', { headers: { range: 'bytes=0-99' } });
+  check('中文 id 的片段可流式播放', cnClip.status === 206, 'status=' + cnClip.status);
+  await cnClip.arrayBuffer();
+  // 危险 id 仍必须被挡（路径穿越 / 分隔符 / 超长）
+  for (const bad of ['../etc/passwd', 'a/b', '..']) {
+    const r = await post('/boot/select', { id: bad });
+    check('危险 id 被拒: ' + bad, r.status === 400 && r.json && r.json.error === 'bad-id', JSON.stringify(r.json));
+  }
+
+  // 把我插入的中文用例收尾：删掉它、并把选中恢复成 probe，后面的 remove 断言依赖它。
+  await post('/boot/remove', { id: '痘印' });
+  await post('/boot/select', { id: 'probe' });
 
   // ⑧ remove：删掉正在用的片段应同时清空选择
   const rm = await post('/boot/remove', { id: 'probe' });
