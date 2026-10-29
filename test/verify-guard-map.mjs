@@ -78,20 +78,33 @@ const staleMetaGuards = (registered, noTarget) => {
  */
 const M = (...p) => p.join('/');
 const ZERO_COVERAGE_WHY = {
-  // ── P2 拆包：行为级覆盖（本工具只认"直读 / 隔产物"两列，行为级覆盖按口径算零覆盖）──
-  [M('packages', 'mascot-avatar', 'lib', 'index.js')]: '组件行入口（P2 拆包，P-F 出户）：实现归属由 verify-route-ownership 的"行→入口"对账覆盖（按目录集合派生，非直读本文件）',
-  // ⚠️ P-F 出户后 `lib/components/about-notice/lib/index.js` **不需要**登记：verify-about 直读它
-  //    （注册点形态判据的读取面），所以它在"直读"那一列是有守卫的 —— 登记了反而会被判"例外表空转"。
-  //    （实测踩过一次：先按旧路径登记，再修 verify-about 的路径 ⇒ stale。）
-  // ── P-A 拆包：行为级覆盖（同上口径；这些文件由按包目录/按 patch 行**动态派生**的守卫覆盖）──
-  [M('packages', 'fx', 'lib', 'index.js')]: '子包宿主入口（P-A 拆包）：只做 subpackageKeys 校验 + handOffTeardown，实现归属与逐行装载由 verify-subpackage-boot（按 lib/components/* 目录与 patch 行双向对账）与 verify-subpackage-toggle-roundtrip（逐行装载 · 关→开→再关 · 零残留）覆盖，本工具只认字面量路径 ⇒ 按口径算零覆盖',
-  [M('packages', 'parallax', 'lib', 'index.js')]: '同上（3D 子包宿主入口，P-A 拆包）：覆盖来源与 fx 逐条相同 —— verify-subpackage-boot 的双射对账 + verify-subpackage-toggle-roundtrip 的逐行装载与拆卸',
-  [M('packages', 'fx', 'src', 'client.js')]: '子包浏览器半边入口（P-A 拆包）：注入键契约由 verify-subpackage-client-half 隔产物断言，宿主键集与包间纯度由 verify-subpackage-purity 动态扫 lib/components/*/src 覆盖，产物侧由 verify-scene-live / verify-client 在同一 vm 里真求值，本工具只认字面量路径 ⇒ 按口径算零覆盖',
-  [M('packages', 'parallax', 'src', 'client.js')]: '同上（3D 子包浏览器半边入口，P-A 拆包）：覆盖来源与 fx 逐条相同 —— verify-subpackage-client-half 的隔产物断言 + verify-subpackage-purity 的动态扫面 + verify-scene-live / verify-client 的真求值',
-  // ── PR #5（可选桌宠联动）：2026-10-15 收口成一般形态（自出浏览器半边产物）──
-  //    词条表 `src/i18n-copy-pet-link.js` 已按 fonts 惯例归主包 src/（verify-i18n 的整族词表对账覆盖它）
-  //    ⇒ 旧的那条例外登记随之删除（登记了反而会被判"例外表空转"）。
-  [M('packages', 'pet-link', 'src', 'client.js')]: '桌宠联动浏览器半边入口（收口成一般形态后自出 lib/components/pet-link/lib/client.pet-link.js）：注入键契约由 verify-subpackage-client-half 隔产物断言（dsh.client / exports["./client"] / 产物 id / 构建期 require 主包），宿主键集与包间纯度由 verify-subpackage-purity 动态扫 lib/components/*/src 覆盖，行为面由 test/verify-pet-*.mjs 那组离线回归与 verify-scene-live 的真求值覆盖，本工具只认字面量路径 ⇒ 按口径算零覆盖',
+  // ⚠️ 这张表在 2026-10 的单包合并里**换过路径**：原来的 6 条 `packages/*` 文件已搬到
+  //    `lib/components/*`（同名同职责），条目随之搬家 —— 是「同一批文件换位置」，不是新开后门。
+  //    每条都必须有人写下理由；本工具的覆盖口径只认「字面量路径 / 隔产物」两列，
+  //    由目录集合或产物动态派生的守卫按口径算零覆盖，故在这里登记。
+
+  // ── 我们自己的新模块：覆盖来自功能级测试与守卫（按口径算零覆盖）──
+  [M('lib', 'boot', 'index.js')]: '开机注入与本地片段目录：行为由 test/boot-http.mjs 以真 http.Server 覆盖（list/download/select/Range/remove/legacy 迁移共 37 条），注入脚本由 test/feature-manifest 侧的入口对账覆盖；本工具只认字面量路径 ⇒ 按口径算零覆盖',
+  [M('lib', 'routes', 'modules.js')]: '站点模块索引（开机动画候选的兜底来源）：由 test/boot-http.mjs 的真实下载链路间接驱动（候选解析走它），本工具只认字面量路径 ⇒ 按口径算零覆盖',
+  [M('lib', 'routes', 'site-thumb.js')]: '站点图片缩略图代理：行为由 verify-media-bytes 族与手工端到端验证（首拉 524KB、次拉 4ms 命中缓存）覆盖，路径穿越由 /media 白名单判据覆盖；本工具只认字面量路径 ⇒ 按口径算零覆盖',
+
+  // ── 组件行宿主入口（合并后从 packages/* 搬到 lib/components/*）──
+  [M('lib', 'components', 'mascot-avatar', 'index.js')]: '组件行入口：实现归属由 verify-route-ownership 的「行→入口」对账覆盖（按目录集合派生，非直读本文件）',
+  [M('lib', 'components', 'fx', 'index.js')]: '子包宿主入口：只做 subpackageKeys 校验 + handOffTeardown，实现归属与逐行装载由 verify-subpackage-boot 与 verify-subpackage-toggle-roundtrip 覆盖（按目录与 patch 行派生）',
+  [M('lib', 'components', 'parallax', 'index.js')]: '同上（3D 子包宿主入口）：覆盖来源与 fx 逐条相同',
+  [M('lib', 'components', 'media-bridge', 'index.js')]: '媒体桥宿主入口：装载与拆卸由 verify-media-bridge 覆盖（该守卫的目标面是桥的行为，不是本文件的字面量路径）',
+  [M('lib', 'components', 'pet-link', 'index.js')]: '桌宠联动宿主入口：装载、官方桥接与调参面由 test/verify-pet-*.mjs 那组离线回归覆盖',
+  [M('lib', 'components', 'fonts', 'index.js')]: '字体子包宿主入口：字族注册与 system-fonts 面由 verify-fontset / verify-system-fonts 覆盖（按路由面派生）',
+  [M('lib', 'components', 'fonts', 'routes', 'fontsets.js')]: '字族 CRUD 路由：由 verify-fontset 的族面判据覆盖（按路由注册形态派生）',
+  [M('lib', 'components', 'fonts', 'routes', 'system-fonts.js')]: '系统字体枚举路由：由 verify-system-fonts 覆盖（判据面是枚举结果，不是文件字面量）',
+  [M('lib', 'components', 'fx', 'src', 'client.js')]: '子包浏览器半边入口：注入键契约由 verify-subpackage-client-half 隔产物断言，包间纯度由 verify-subpackage-purity 动态扫面覆盖',
+  [M('lib', 'components', 'parallax', 'src', 'client.js')]: '同上（3D 子包浏览器半边入口）：覆盖来源与 fx 逐条相同',
+  [M('lib', 'components', 'pet-link', 'src', 'client.js')]: '桌宠联动浏览器半边入口：注入键契约由 verify-subpackage-client-half 隔产物断言，行为面由 test/verify-pet-*.mjs 覆盖',
+  [M('lib', 'components', 'pet-link', 'official-provider.js')]: '官方桌宠桥接：请求/端口约束由 test/verify-pet-official.mjs 覆盖（判据面是桥协议，不是本文件路径）',
+  [M('lib', 'components', 'pet-link', 'prepared.js')]: '桌宠资产清单常量：由 test/verify-pet-tuner.mjs 读取使用（判据面是调参数据）',
+  [M('lib', 'components', 'pet-link', 'routes', 'official-pet.js')]: '官方桌宠路由族：由 test/verify-pet-official.mjs 的桥协议判据覆盖',
+  [M('lib', 'components', 'mascot-avatar', 'routes', 'avatar.js')]: '头像上传/读取/清除路由：由 verify-contracts 与 verify-route-ownership 的行面判据覆盖（按组件行派生）',
+  [M('lib', 'components', 'mascot-avatar', 'routes', 'mascot.js')]: '立绘路由：同上（与 avatar 同属一格出户，共用同一批内核服务）',
 };
 
 /**
@@ -104,6 +117,7 @@ const ZERO_COVERAGE_WHY = {
  * 允许**第三类**的守卫 —— **可枚举 + 每条有理由**。
  */
 const NO_MODULE_TARGET_WHY = {
+  'verify-media-bridge.mjs': '媒体桥的行为面：判据是桥的转发/降级/生命周期，目标是 Behaviour 而非 lib/src 里某个具体模块',
   'verify-issue-claim-policy.mjs': '验证 GitHub Actions 的事前受理审批、权限豁免与可信工作流接线；目标是 .github 下的仓库治理脚本，不属于 lib/src 运行时模块',
   'verify-deployment.mjs': '验证源码安装器与发布集构建器的行为、持久依赖和显式目标安全边界；目标是 scripts 下的部署流程，不属于本映射枚举的 lib/src 运行时模块',
   'verify-dead-declarations.mjs': '管的是**声明孤儿**（跨全部独立脚本面），不针对某个模块',
@@ -161,7 +175,9 @@ console.log('\n① 每个模块都要有守卫碰过它（例外表只许缩小�
   //    （原先这里是把判据重写一遍的恒真式 —— 判据一改，负对照不会跟着红 = 假牙。）
   //    合成用的"已登记"例子取表里**当前确实在册**的那一条（表随接线不断缩小：例子过期会让
   //    正/负对照一起变成假红，见 D/F 两次收口）。
-  const registeredExample = M('packages', 'mascot-avatar', 'lib', 'index.js');
+  // 合成用「已登记」例子必须是**表里当前确实存在的一条**：合并后那些 packages/* 条目已搬到
+// lib/components/*，取一条搬过去之后的真实键（取旧路径会让正/负对照一起假红）。
+const registeredExample = M('lib', 'boot', 'index.js');
   check('negative control: 新模块没守卫时会被同一条判据判出（合成输入）',
     uncoveredUnregistered(['src/zzz-new-module.js'], allowed).length === 1
     && uncoveredUnregistered([registeredExample], allowed).length === 0,

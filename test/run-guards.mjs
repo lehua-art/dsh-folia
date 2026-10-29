@@ -262,6 +262,14 @@ const VERIFY_STEPS = [
   //    归硬档：这条通道写宽 = 整份客户端免检（安全面，比 docs 通道更贵）。
   step('test/verify-notice-routing.mjs'),
   step('test/verify-issue-claim-policy.mjs'),
+  // ⑬ 模块化守卫：功能清单（lib/features.js）与实际文件/路由/页签逐条对账 ——
+  //    加功能漏登记、路由成孤儿、页签没归属，都到这里断。免费、零依赖，归硬档。
+  step('test/verify-features.mjs'),
+  // ⑭ 我们自己的三条功能级测试：开机动画路由 / 桌宠路由 / 桌宠渲染层。
+  //    它们是真 http.Server + 假 DOM，不依赖外部进程或网络，适合进链。
+  step('test/boot-http.mjs'),
+  step('test/pets-http.mjs'),
+  step('test/pets-layer.mjs'),
 ];
 
 /** `npm run verify:docs` —— 软档（只出声）。全部经 warn-only 降级。 */

@@ -157,7 +157,7 @@ const MODEL_API_NAMES = '{ ratingOf, matchesRatingFilter, matchesTypeFilter, isP
  *    `hiddenWallpapers` 因零跨模块按名引用被移出 `export { … }`，故这里同步移除；
  *    判据形状不变（导出名集合必须与钉住的清单逐字相等，
  *    多一枚少一枚都判红）。 */
-const MODEL_EXPORTS = ['ratingOf', 'matchesRatingFilter', 'matchesTypeFilter', 'isPlayableType',
+const MODEL_EXPORTS = ['sourceOf', 'matchesSourceFilter', 'ratingOf', 'matchesRatingFilter', 'matchesTypeFilter', 'isPlayableType',
   'isRotatableWallpaper', 'keepPlayingWallpaper', 'isHiddenWallpaper', 'isUploadedWallpaper',
   'isDirWallpaper', 'playableWallpapers', 'pageSlice', 'pickerModel',
   'PICKER_PAGE_SIZE'];
