@@ -128,6 +128,23 @@ try {
     check('危险 id 被拒: ' + bad, r.status === 400 && r.json && r.json.error === 'bad-id', JSON.stringify(r.json));
   }
 
+  // ⑦c 旧命名兼容：4.0.2 之前下载的片段叫 <id>.mp4（没有 hash 后缀）。
+  // 升级后如果只认新名字，用户点「使用」就会得到 not-installed —— 实测踩过。
+  const LEGACY_ID = 'boot-animation-legacy';
+  writeFileSync(join(bootDir(), LEGACY_ID + '.mp4'), Buffer.alloc(2560, 7));
+  const legacyList = await (await fetch(base + '/boot/list')).json();
+  check('旧命名的片段在列表里 installed', (legacyList.clips || []).some((c) => c.id === LEGACY_ID && c.installed));
+  const legacySel = await post('/boot/select', { id: LEGACY_ID });
+  check('旧命名的片段可以选中（不再 not-installed）', legacySel.status === 200, JSON.stringify(legacySel.json));
+  const legacyClip = await fetch(base + '/boot/clip', { headers: { range: 'bytes=0-99' } });
+  check('旧命名的片段可以播放', legacyClip.status === 206, 'status=' + legacyClip.status);
+  await legacyClip.arrayBuffer();
+  check('旧文件已迁移到新命名', existsSync(clipFile(LEGACY_ID)), clipFile(LEGACY_ID));
+  // 迁移是幂等的：再选一次仍然成功
+  const legacySel2 = await post('/boot/select', { id: LEGACY_ID });
+  check('迁移后再选一次仍然成功（幂等）', legacySel2.status === 200);
+  await post('/boot/remove', { id: LEGACY_ID });
+
   // 把我插入的中文用例收尾：删掉它、并把选中恢复成 probe，后面的 remove 断言依赖它。
   await post('/boot/remove', { id: '痘印' });
   await post('/boot/select', { id: 'probe' });

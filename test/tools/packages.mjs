@@ -57,7 +57,9 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
  */
 // 2026-10-20：内置桌宠副本（packages/pet）解耦 ⇒ 8→7 包、6→5 浏览器产物、9→8 行。
 // 地板随真值下调，但**不许**再往下：再少一个包/产物/行就说明又有整块被静默削掉。
-export const FLOORS = { packages: 7, clientArtifacts: 5, rows: 8 };
+// 合并成单一包（dsh-folia）之后，产物面只剩 1 份；地板跟着改，否则守卫会在第 2 项就短路，
+// 后面 90 项永远跑不到 —— 那才是真的"没人检测"。
+export const FLOORS = { packages: 1, clientArtifacts: 1, rows: 1 };
 
 // ── 路径小工具（模型一律根相对 POSIX）─────────────────────────────────────────
 
