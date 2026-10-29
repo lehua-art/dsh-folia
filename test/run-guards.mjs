@@ -267,6 +267,8 @@ const VERIFY_STEPS = [
   step('test/verify-features.mjs'),
   // ⑮ 宿主侧注册表：已迁移族 / 未迁移棘轮 / 覆盖 lib/routes/*.js —— 与客户端注册表对称。
   step('test/verify-route-registry.mjs'),
+  // ⑯ 设置键归属：每个键恰好一个功能（拆 settings-schema 的前提对账）。
+  step('test/verify-settings-ownership.mjs'),
   // ⑭ 我们自己的三条功能级测试：开机动画路由 / 桌宠路由 / 桌宠渲染层。
   //    它们是真 http.Server + 假 DOM，不依赖外部进程或网络，适合进链。
   step('test/boot-http.mjs'),

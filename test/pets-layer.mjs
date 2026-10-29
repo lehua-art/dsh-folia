@@ -67,6 +67,11 @@ globalThis.apiUrl = (p) => {
   return s.startsWith('/folia') ? s : '/folia' + (s.startsWith('/') ? s : '/' + s);
 };
 
+// pet-layer 的右键菜单文案走 weT（界面文案）。替身与 src/i18n.js 的 weT(key, params) 同语义：
+// 只做 {name} 占位替换，缺参时原样留下占位符。
+globalThis.weT = (key, params) => String(key)
+  .replace(/\{(\w+)\}/g, (whole, name) => (params && name in params ? String(params[name]) : whole));
+
 globalThis.window = { innerWidth: 1600, innerHeight: 900, devicePixelRatio: 2, addEventListener() {}, removeEventListener() {} };
 globalThis.document = {
   body: makeLayer(), head: makeLayer(),

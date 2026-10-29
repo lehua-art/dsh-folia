@@ -1,6 +1,6 @@
 {
     "name":  "dsh-folia",
-    "version":  "4.7.0",
+    "version":  "4.8.0",
     "description":  "Folia 壁纸引擎：把本机 Wallpaper Engine 壁纸搬进 DSH 界面（场景实时渲染 / 视频 / 网页），内置液态玻璃与 Folia 吉祥物，并可从自建站点拉取壁纸。单包形态（组件已合并）。",
     "type":  "module",
     "engines":  {
@@ -157,7 +157,8 @@
                   "README.beginner.md",
                   "lib/components/",
                   "lib/features.js",
-                  "lib/route-registry.js"
+                  "lib/route-registry.js",
+                  "lib/settings/"
               ],
     "dsh":  {
                 "bundle":  {
@@ -196,7 +197,8 @@
                     "test:pets":  "node test/pets-http.mjs",
                     "test:pets-layer":  "node test/pets-layer.mjs",
                     "test:features":  "node test/verify-features.mjs",
-                    "gate":  "node scripts/build-client.mjs \u0026\u0026 node test/run-guards.mjs smoke \u0026\u0026 node test/verify-features.mjs \u0026\u0026 node test/boot-http.mjs \u0026\u0026 node test/pets-http.mjs \u0026\u0026 node test/pets-layer.mjs"
+                    "audit":  "node test/run-audit.mjs",
+                    "gate":  "node scripts/build-client.mjs \u0026\u0026 node test/run-guards.mjs smoke \u0026\u0026 node test/verify-features.mjs \u0026\u0026 node test/verify-route-registry.mjs \u0026\u0026 node test/verify-settings-ownership.mjs \u0026\u0026 node test/boot-http.mjs \u0026\u0026 node test/pets-http.mjs \u0026\u0026 node test/pets-layer.mjs"
                 },
     "peerDependencies":  {
                              "@deepseek-ai/cordis":  "^4.0.4",

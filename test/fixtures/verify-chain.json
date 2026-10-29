@@ -765,6 +765,14 @@
         {
           "kind": "guard",
           "npm": null,
+          "file": "test/verify-settings-ownership.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
           "file": "test/boot-http.mjs",
           "args": [],
           "tier": "hard",
@@ -1659,6 +1667,14 @@
           "kind": "guard",
           "npm": null,
           "file": "test/verify-route-registry.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-settings-ownership.mjs",
           "args": [],
           "tier": "hard",
           "probe": false
