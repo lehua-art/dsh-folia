@@ -5,7 +5,7 @@
 > 口径：只统计守卫**代码**里真正碰到的模块（先剥注释），并区分"直接读源文件"与"隔着产物 `lib/client.js`"。
 > 写法：字面量路径 / `join(...)` 拼接 / 唯一 basename / 产物配方 / **前缀族读法** `scopeFiles|scopeText(<前缀>)` / **经共享族助手读**（`import { panelText } from './tools/src-scope.mjs'` + 真调用；族口径封在那个库里，见 DEV-GUIDE §4.6「同时是守卫的库」）/ **真源定位读**（`locate('符号')` / `locateFile('文件名')`，`test/tools/source-locator.mjs`：符号唯一声明在哪就是读了哪个模块）。
 
-模块面 181 个 · 守卫 112 个
+模块面 182 个 · 守卫 113 个
 
 ## 守卫 → 模块
 
@@ -96,6 +96,7 @@
 | `verify-route-families.mjs` | — |  |
 | `verify-route-index.mjs` | `lib/index.js` `lib/kernel/component-session.js` `lib/routes/inventory.js` `lib/routes/media-bytes.js` |  |
 | `verify-route-ownership.mjs` | `lib/index.js` `lib/kernel/component-session.js` |  |
+| `verify-route-registry.mjs` | `lib/index.js` `lib/route-registry.js` |  |
 | `verify-scene-frame-master.mjs` | `lib/index.js` `lib/routes/scene-frame.js` |  |
 | `verify-scene-live-occlusion.mjs` | `lib/webwallgl/occlusion-bridge.js` `lib/webwallgl/renderer.js` |  |
 | `verify-scene-live.mjs` | `lib/cache-dir.js` `lib/components/fonts/src/appearance-font-section.js` `lib/components/fx/lib/client.fx.js` `lib/components/fx/src/ext-fx.js` `lib/components/fx/src/fx-layer.js` `lib/components/media-bridge/legacy.js` `lib/components/media-bridge/provision.js` `lib/components/media-bridge/routes/now-playing.js` `lib/components/media-bridge/supervisor.js` `lib/components/parallax/lib/client.parallax.js` `lib/components/parallax/src/ext-parallax.js` `lib/components/parallax/src/parallax-layer.js` `lib/diag-trace.js` `lib/faststart.js` `lib/fs-paths.js` `lib/http-lifecycle.js` `lib/index.js` `lib/inventory.js` `lib/media-origin.js` `lib/mp4-vfs.js` `lib/routes/diag.js` `lib/routes/media-bytes.js` `lib/routes/scene-serve.js` `lib/routes/we-assets.js` `lib/serve.js` `lib/settings-schema.js` `lib/shim-seed.js` `lib/startup-sweep.js` `lib/upload-dir.js` `lib/upload-store.js` `lib/we-assets.js` `lib/we-focus-guard.js` `lib/we-props.js` `lib/webwallgl/renderer.js` `src/avatar-import.js` `src/avatar-layer.js` `src/client-audio-playback.js` `src/client-media-frame.js` `src/client-rotation.js` `src/client.js` `src/effects.js` `src/ext-avatar.js` `src/extension-registry.js` `src/font/color-roles.js` `src/font/typography.js` `src/glass-panel.js` `src/layer-core.js` `src/live-layer-diag.js` `src/live-layer-gate.js` `src/live-layer-pointer.js` `src/live-layer-underlay.js` `src/live-layer-watch.js` `src/live-layer.js` `src/media-prep.js` `src/module-reset.js` `src/panel-tabs-advanced.js` `src/panel-tabs-appearance.js` `src/panel-tabs-boot.js` `src/panel-tabs-effects.js` `src/panel-tabs-mascot.js` `src/panel-tabs-pets.js` `src/panel-tabs-wallpaper.js` `src/panel-tabs.js` `src/picker-modal.js` `src/quick-panel.js` `src/section-head.js` `src/sidebar-right.js` `src/styles-base.js` `src/styles-chrome.js` `src/styles-ext.js` `src/styles-panel.js` `src/styles-quick.js` `src/styles-settings.js` `src/styles-shell.js` `src/styles-sidebar.js` `src/styles.js` `src/system-fonts.js` `src/video-layer.js` `src/we-base.js` `src/we-cond.js` | ✅ |
@@ -177,7 +178,7 @@
 | `lib/host-boot.js` | 7 | `verify-about` `verify-bundle-rows` `verify-component-face` `verify-contracts` `verify-logging` `verify-mp4-vfs` `verify-subpackage-purity` |
 | `lib/http-body.js` | 2 | `verify-body-caps` `verify-package-files` |
 | `lib/http-lifecycle.js` | 1 | `verify-scene-live` |
-| `lib/index.js` | 34 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-bundle-rows` `verify-cache-dir` `verify-client` `verify-contracts` `verify-fontset` `verify-host-teardown` `verify-logging` `verify-module-layout` `verify-notice-routing` `verify-occlusion-hub` `verify-package-files` `verify-package-publish` `verify-pet-package` `verify-presets` `verify-reachability` `verify-release-set` `verify-route-index` `verify-route-ownership` `verify-scene-frame-master` `verify-scene-live` `verify-scene` `verify-settings-namespaces` `verify-settings-schema-exports` `verify-steam-discovery` `verify-subpackage-boot` `verify-subpackage-purity` `verify-subpackage-toggle-roundtrip` `verify-transcode-state` `verify-types` `verify-upload-store` `verify-we-install-probe` |
+| `lib/index.js` | 35 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-bundle-rows` `verify-cache-dir` `verify-client` `verify-contracts` `verify-fontset` `verify-host-teardown` `verify-logging` `verify-module-layout` `verify-notice-routing` `verify-occlusion-hub` `verify-package-files` `verify-package-publish` `verify-pet-package` `verify-presets` `verify-reachability` `verify-release-set` `verify-route-index` `verify-route-ownership` `verify-route-registry` `verify-scene-frame-master` `verify-scene-live` `verify-scene` `verify-settings-namespaces` `verify-settings-schema-exports` `verify-steam-discovery` `verify-subpackage-boot` `verify-subpackage-purity` `verify-subpackage-toggle-roundtrip` `verify-transcode-state` `verify-types` `verify-upload-store` `verify-we-install-probe` |
 | `lib/inventory.js` | 5 | `verify-avatar-interval-and-rotation` `verify-inventory-index` `verify-scene-live` `verify-types` `verify-we-install-probe` |
 | `lib/json-response.js` | 4 | `verify-about` `verify-json-response` `verify-occlusion-hub` `verify-system-fonts` |
 | `lib/kernel/component-session.js` | 6 | `verify-bundle-rows` `verify-component-face` `verify-component-visibility` `verify-route-index` `verify-route-ownership` `verify-subpackage-manifests` |
@@ -200,6 +201,7 @@
 | `lib/occlusion/rects.js` | 1 | `verify-occlusion-hub` |
 | `lib/occlusion/x11.js` | 1 | `verify-occlusion-hub` |
 | `lib/pkg-read.js` | 4 | `verify-package-files` `verify-package-publish` `verify-scene-probe` `verify-scene` |
+| `lib/route-registry.js` | 1 | `verify-route-registry` |
 | `lib/routes/boot.js` | 1 | `verify-features` |
 | `lib/routes/cache-dir.js` | 1 | `verify-cache-dir` |
 | `lib/routes/diag.js` | 2 | `verify-logging` `verify-scene-live` |

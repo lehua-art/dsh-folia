@@ -265,6 +265,8 @@ const VERIFY_STEPS = [
   // ⑬ 模块化守卫：功能清单（lib/features.js）与实际文件/路由/页签逐条对账 ——
   //    加功能漏登记、路由成孤儿、页签没归属，都到这里断。免费、零依赖，归硬档。
   step('test/verify-features.mjs'),
+  // ⑮ 宿主侧注册表：已迁移族 / 未迁移棘轮 / 覆盖 lib/routes/*.js —— 与客户端注册表对称。
+  step('test/verify-route-registry.mjs'),
   // ⑭ 我们自己的三条功能级测试：开机动画路由 / 桌宠路由 / 桌宠渲染层。
   //    它们是真 http.Server + 假 DOM，不依赖外部进程或网络，适合进链。
   step('test/boot-http.mjs'),
