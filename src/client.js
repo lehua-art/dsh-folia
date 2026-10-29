@@ -6210,9 +6210,13 @@ function apply(ctx) {
   if (ctx.effect && typeof document !== "undefined") {
     ctx.effect(() => installSkinInterop() || undefined);
   }
-  // 3c. 桌宠层：自己拉 /pets/list 决定是否出宠物，随 fiber 注销（不依赖面板打开过）。
-  if (ctx.effect && typeof document !== "undefined") {
-    ctx.effect(() => mountPetLayer() || undefined);
+  // 3c. 常驻层：由**功能注册表**声明（src/features.js 的 WE_FEATURE_MOUNTS）。
+  // 装配点不再点名具体功能 —— 每个 mount 自己决定要不要显示（例如桌宠先读配置）。
+  if (typeof WE_FEATURE_MOUNTS !== "undefined") {
+    for (const feat of WE_FEATURE_MOUNTS) {
+      if (!ctx.effect || typeof document === "undefined") break;
+      ctx.effect(() => feat.mount() || undefined);
+    }
   }
 
   // 3. Chat-interface rope dock: the draggable pull-cord + glass repo side

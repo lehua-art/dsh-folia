@@ -166,15 +166,9 @@
   // 位置在「轮播」之下：当前壁纸与轮播在三档页签下都显示（调外观 / 播放参数时想换一张
   // 对照很常见）。与设置页的页签表（PICKER_TABS）是两件事 —— 这里只镜像用户点名要的
   // 两页，外加壁纸页。
-  const QP_TABS = [
-    // 开机动画放在「壁纸」左边：它和壁纸是并列的两种"开机时看到什么"，不是壁纸的子功能。
-    { id: "boot", get label() { return weT("开机动画"); } },
-    { id: "wallpaper", get label() { return weT("壁纸"); } },
-    { id: "appearance", get label() { return weT("外观"); } },
-    { id: "playback", get label() { return weT("播放"); } },
-    // 桌宠是"桌面上多出来的一只东西"，与壁纸/开机动画并列，不是它们的子功能。
-    { id: "pets", get label() { return weT("桌宠"); } },
-  ];
+  // 页签条从**功能注册表**取（src/features.js）：这里不再出现具体功能名。
+  // 加功能只该动注册表，不该动装配点 —— 否则又变成"每加一个功能改五处"。
+  const QP_TABS = WE_FEATURE_TABS;
   // 页签记忆（同 picker-tab / qp-view 口径：仅 UI 状态，localStorage，不进 config.json）。
   const QP_TAB_KEY = "dsh-folia:qp-tab";
   /** 读页签偏好；缺失 / 非法回落「壁纸」。 */
@@ -848,12 +842,11 @@
     // 设置页同名页签 —— 玻璃详细调节仍只在侧栏（本页，折叠块），设置页那边留玻璃预设、
     // 全量配置与**字体节**（三次修订后字体节两档都画）；播放页的出图来源 /
     // 实时帧仍住设置页。
-    const foot = qpTab === "boot"
-      ? {
-        label: weT("打开设置 ›"),
-        target: "",
-        title: weT("开机动画的全部参数都在侧栏「壁纸引擎」设置里"),
-      }
+    // 引导条：整区面板类页签的文案由**功能注册表**给（WE_FEATURE_FOOTERS），装配点只查表；
+    // 外观 / 播放 / 壁纸是泛型布局，文案留在原地。
+    const featFooter = WE_FEATURE_FOOTERS[qpTab] || null;
+    const foot = featFooter
+      ? featFooter
       : qpTab === "appearance"
       ? {
         label: weT("更多外观设置 ›"),
@@ -886,10 +879,10 @@
       React.createElement("div", { className: tabBodyClass, ref: qpPaneRef },
         qpTab === "wallpaper" && userPropsPanelOpen() && propsAvailable
           && React.createElement("div", { className: "we-qp__propsview we-qp__propsview--drill" }, renderUserPropsPanel()),
-        // 开机动画档：整区就是那个面板（它自己管加载/下载/开关）。
-        qpTab === "boot" && React.createElement(BootTabPanel, null),
-        qpTab === "pets" && React.createElement(PetsTabPanel, null),
-        !(qpTab === "wallpaper" && userPropsPanelOpen() && propsAvailable) && qpTab !== "boot" && (qpTab === "appearance"
+        // 整区面板：由注册表声明哪些页签整块交给功能自己的组件（开机动画 / 桌宠）。
+        // 装配点只查表，不写功能名 —— 判据见 test/verify-features.mjs。
+        Boolean(WE_FEATURE_PANELS[qpTab]) && React.createElement(WE_FEATURE_PANELS[qpTab], null),
+        !(qpTab === "wallpaper" && userPropsPanelOpen() && propsAvailable) && !WE_FEATURE_PANELS[qpTab] && (qpTab === "appearance"
           ? qpRenderAppearancePane(sel, {
             fontOpen, onToggleFontSection: toggleFontSection,
             uiColorOpen, onToggleUiColorSection: toggleUiColorSection,

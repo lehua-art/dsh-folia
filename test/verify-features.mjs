@@ -71,12 +71,13 @@ check('路由文件面足够大（判据不是在空集上恒真）', routeFiles
 
 /* ── ③ 页签归属 ─────────────────────────────────────────────────────────── */
 const quickSrc = readFileSync(join(ROOT, 'src', 'quick-panel.js'), 'utf8');
-// 只取 QP_TABS 数组本体：quick-panel 里还有筛选器的 { id: "all" } 之类，宽匹配会把它们算成页签。
+// 页签真源是客户端功能注册表 src/features.js（quick-panel 只读它，不再写字面量）。
+const featSrcRaw = readFileSync(join(ROOT, 'src', 'features.js'), 'utf8');
 const qpBlock = (() => {
-  const at = quickSrc.indexOf('const QP_TABS = [');
+  const at = featSrcRaw.indexOf('const WE_FEATURE_TABS = [');
   if (at < 0) return '';
-  const end = quickSrc.indexOf('];', at);
-  return end < 0 ? '' : quickSrc.slice(at, end);
+  const end = featSrcRaw.indexOf('];', at);
+  return end < 0 ? '' : featSrcRaw.slice(at, end);
 })();
 const qpTabs = [...qpBlock.matchAll(/\{\s*id:\s*"([a-z-]+)"/g)].map((m) => m[1]);
 const dupTab = qpTabs.filter((t, i) => qpTabs.indexOf(t) !== i);
@@ -106,6 +107,41 @@ for (const f of ['lib/routes/inventory.js', 'lib/routes/boot.js', 'lib/routes/pe
 /* ── ⑤ 没有空壳功能 ─────────────────────────────────────────────────────── */
 const shells = FEATURES.filter((f) => !(f.host || []).length && !(f.client || []).length);
 check('没有空壳功能（host/client 至少一项非空）', shells.length === 0, shells.map((f) => f.id).join(','));
+
+/* ── ⑥ 装配点不许点名具体功能（页签/面板/挂载都走注册表）─────────────────── */
+{
+  const qpSrc = readFileSync(join(ROOT, 'src', 'quick-panel.js'), 'utf8');
+  const hardBranches = [...qpSrc.matchAll(/qpTab\s*===?\s*"([a-z-]+)"/g)].map((m) => m[1]);
+  check('quick-panel 不再按功能名分支（页签走注册表）',
+    // 允许三种：壁纸列表 / 外观节 / 播放节 —— 它们是泛型布局（同一渲染器服务多页签），
+    // 不属于「把某个功能焊死进装配点」。整区面板（开机动画 / 桌宠）必须走注册表。
+    hardBranches.every((id) => ['wallpaper', 'appearance', 'playback'].includes(id)),
+    '仍写死的页签: ' + [...new Set(hardBranches)].join(','));
+  check('quick-panel 用注册表取页签', qpSrc.includes('const QP_TABS = WE_FEATURE_TABS;'));
+  check('quick-panel 用注册表取整区面板', qpSrc.includes('WE_FEATURE_PANELS[qpTab]'));
+
+  const cliSrc = readFileSync(join(ROOT, 'src', 'client.js'), 'utf8');
+  check('client.js 不再点名桌宠挂载', !cliSrc.includes('mountPetLayer()'), '仍然直接调 mountPetLayer');
+  check('client.js 遍历 WE_FEATURE_MOUNTS 挂载', cliSrc.includes('WE_FEATURE_MOUNTS'));
+
+  const featSrc = readFileSync(join(ROOT, 'src', 'features.js'), 'utf8');
+  check('注册表声明了页签/面板/挂载三张表',
+    featSrc.includes('const WE_FEATURE_TABS = [') && featSrc.includes('const WE_FEATURE_PANELS = {') && featSrc.includes('const WE_FEATURE_MOUNTS = ['));
+  const panelKeys = [...featSrc.matchAll(/^\s{2}([a-z-]+):\s*[A-Za-z]/gm)].map((m) => m[1]);
+  check('注册表里的面板键都是登记过的页签', panelKeys.every((k) => qpTabs.includes(k)), '未知键: ' + panelKeys.filter((k) => !qpTabs.includes(k)).join(','));
+  check('开机动画与桌宠都走注册表面板', panelKeys.includes('boot') && panelKeys.includes('pets'), panelKeys.join(','));
+}
+
+/* ── ⑦ 内联顺序：注册表必须在引用者之前 ─────────────────────────────────── */
+{
+  const build = readFileSync(join(ROOT, 'scripts', 'build-client.mjs'), 'utf8');
+  const atFeatures = build.indexOf("'src/features.js'");
+  const atQuick = build.indexOf("'src/quick-panel.js'");
+  const atPetLayer = build.indexOf("'src/pet-layer.js'");
+  check('build-client 登记了 features.js', atFeatures > 0);
+  check('features.js 在 quick-panel.js 之前内联（顶层读注册表）', atFeatures > 0 && atQuick > atFeatures, atFeatures + ' vs ' + atQuick);
+  check('features.js 在 pet-layer.js 之后内联（引用 mountPetLayer）', atPetLayer > 0 && atFeatures > atPetLayer, atPetLayer + ' vs ' + atFeatures);
+}
 
 /* ── 汇总 ────────────────────────────────────────────────────────────────── */
 let failed = 0;

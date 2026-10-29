@@ -403,6 +403,11 @@ const INLINE_MODULES = [
     markers: ['function mountPetLayer()', 'function createPetLayer(', 'const PET_ROW = '],
   },
   {
+    file: 'src/features.js',
+    why: '客户端功能注册表：页签条 / 整区面板 / 常驻挂载层。装配点（quick-panel、client.js）只查表，不写功能名',
+    markers: ['const WE_FEATURE_TABS = [', 'const WE_FEATURE_PANELS = {', 'const WE_FEATURE_MOUNTS = ['],
+  },
+  {
     file: 'src/quick-panel.js',
     why: '快捷播放面板（官方侧栏 tab 与低版本抽屉共用同一份内容）：当前壁纸 + 轮播 + 列表快切 + 声音 + 设置入口。列表虚拟滚动（spacer + 可视窗口）',
     markers: ['function qpFindScroller(', 'function qpVirtWindow(', 'function qpTypeLabel(', 'function QuickPanel(props)'],
