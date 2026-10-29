@@ -29,12 +29,21 @@ function PetsTabPanel() {
   const [state, setState] = React.useState(null);
   const [busy, setBusy] = React.useState("");
   const [note, setNote] = React.useState(null);
+  const [importable, setImportable] = React.useState([]);
 
   const load = React.useCallback(async (force) => {
     try {
       const resp = await apiJson("/pets/list" + (force ? "?refresh=1" : ""), { parse: "always" });
       const doc = (resp && resp.data) || null;
-      if (resp && resp.ok && doc && doc.ok) setState(doc);
+      if (resp && resp.ok && doc && doc.ok) {
+        setState(doc);
+        // 顺带问一下本机其它宠物插件里有哪些可导入的（失败不影响主列表）。
+        try {
+          const im = await apiJson("/pets/importable", { parse: "always" });
+          const imDoc = (im && im.data) || null;
+          if (imDoc && imDoc.ok) setImportable(imDoc.pets || []);
+        } catch { /* 无外部目录是正常情况 */ }
+      }
       else setNote({ ok: false, text: weT("读取失败：") + ((resp && resp.error) || "unknown") });
     } catch (e) {
       setNote({ ok: false, text: weT("请求失败：") + ((e && e.message) || weT("网络错误")) });
@@ -52,6 +61,7 @@ function PetsTabPanel() {
       if (resp && resp.ok && r && r.ok) {
         if (kind === "install") setNote({ ok: true, text: weT("已安装并启用：") + (label || "") });
         if (kind === "remove") setNote({ ok: true, text: weT("已卸载：") + (label || "") });
+        if (kind === "import") setNote({ ok: true, text: weT("已导入并启用：") + (label || "") });
         if (kind === "config") setNote({ ok: true, text: weT("已保存") });
         await load(true);
       } else {
@@ -185,6 +195,26 @@ function PetsTabPanel() {
       })
       : React.createElement("div", { className: "we-picker__hint" }, weT("还没有安装任何桌宠 —— 从下面的站点清单里挑一只。")),
   ));
+
+  // 本机其它宠物插件里可导入的（dsh-pet 等下载的宠物就落在 $DSH_HOME/pets）
+  if (importable.length) {
+    children.push(React.createElement("div", { key: "impHead", className: "we-picker__section-head", style: { marginTop: "14px" } },
+      React.createElement("span", { className: "we-picker__section-label" },
+        weT("本机可导入") + "  ·  " + importable.length),
+    ));
+    children.push(React.createElement("div", { key: "imp", style: PET_STYLE.grid },
+      importable.map((it) => {
+        const isBusy = busy === "import:" + it.id;
+        return React.createElement("div", { key: "imp:" + it.id, style: PET_STYLE.card },
+          React.createElement("div", { style: PET_STYLE.title }, it.name || it.id),
+          React.createElement("div", { style: PET_STYLE.meta },
+            weT("来自其它宠物插件 · ") + petFmtBytes(it.bytes)),
+          React.createElement("div", { style: PET_STYLE.row },
+            btn(isBusy ? weT("导入中…") : weT("导入"), () => act("import", { id: it.id }, it.name || it.id), Boolean(busy))),
+        );
+      }),
+    ));
+  }
 
   // 站点：未装的可安装
   const available = site.filter((s) => !installedIds.has(s.id));

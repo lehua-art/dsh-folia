@@ -16,6 +16,25 @@
 
 const PET_LAYER_ID = "we-pet-layer";
 const PET_ROW = { idle: 0, runRight: 1, runLeft: 2, wave: 3, jump: 4, fail: 5, wait: 6, work: 7, done: 8 };
+/**
+ * 行号 → 轨道名的**候选表**。
+ *
+ * ⚠️ dsh-pet 的 manifest 用的是 kebab 命名（`running-right` / `waving` / `failed` …），
+ * 我最初按驼峰（`runRight` / `wave`）去查，结果**一次都没命中** —— 每帧都退回默认 120ms，
+ * 于是所有动作的节奏都是同一个硬速度，看起来就像"动作不对/没几个动作"。
+ * 这里按「标准名 → 驼峰别名 → 其它常见写法」依次找，命中即用。
+ */
+const PET_TRACK_ALIASES = [
+  ['idle'],
+  ['running-right', 'runRight', 'right'],
+  ['running-left', 'runLeft', 'left'],
+  ['waving', 'wave'],
+  ['jumping', 'jump'],
+  ['failed', 'fail'],
+  ['waiting', 'wait'],
+  ['running', 'working', 'work'],
+  ['review', 'done', 'completed'],
+];
 const PET_DEFAULT_FRAME_MS = 120;
 /**
  * 活动检测：DSH 的客户端 `ctx` 只暴露 effect/get/slots/surface，没有会话事件，
@@ -62,7 +81,7 @@ function petNow() {
   return petNow();
 }
 /** 两次随机动作之间的间隔范围（毫秒）。 */
-const PET_IDLE_GAP_MS = [5000, 11000];
+const PET_IDLE_GAP_MS = [3000, 7000];
 
 /**
  * 声音：包内 `sounds/<事件>.ogg|mp3|wav` 优先（manifest.sounds 显式声明），
@@ -176,7 +195,10 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
   let walkSpeed = 0;
   /** 走动剩余时长（毫秒）。 */
   let walkLeft = 0;
+  /** 单击轮换到第几号轨道。 */
+  let clickIdx = 0;
 
+  let scaleCur = Number(scale) > 0 ? Number(scale) : 1;
   const cw = Math.max(1, Number(pet.cell && pet.cell.width) || 192);
   const ch = Math.max(1, Number(pet.cell && pet.cell.height) || 208);
   const cols = Math.max(1, Number(pet.columns) || 8);
@@ -186,15 +208,24 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
     const n = Number(frames[r]);
     return Number.isFinite(n) && n > 0 ? Math.min(cols, n) : cols;
   }
+  /** 该行的轨道配置（按别名表找；找不到返回 null）。 */
+  function trackOf(r) {
+    const names = PET_TRACK_ALIASES[r] || [];
+    for (const n of names) {
+      const tr = pet.tracks && pet.tracks[n];
+      if (tr && Array.isArray(tr.durations) && tr.durations.length) return tr;
+    }
+    return null;
+  }
   function frameMs(r, f) {
-    const t = pet.tracks && pet.tracks[Object.keys(PET_ROW)[r] === undefined ? "" : Object.keys(PET_ROW)[r]];
-    const d = t && Array.isArray(t.durations) ? t.durations[f] : null;
+    const tr = trackOf(r);
+    const d = tr ? tr.durations[f] : null;
     return Number.isFinite(Number(d)) && Number(d) > 0 ? Number(d) : PET_DEFAULT_FRAME_MS;
   }
 
   function resize() {
-    const w = Math.round(cw * scale);
-    const h = Math.round(ch * scale);
+    const w = Math.round(cw * scaleCur);
+    const h = Math.round(ch * scaleCur);
     const dpr = Math.min(3, Math.max(1, (typeof window !== "undefined" && window.devicePixelRatio) || 1));
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
@@ -213,8 +244,8 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
     const sx = frame * cw;
     const sy = row * ch;
     try {
-      ctx.clearRect(0, 0, cw * scale, ch * scale);
-      ctx.drawImage(img, sx, sy, cw, ch, 0, 0, cw * scale, ch * scale);
+      ctx.clearRect(0, 0, cw * scaleCur, ch * scaleCur);
+      ctx.drawImage(img, sx, sy, cw, ch, 0, 0, cw * scaleCur, ch * scaleCur);
     } catch { /* 贴图还没解码完：下一帧再画 */ }
   }
 
@@ -320,10 +351,10 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
       const maxX = Math.max(0, (window.innerWidth || 1920) - layerEl.offsetWidth);
       if ((dir > 0 && p0.left >= maxX - 2) || (dir < 0 && p0.left <= 2)) {
         setRow(dir > 0 ? PET_ROW.runLeft : PET_ROW.runRight);
-        walkSpeed = -dir * (0.9 * scale);
+        walkSpeed = -dir * (0.9 * scaleCur);
       } else {
         setRow(dir > 0 ? PET_ROW.runRight : PET_ROW.runLeft);
-        walkSpeed = dir * (0.9 * scale);
+        walkSpeed = dir * (0.9 * scaleCur);
       }
       walkLeft = action.ms;
       return;
@@ -369,14 +400,101 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
       // 单击 = 挥手（给用户一个"它有反应"的反馈），之后自动回 idle
       walkSpeed = 0;
       walkLeft = 0;
-      setRow(PET_ROW.wave);
+      // 单击 = 演下一个动作（按 9 条轨道轮换），让用户能逐个看到它会什么。
+      clickIdx = (clickIdx + 1) % PET_TRACK_ALIASES.length;
+      const nextRow = clickIdx === 0 ? PET_ROW.idle : clickIdx;
+      setRow(nextRow);
       holdUntil = petNow() + 1400;
-      voice.play("wave");
+      voice.play(nextRow === PET_ROW.fail ? "fail" : nextRow === PET_ROW.done ? "done" : "wave");
     } else {
       try { localStorage.setItem("wePetPos", JSON.stringify({ left: layerEl.style.left, top: layerEl.style.top })); } catch { /* ignore */ }
     }
   }
 
+  /* ── 右键菜单：换宠物之外的全部互动都在这里 ────────────────────────────
+   * 为什么自己做：宿主的页签要打开面板才能操作，而"摸它"这件事应该发生在宠物身上。
+   * 菜单条目 = 9 条动作各一条（点一下立刻试演）+ 声音/大小/复位/隐藏。
+   */
+  let menu = null;
+  function closeMenu() {
+    if (menu && menu.parentNode) menu.parentNode.removeChild(menu);
+    menu = null;
+  }
+  function buildMenuItem(label, onClick) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    b.style.cssText = "display:block;width:100%;padding:6px 10px;background:transparent;border:0;color:inherit;text-align:left;font-size:12px;cursor:pointer;white-space:nowrap";
+    b.addEventListener("mouseenter", () => { b.style.background = "rgba(255,255,255,0.10)"; });
+    b.addEventListener("mouseleave", () => { b.style.background = "transparent"; });
+    b.addEventListener("click", (ev) => { ev.stopPropagation(); onClick(); });
+    return b;
+  }
+  function openMenu(clientX, clientY) {
+    closeMenu();
+    menu = document.createElement("div");
+    menu.style.cssText = [
+      "position:fixed", "z-index:2147482001", "min-width:150px", "padding:6px 0",
+      "border-radius:8px", "font-size:12px", "color:#eee",
+      "background:rgba(28,32,40,0.96)", "border:1px solid rgba(255,255,255,0.16)",
+      "box-shadow:0 10px 30px rgba(0,0,0,0.45)", "backdrop-filter:blur(8px)",
+    ].join(";");
+    const titles = ["闲置", "向右走", "向左走", "挥手", "跳一下", "失败", "发呆", "干活", "完成"];
+    const head = document.createElement("div");
+    head.textContent = "试演动作";
+    head.style.cssText = "padding:4px 10px 6px;opacity:0.55;font-size:11px";
+    menu.appendChild(head);
+    titles.forEach((name, r) => {
+      menu.appendChild(buildMenuItem(name, () => {
+        walkSpeed = 0; walkLeft = 0;
+        setRow(r);
+        holdUntil = petNow() + 1600;
+        voice.play(r === PET_ROW.fail ? "fail" : r === PET_ROW.done ? "done" : "wave");
+        closeMenu();
+      }));
+    });
+    const hr = document.createElement("div");
+    hr.style.cssText = "height:1px;margin:6px 0;background:rgba(255,255,255,0.14)";
+    menu.appendChild(hr);
+    menu.appendChild(buildMenuItem("再大一点", () => { applyScale(scale + 0.2); closeMenu(); }));
+    menu.appendChild(buildMenuItem("再小一点", () => { applyScale(Math.max(0.5, scale - 0.2)); closeMenu(); }));
+    menu.appendChild(buildMenuItem("回右下角", () => {
+      try { localStorage.removeItem("wePetPos"); } catch { /* ignore */ }
+      layerEl.style.left = ""; layerEl.style.top = "";
+      layerEl.style.right = "24px"; layerEl.style.bottom = "16px";
+      closeMenu();
+    }));
+    menu.appendChild(buildMenuItem("不显示它", () => {
+      // 只隐藏本地这一层；真正的开关在面板里（下一次轮询会被尊重）。
+      if (layerEl) layerEl.style.display = "none";
+      closeMenu();
+    }));
+    document.body.appendChild(menu);
+    const w = menu.offsetWidth || 160;
+    const h = menu.offsetHeight || 320;
+    const maxX = (window.innerWidth || 1920) - w - 8;
+    const maxY = (window.innerHeight || 1080) - h - 8;
+    menu.style.left = Math.max(8, Math.min(maxX, clientX)) + "px";
+    menu.style.top = Math.max(8, Math.min(maxY, clientY)) + "px";
+  }
+  function onContextMenu(e) {
+    e.preventDefault();
+    openMenu(e.clientX, e.clientY);
+  }
+  function onDocDown(e) {
+    if (menu && !menu.contains(e.target)) closeMenu();
+  }
+  /** 菜单里的缩放：改本地样式并写回配置（下一次轮询沿用）。 */
+  function applyScale(next) {
+    const v = Math.max(0.5, Math.min(3, Number(next) || 1));
+    try { apiPostJson("/pets/config", { scale: v }, { parse: "always" }); } catch { /* 本地先变 */ }
+    scaleCur = v;
+    resize();
+    draw();
+  }
+
+  canvas.addEventListener("contextmenu", onContextMenu);
+  if (typeof document !== "undefined" && document.addEventListener) document.addEventListener("pointerdown", onDocDown);
   img.onload = () => { ready = true; resize(); draw(); };
   img.onerror = () => { destroy(); };
   img.src = apiUrl(pet.sheet || "/pets/sheet?v=" + encodeURIComponent(pet.dirId || pet.id));
@@ -396,6 +514,9 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
     try { voice.destroy(); } catch { /* ignore */ }
     if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(raf); else clearTimeout(raf);
     canvas.removeEventListener("pointerdown", onPointerDown);
+    canvas.removeEventListener("contextmenu", onContextMenu);
+    if (typeof document !== "undefined" && document.removeEventListener) document.removeEventListener("pointerdown", onDocDown);
+    closeMenu();
     if (typeof window !== "undefined") {
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);

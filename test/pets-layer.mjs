@@ -55,7 +55,7 @@ function makeCanvas() {
       setTransform() {}, clearRect() {},
       drawImage: (img, sx, sy, sw, sh, dx, dy, dw, dh) => drawn.push({ sx, sy, sw, sh, dx, dy, dw, dh }),
     }),
-    addEventListener() {}, removeEventListener() {}, setPointerCapture() {}, appendChild() {}, removeChild() {}, parentNode: null,
+    addEventListener() {}, removeEventListener() {}, setPointerCapture() {}, children: [], appendChild(c) { this.children.push(c); return c; }, removeChild(c) { this.children = this.children.filter((x) => x !== c); }, contains() { return false; }, parentNode: null,
   };
 }
 
@@ -226,6 +226,54 @@ document.body.innerText = '';
   if (typeof unmount === 'function') unmount();
   check('卸载函数可调用', true);
   document.createElement = realCreate;
+}
+
+/* ── ⑨ 轨道时长：kebab 命名必须命中（否则所有动作都按默认 120ms 硬放）── */
+{
+  const pet = {
+    ...PET,
+    tracks: {
+      idle: { durations: [500, 500, 500, 500, 500, 500] },
+      'running-right': { durations: [300, 300, 300, 300, 300, 300, 300, 400] },
+      waving: { durations: [450, 450, 450, 450] },
+      failed: { durations: [550, 550, 550, 600, 650, 700, 550, 550] },
+    },
+  };
+  const canvas = makeCanvas();
+  const inst = createPetLayer(makeLayer(), canvas, pet, 1, { enabled: false });
+  tickFrames(2);
+  const n0 = canvas.drawn.length;
+  // idle 每帧 500ms ⇒ 走 10 帧（160ms）只应换不到 1 次帧；默认 120ms 则会换好几次。
+  tickFrames(10);
+  const drawnIdle = canvas.drawn.length - n0;
+  check('命中 idle 轨道时长后不会按 120ms 硬跳', drawnIdle === 10, '帧数=' + drawnIdle);
+  // 切到失败行（8 帧，550ms 起）—— 一次性动作，切过去后第一帧时长为 550ms
+  inst.fail();
+  check('fail() 在含 kebab 轨道的宠物上也生效', inst.row === 5, 'row=' + inst.row);
+  inst.destroy();
+}
+
+/* ── ⑩ 右键菜单：能在宠物上打开，且条目齐全 ───────────────────────────── */
+{
+  const listeners = {};
+  const canvas = makeCanvas();
+  canvas.addEventListener = (k, f) => { listeners[k] = f; };
+  canvas.removeEventListener = () => {};
+  const appended = [];
+  const realBodyAppend = document.body.appendChild;
+  document.body.appendChild = (el) => { appended.push(el); return el; };
+  const inst = createPetLayer(makeLayer(), canvas, PET, 1, { enabled: false });
+  check('挂了 contextmenu 监听', typeof listeners.contextmenu === 'function');
+  let prevented = false;
+  listeners.contextmenu({ preventDefault: () => { prevented = true; }, clientX: 50, clientY: 60 });
+  check('右键会 preventDefault（不弹浏览器菜单）', prevented);
+  const menu = appended[appended.length - 1];
+  check('右键生成了菜单元素', Boolean(menu));
+  const labels = (menu && menu.children ? menu.children : []).map((c) => c.textContent || '');
+  const want = ['闲置', '向右走', '向左走', '挥手', '跳一下', '失败', '发呆', '干活', '完成', '再大一点', '再小一点', '回右下角', '不显示它'];
+  check('菜单含 9 个动作 + 4 个操作', want.every((w) => labels.includes(w)), '实际=' + JSON.stringify(labels.slice(0, 16)));
+  inst.destroy();
+  document.body.appendChild = realBodyAppend;
 }
 
 /* ── 汇总 ────────────────────────────────────────────────────────────────── */
