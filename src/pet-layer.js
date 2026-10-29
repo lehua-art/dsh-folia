@@ -17,14 +17,113 @@
 const PET_LAYER_ID = "we-pet-layer";
 const PET_ROW = { idle: 0, runRight: 1, runLeft: 2, wave: 3, jump: 4, fail: 5, wait: 6, work: 7, done: 8 };
 const PET_DEFAULT_FRAME_MS = 120;
+/**
+ * 活动检测：DSH 的客户端 `ctx` 只暴露 effect/get/slots/surface，没有会话事件，
+ * 所以"模型在不在干活"只能从**页面本身**读。两条独立信号，任一命中即认为在工作：
+ *   ① DOM 特征：选择器（默认覆盖常见的 streaming / 生成中 标记）
+ *   ② 文本特征：屏幕上出现"正在生成 / 思考中 / Stop generating"这类字眼
+ * 两条都读不到时**安静地停在 idle** —— 宁可不动，也不要让宠物乱跳。
+ */
+const PET_ACTIVITY_SELECTORS = [
+  '[data-dsh-streaming]', '[data-streaming="true"]', '.ds-streaming',
+  '[class*="streaming"]', '[class*="isGenerating"]', '[aria-busy="true"]',
+];
+const PET_ACTIVITY_TEXTS = ['正在生成', '思考中', '停止生成', 'Stop generating', 'Thinking'];
+/** 检测节流（毫秒）：一次 body 扫描比一次布局还便宜，但没必要每帧跑。 */
+const PET_ACTIVITY_POLL_MS = 500;
 /** 光标静止后多久切回 idle（毫秒）。 */
 const PET_WAVE_IDLE_MS = 9000;
+
+/**
+ * 声音：包内 `sounds/<事件>.ogg|mp3|wav` 优先（manifest.sounds 显式声明），
+ * 没有就用 Web Audio 合成 —— 一只宠物没声音比"声音是版权素材"糟得多。
+ * 全部失败都静默：声音是可选项，不该有能力打断渲染。
+ */
+function petVoice(ctxWindow, sounds, cfg) {
+  const enabled = Boolean(cfg && cfg.sound);
+  const volume = Math.max(0, Math.min(1, Number(cfg && cfg.volume) || 0));
+  let audioCtx = null;
+  const cache = new Map();
+
+  function ensureCtx() {
+    if (audioCtx || typeof ctxWindow.AudioContext !== 'function') return audioCtx;
+    try { audioCtx = new ctxWindow.AudioContext(); } catch { audioCtx = null; }
+    return audioCtx;
+  }
+
+  /** 合成提示音：不同事件不同音高与波形，短、克制。 */
+  function synth(kind) {
+    const ac = ensureCtx();
+    if (!ac) return;
+    const spec = kind === "done" ? { f: 880, d: 0.09, w: "sine" }
+      : kind === "fail" ? { f: 220, d: 0.16, w: "sawtooth" }
+      : { f: 620, d: 0.08, w: "triangle" };
+    try {
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.type = spec.w;
+      osc.frequency.value = spec.f;
+      gain.gain.value = 0.0001;
+      osc.connect(gain);
+      gain.connect(ac.destination);
+      const now = ac.currentTime;
+      gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, volume * 0.25), now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + spec.d);
+      osc.start(now);
+      osc.stop(now + spec.d + 0.02);
+    } catch { /* 合成失败就算了 */ }
+  }
+
+  function file(kind) {
+    const url = sounds && sounds[kind];
+    if (!url) return null;
+    let el = cache.get(kind);
+    if (!el) {
+      try { el = new ctxWindow.Audio(apiUrl(url)); } catch { return null; }
+      el.preload = "auto";
+      cache.set(kind, el);
+    }
+    return el;
+  }
+
+  return {
+    get enabled() { return enabled; },
+    play(kind) {
+      if (!enabled || volume <= 0) return;
+      const el = file(kind);
+      if (el) {
+        try { el.currentTime = 0; el.volume = volume; const p = el.play(); if (p && p.catch) p.catch(() => synth(kind)); return; } catch { /* 落回合成 */ }
+      }
+      synth(kind);
+    },
+    destroy() {
+      cache.clear();
+      try { if (audioCtx && typeof audioCtx.close === "function") audioCtx.close(); } catch { /* ignore */ }
+      audioCtx = null;
+    },
+  };
+}
+
+/** 页面里现在像不像"模型在干活"。任何异常都当 false。 */
+function petActivityProbe() {
+  try {
+    if (typeof document === 'undefined' || !document.body) return false;
+    for (const sel of PET_ACTIVITY_SELECTORS) {
+      if (document.querySelector(sel)) return true;
+    }
+    const text = document.body.innerText || "";
+    for (const marker of PET_ACTIVITY_TEXTS) {
+      if (text.indexOf(marker) !== -1) return true;
+    }
+  } catch { /* ignore */ }
+  return false;
+}
 
 /**
  * 桌宠实例：一只宠物一条生命周期（换宠物 = 销毁重来）。
  * 不导出（构建期内联进同一作用域），只由 mountPetLayer 使用。
  */
-function createPetLayer(layerEl, canvas, pet, scale) {
+function createPetLayer(layerEl, canvas, pet, scale, cfg) {
   const ctx = canvas.getContext("2d");
   const img = new Image();
   let frame = 0;
@@ -36,6 +135,11 @@ function createPetLayer(layerEl, canvas, pet, scale) {
   let idleSince = 0;
   let dragging = null;
   let ready = false;
+  const voice = petVoice(typeof window !== "undefined" ? window : {}, pet.sounds, cfg || {});
+  let activity = false;
+  let activityTimer = null;
+  /** 一次性动作（done/fail）播完自动回 idle 的时间戳。 */
+  let holdUntil = 0;
 
   const cw = Math.max(1, Number(pet.cell && pet.cell.width) || 192);
   const ch = Math.max(1, Number(pet.cell && pet.cell.height) || 208);
@@ -83,6 +187,24 @@ function createPetLayer(layerEl, canvas, pet, scale) {
     if (!last) last = now;
     acc += now - last;
     last = now;
+    // 活动状态变化时先切行（work/done/fail 优先于 idle/wave）。
+    if (activityTimer === null && typeof setInterval === "function") {
+      activityTimer = setInterval(() => {
+        const nowActive = petActivityProbe();
+        if (nowActive === activity && now < holdUntil) return;
+        activity = nowActive;
+        if (activity) {
+          holdUntil = 0;
+          if (row !== PET_ROW.work) setRow(PET_ROW.work);
+        } else if (row === PET_ROW.work) {
+          // 干完活 → 完成行一小会儿，再回 idle（"被看见"的反馈）
+          setRow(PET_ROW.done);
+          holdUntil = Date.now() + 1600;
+          voice.play("done");
+        }
+      }, PET_ACTIVITY_POLL_MS);
+    }
+    if (holdUntil && now >= holdUntil) { holdUntil = 0; setRow(PET_ROW.idle); }
     const ms = frameMs(row, frame);
     if (acc >= ms) {
       acc = 0;
@@ -91,6 +213,7 @@ function createPetLayer(layerEl, canvas, pet, scale) {
         frame = 0;
         // 一次性动作（挥手 / 跳）播完回 idle
         if (row === PET_ROW.wave || row === PET_ROW.jump) row = PET_ROW.idle;
+        // done / fail 由 holdUntil 计时收尾，不在这里回 idle（否则刚出现的反馈会被吞掉）。
       }
     }
     draw();
@@ -133,6 +256,7 @@ function createPetLayer(layerEl, canvas, pet, scale) {
     if (!moved) {
       // 单击 = 挥手（给用户一个"它有反应"的反馈），之后自动回 idle
       setRow(PET_ROW.wave);
+      voice.play("wave");
     } else {
       try { localStorage.setItem("wePetPos", JSON.stringify({ left: layerEl.style.left, top: layerEl.style.top })); } catch { /* ignore */ }
     }
@@ -152,6 +276,9 @@ function createPetLayer(layerEl, canvas, pet, scale) {
 
   function destroy() {
     dead = true;
+    if (typeof clearInterval === "function" && activityTimer !== null) clearInterval(activityTimer);
+    activityTimer = null;
+    try { voice.destroy(); } catch { /* ignore */ }
     if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(raf); else clearTimeout(raf);
     canvas.removeEventListener("pointerdown", onPointerDown);
     if (typeof window !== "undefined") {
@@ -160,7 +287,13 @@ function createPetLayer(layerEl, canvas, pet, scale) {
     }
   }
 
-  return { destroy, setRow, resize };
+  return {
+    destroy, setRow, resize,
+    /** 外部事件注入（面板操作失败等）：一次性播放失败行并出声。 */
+    fail() { setRow(PET_ROW.fail); holdUntil = Date.now() + 1600; voice.play("fail"); },
+    cheer() { setRow(PET_ROW.done); holdUntil = Date.now() + 1600; voice.play("done"); },
+    get row() { return row; },
+  };
 }
 
 /**
@@ -215,7 +348,7 @@ function mountPetLayer() {
     const canvas = document.createElement("canvas");
     layerEl.appendChild(canvas);
     document.body.appendChild(layerEl);
-    instance = createPetLayer(layerEl, canvas, pet, scale);
+    instance = createPetLayer(layerEl, canvas, pet, scale, cfg);
   }
 
   sync();

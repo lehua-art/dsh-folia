@@ -87,7 +87,7 @@ function PetsTabPanel() {
   ));
 
   children.push(React.createElement("div", { key: "hint", className: "we-picker__hint", style: { margin: "6px 0 10px" } },
-    weT("桌宠由本插件自己绘制（雪碧图逐帧），不依赖其它宠物插件。安装后会立刻出现在右下角，可拖动，点一下会挥手。")));
+    weT("桌宠由本插件自己绘制（雪碧图逐帧），不依赖其它宠物插件。它会跟着模型状态换动作：干活时换成工作行、干完变完成、出错变失败；安装后出现在右下角，可拖动，点一下会挥手并出声。")));
 
   children.push(React.createElement("div", { key: "opts", style: { ...PET_STYLE.row, margin: "2px 0 8px" } },
     React.createElement("label", { style: { display: "flex", gap: "6px", alignItems: "center", fontSize: "12px" } },
@@ -99,6 +99,32 @@ function PetsTabPanel() {
       }),
       weT("显示桌宠"),
     ),
+    React.createElement("label", { style: { display: "flex", gap: "6px", alignItems: "center", fontSize: "12px" } },
+      React.createElement("input", {
+        type: "checkbox",
+        checked: Boolean(cfg.sound),
+        disabled: Boolean(busy),
+        onChange: (e) => act("config", { sound: e.target.checked }, ""),
+      }),
+      weT("声音"),
+    ),
+    React.createElement("label", { style: { display: "flex", gap: "4px", alignItems: "center", fontSize: "12px" } },
+      weT("音量"),
+      React.createElement("select", {
+        className: "we-picker__playlist-select",
+        value: String(cfg.volume == null ? 0.6 : cfg.volume),
+        disabled: Boolean(busy) || !cfg.sound,
+        onChange: (e) => act("config", { volume: Number(e.target.value) }, ""),
+      },
+      [[0.2, "20%"], [0.4, "40%"], [0.6, "60%"], [0.8, "80%"], [1, "100%"]].map(([v, lb]) =>
+        React.createElement("option", { key: String(v), value: String(v) }, lb)),
+      ),
+    ),
+    React.createElement("button", {
+      type: "button", className: "we-picker__btn", disabled: Boolean(busy),
+      title: weT("把桌宠挪回右下角"),
+      onClick: () => { try { localStorage.removeItem("wePetPos"); } catch { /* ignore */ } setNote({ ok: true, text: weT("位置已复位（下一次出现回到右下角）") }); },
+    }, weT("复位位置")),
     React.createElement("label", { style: { display: "flex", gap: "4px", alignItems: "center", fontSize: "12px" } },
       weT("大小"),
       React.createElement("select", {
