@@ -155,7 +155,8 @@
                   "README.md",
                   "README.en.md",
                   "README.beginner.md",
-                  "lib/components/"
+                  "lib/components/",
+                  "lib/features.js"
               ],
     "dsh":  {
                 "bundle":  {
@@ -193,7 +194,8 @@
                     "test:boot":  "node test/boot-http.mjs",
                     "test:pets":  "node test/pets-http.mjs",
                     "test:pets-layer":  "node test/pets-layer.mjs",
-                    "gate":  "node scripts/build-client.mjs \u0026\u0026 node test/run-guards.mjs smoke \u0026\u0026 node test/boot-http.mjs \u0026\u0026 node test/pets-http.mjs \u0026\u0026 node test/pets-layer.mjs"
+                    "test:features":  "node test/verify-features.mjs",
+                    "gate":  "node scripts/build-client.mjs \u0026\u0026 node test/run-guards.mjs smoke \u0026\u0026 node test/verify-features.mjs \u0026\u0026 node test/boot-http.mjs \u0026\u0026 node test/pets-http.mjs \u0026\u0026 node test/pets-layer.mjs"
                 },
     "peerDependencies":  {
                              "@deepseek-ai/cordis":  "^4.0.4",
