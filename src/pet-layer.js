@@ -33,6 +33,36 @@ const PET_ACTIVITY_TEXTS = ['正在生成', '思考中', '停止生成', 'Stop g
 const PET_ACTIVITY_POLL_MS = 500;
 /** 光标静止后多久切回 idle（毫秒）。 */
 const PET_WAVE_IDLE_MS = 9000;
+/**
+ * 日常动作调度：没在干活时，每隔 5~11 秒随机演一个。
+ *
+ * 为什么需要它：只播 idle 的宠物看起来是"一张会呼吸的图"，不像活物。这里把 manifest 的
+ * 9 条轨道都用上 —— 走一段（左右跑）、挥手、跳一下、发会儿呆 —— 用**随机间隔**而不是固定节拍，
+ * 避免机械感。干活（work/done/fail）优先级最高，调度器在那些状态下不抢行。
+ */
+const PET_IDLE_ACTIONS = [
+  { row: "wave", weight: 3, ms: 0 },
+  { row: "jump", weight: 2, ms: 0 },
+  { row: "wait", weight: 2, ms: 1800 },
+  { row: "walkRight", weight: 3, ms: 1600 },
+  { row: "walkLeft", weight: 3, ms: 1600 },
+];
+/**
+ * 统一时钟。
+ *
+ * ⚠️ `requestAnimationFrame(fn)` 交给 fn 的是**页面相对时间**（与 performance.now 同源），
+ *    不是 petNow()。两者混用会出现「holdUntil = petNow() + 1400，而 now 只有几千」——
+ *    比较永远不成立，于是宠物切到 done/fail/wave 之后**再也回不到 idle**（实测复现）。
+ *    所有时间比较一律走这一个函数。
+ */
+function petNow() {
+  try {
+    if (typeof performance !== "undefined" && typeof performance.now === "function") return performance.now();
+  } catch { /* 退回 Date.now */ }
+  return petNow();
+}
+/** 两次随机动作之间的间隔范围（毫秒）。 */
+const PET_IDLE_GAP_MS = [5000, 11000];
 
 /**
  * 声音：包内 `sounds/<事件>.ogg|mp3|wav` 优先（manifest.sounds 显式声明），
@@ -129,7 +159,7 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
   let frame = 0;
   let row = PET_ROW.idle;
   let acc = 0;
-  let last = 0;
+  let last = 0;   // rAF 时间戳（页面相对时间），不是 Date.now()
   let raf = 0;
   let dead = false;
   let idleSince = 0;
@@ -140,6 +170,12 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
   let activityTimer = null;
   /** 一次性动作（done/fail）播完自动回 idle 的时间戳。 */
   let holdUntil = 0;
+  /** 下一次随机动作的时间点；0 = 立即重排。 */
+  let nextActionAt = 0;
+  /** 走动中的速度（px/帧，正=向右）。0 = 不走。 */
+  let walkSpeed = 0;
+  /** 走动剩余时长（毫秒）。 */
+  let walkLeft = 0;
 
   const cw = Math.max(1, Number(pet.cell && pet.cell.width) || 192);
   const ch = Math.max(1, Number(pet.cell && pet.cell.height) || 208);
@@ -185,8 +221,35 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
   function tick(now) {
     if (dead) return;
     if (!last) last = now;
-    acc += now - last;
+    const dt = Math.max(0, Math.min(100, now - last));   // 切后台回来可能是几百毫秒，钳住
+    acc += dt;
     last = now;
+    // ── 走动：每帧挪一点，走到头或时间到就停下回 idle ──
+    if (walkSpeed !== 0 && walkLeft > 0) {
+      const p = pos();
+      const maxX = Math.max(0, (window.innerWidth || 1920) - layerEl.offsetWidth);
+      const nx = p.left + walkSpeed;
+      if (nx <= 0 || nx >= maxX) {
+        walkSpeed = -walkSpeed;
+        setRow(walkSpeed > 0 ? PET_ROW.runRight : PET_ROW.runLeft);
+        moveTo(Math.max(0, Math.min(maxX, nx)), p.top);
+      } else {
+        moveTo(nx, p.top);
+      }
+      walkLeft -= dt;
+      if (walkLeft <= 0) {
+        walkSpeed = 0;
+        setRow(PET_ROW.idle);
+        nextActionAt = petNow() + PET_IDLE_GAP_MS[0] + Math.random() * (PET_IDLE_GAP_MS[1] - PET_IDLE_GAP_MS[0]);
+      }
+    }
+    // ── 日常动作调度：只在"真的闲着"时才演 ──
+    if (!activity && walkSpeed === 0 && row === PET_ROW.idle && !holdUntil && now >= nextActionAt) {
+      playIdleAction();
+      const gap = PET_IDLE_GAP_MS[0] + Math.random() * (PET_IDLE_GAP_MS[1] - PET_IDLE_GAP_MS[0]);
+      nextActionAt = petNow() + gap;
+    }
+
     // 活动状态变化时先切行（work/done/fail 优先于 idle/wave）。
     if (activityTimer === null && typeof setInterval === "function") {
       activityTimer = setInterval(() => {
@@ -195,11 +258,13 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
         activity = nowActive;
         if (activity) {
           holdUntil = 0;
+          walkSpeed = 0;
+          walkLeft = 0;
           if (row !== PET_ROW.work) setRow(PET_ROW.work);
         } else if (row === PET_ROW.work) {
           // 干完活 → 完成行一小会儿，再回 idle（"被看见"的反馈）
           setRow(PET_ROW.done);
-          holdUntil = Date.now() + 1600;
+          holdUntil = petNow() + 1600;
           voice.play("done");
         }
       }, PET_ACTIVITY_POLL_MS);
@@ -219,7 +284,54 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
     draw();
     raf = (typeof requestAnimationFrame === "function")
       ? requestAnimationFrame(tick)
-      : setTimeout(() => tick(Date.now()), 60);
+      : setTimeout(() => tick(petNow()), 60);
+  }
+
+  /** 当前左上角（拖动/走动都读写这一对值）。 */
+  function pos() {
+    const left = parseFloat(layerEl.style.left);
+    const top = parseFloat(layerEl.style.top);
+    return {
+      left: Number.isFinite(left) ? left : (window.innerWidth - layerEl.offsetWidth - 24),
+      top: Number.isFinite(top) ? top : (window.innerHeight - layerEl.offsetHeight - 16),
+    };
+  }
+  function moveTo(left, top) {
+    const maxX = Math.max(0, (window.innerWidth || 1920) - layerEl.offsetWidth);
+    const maxY = Math.max(0, (window.innerHeight || 1080) - layerEl.offsetHeight);
+    const x = Math.max(0, Math.min(maxX, left));
+    const y = Math.max(0, Math.min(maxY, top));
+    layerEl.style.left = x + "px";
+    layerEl.style.top = y + "px";
+    layerEl.style.right = "auto";
+    layerEl.style.bottom = "auto";
+  }
+
+  /** 从 idle 里挑一个动作演。走动会真的位移，演完自己停。 */
+  function playIdleAction() {
+    const total = PET_IDLE_ACTIONS.reduce((s, a) => s + a.weight, 0);
+    let pick = Math.random() * total;
+    let action = PET_IDLE_ACTIONS[0];
+    for (const a of PET_IDLE_ACTIONS) { if ((pick -= a.weight) <= 0) { action = a; break; } }
+    if (action.row === "walkRight" || action.row === "walkLeft") {
+      const dir = action.row === "walkRight" ? 1 : -1;
+      const p0 = pos();
+      // 走到边上就掉头：撞墙不停在原地踏步，直接换方向。
+      const maxX = Math.max(0, (window.innerWidth || 1920) - layerEl.offsetWidth);
+      if ((dir > 0 && p0.left >= maxX - 2) || (dir < 0 && p0.left <= 2)) {
+        setRow(dir > 0 ? PET_ROW.runLeft : PET_ROW.runRight);
+        walkSpeed = -dir * (0.9 * scale);
+      } else {
+        setRow(dir > 0 ? PET_ROW.runRight : PET_ROW.runLeft);
+        walkSpeed = dir * (0.9 * scale);
+      }
+      walkLeft = action.ms;
+      return;
+    }
+    walkSpeed = 0;
+    walkLeft = 0;
+    setRow(PET_ROW[action.row] === undefined ? PET_ROW.idle : PET_ROW[action.row]);
+    holdUntil = action.ms ? petNow() + action.ms : petNow() + 1400;
   }
 
   function setRow(next) {
@@ -255,7 +367,10 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
     dragging = null;
     if (!moved) {
       // 单击 = 挥手（给用户一个"它有反应"的反馈），之后自动回 idle
+      walkSpeed = 0;
+      walkLeft = 0;
       setRow(PET_ROW.wave);
+      holdUntil = petNow() + 1400;
       voice.play("wave");
     } else {
       try { localStorage.setItem("wePetPos", JSON.stringify({ left: layerEl.style.left, top: layerEl.style.top })); } catch { /* ignore */ }
@@ -271,8 +386,8 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
   }
-  idleSince = Date.now();
-  raf = (typeof requestAnimationFrame === "function") ? requestAnimationFrame(tick) : setTimeout(() => tick(Date.now()), 60);
+  idleSince = petNow();
+  raf = (typeof requestAnimationFrame === "function") ? requestAnimationFrame(tick) : setTimeout(() => tick(petNow()), 60);
 
   function destroy() {
     dead = true;
@@ -290,9 +405,11 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
   return {
     destroy, setRow, resize,
     /** 外部事件注入（面板操作失败等）：一次性播放失败行并出声。 */
-    fail() { setRow(PET_ROW.fail); holdUntil = Date.now() + 1600; voice.play("fail"); },
-    cheer() { setRow(PET_ROW.done); holdUntil = Date.now() + 1600; voice.play("done"); },
+    fail() { setRow(PET_ROW.fail); holdUntil = petNow() + 1600; voice.play("fail"); },
+    cheer() { setRow(PET_ROW.done); holdUntil = petNow() + 1600; voice.play("done"); },
     get row() { return row; },
+    /** 让下一次随机动作尽快发生（首次出现时用）。 */
+    scheduleSoon() { nextActionAt = petNow() + 1200 + Math.random() * 1800; },
   };
 }
 
@@ -302,16 +419,24 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
  * 它自己拉 `/folia/pets/list`（配置 + 已装宠物），所以**不依赖面板是否打开过** ——
  * 冷启动就能出宠物。
  */
+/** 让刚出现的宠物在 1.2~3 秒后演第一个动作（实例内部按需读 nextActionAt）。 */
+function nextActionSoon(instance) {
+  try { if (instance && typeof instance.scheduleSoon === "function") instance.scheduleSoon(); } catch { /* ignore */ }
+}
+
 function mountPetLayer() {
   if (typeof document === "undefined" || !document.body) return null;
   let disposed = false;
   let instance = null;
   let layerEl = null;
+  /** 当前实例对应的「宠物@大小」；变了就要销毁重建。 */
+  let currentKey = "";
 
   function teardownDom() {
     if (instance) { try { instance.destroy(); } catch { /* ignore */ } instance = null; }
     if (layerEl && layerEl.parentNode) layerEl.parentNode.removeChild(layerEl);
     layerEl = null;
+    currentKey = "";
   }
 
   async function sync() {
@@ -327,7 +452,12 @@ function mountPetLayer() {
     if (!cfg || !cfg.enabled || !pet) { teardownDom(); return; }
 
     const scale = Number(cfg.scale) > 0 ? Number(cfg.scale) : 1;
-    if (layerEl) { layerEl.style.display = ""; if (instance) instance.resize(); return; }
+    const key = String(pet.dirId || pet.id) + "@" + scale;
+    // 换宠物 / 改大小 ⇒ **必须重建**：旧实例的贴图与几何都是上一只的。
+    // （实测踩过：只在首次创建，于是点「使用」换了宠物而屏幕没变 —— 就是这里。）
+    if (layerEl && currentKey === key) { layerEl.style.display = ""; return; }
+    teardownDom();
+    currentKey = key;
 
     layerEl = document.createElement("div");
     layerEl.id = PET_LAYER_ID;
@@ -349,6 +479,8 @@ function mountPetLayer() {
     layerEl.appendChild(canvas);
     document.body.appendChild(layerEl);
     instance = createPetLayer(layerEl, canvas, pet, scale, cfg);
+    // 首次出现时排一个随机动作，别一上来就傻站着。
+    nextActionSoon(instance);
   }
 
   sync();
@@ -365,3 +497,6 @@ function mountPetLayer() {
     teardownDom();
   };
 }
+
+// 仅供单测驱动（构建期内联时会剥掉 export，不影响产物）。
+export { createPetLayer, mountPetLayer, petActivityProbe };

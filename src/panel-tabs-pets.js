@@ -162,10 +162,20 @@ function PetsTabPanel() {
         actions.push(btn(isActive ? weT("使用中") : weT("使用"), () => act("config", { enabled: true, petId: p.dirId }, p.name), isActive || Boolean(busy)));
         actions.push(btn(weT("卸载"), () => act("remove", { id: p.dirId }, p.name), Boolean(busy)));
         return React.createElement("div", { key, style: PET_STYLE.card },
-          React.createElement("img", {
-            src: p.sheet, alt: "", loading: "lazy", decoding: "async",
-            style: { width: "100%", maxHeight: "96px", objectFit: "contain", background: "rgba(0,0,0,0.25)", borderRadius: "6px" },
-            onError: (e) => { e.target.style.display = "none"; },
+          // 预览只显示**第一帧**：雪碧图是 8×9 网格，直接贴图会看到一整排小人（用户实测反馈"看着很乱"）。
+          // 用 background-size = 列数/行数 × 100% + position 0 0 裁出左上角那一格。
+          React.createElement("div", {
+            style: {
+              width: "100%",
+              aspectRatio: (p.cell ? p.cell.width + " / " + p.cell.height : "192 / 208"),
+              maxHeight: "96px",
+              backgroundImage: "url(" + apiUrl(p.sheet) + ")",
+              backgroundSize: (Number(p.columns) || 8) * 100 + "% " + (Array.isArray(p.frames) ? p.frames.length : 9) * 100 + "%",
+              backgroundPosition: "0 0",
+              backgroundRepeat: "no-repeat",
+              backgroundColor: "rgba(0,0,0,0.25)",
+              borderRadius: "6px",
+            },
           }),
           React.createElement("div", { style: PET_STYLE.title }, p.name),
           React.createElement("div", { style: PET_STYLE.meta },
