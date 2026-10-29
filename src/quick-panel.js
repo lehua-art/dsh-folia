@@ -344,7 +344,7 @@
         ? React.createElement("span", {
             className: "we-qp__card-badge",
             style: { right: "auto", left: "6px", background: "rgba(255,196,120,0.9)", color: "#3a2600" },
-            title: weT("这张图只有 ") + w.width + "×" + w.height + weT("，当壁纸会糊 —— 建议在站点上传原图"),
+            title: weT("这张图只有 {size}，当壁纸会糊 —— 建议在站点上传原图", { size: w.width + "×" + w.height }),
           }, weT("预览尺寸"))
         : null,
       w.id === sel.id && React.createElement("span", { className: "we-qp__card-badge" }, weT("当前")),

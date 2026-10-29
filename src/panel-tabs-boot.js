@@ -67,18 +67,18 @@ function BootTabPanel() {
       const resp = await apiPostJson("/boot/" + kind, payload || {}, { parse: "always" });
       const r = (resp && resp.data) || null;
       if (resp && resp.ok && r && r.ok) {
-        if (kind === "download") setNote({ ok: true, text: weT("已下载：") + label });
-        if (kind === "select") setNote({ ok: true, text: weT("已选中「") + label + weT("」，下次启动生效") });
-        if (kind === "remove") setNote({ ok: true, text: weT("已删除：") + label });
+        if (kind === "download") setNote({ ok: true, text: weT("已下载：{name}", { name: label }) });
+        if (kind === "select") setNote({ ok: true, text: weT("已选中「{name}」，下次启动生效", { name: label }) });
+        if (kind === "remove") setNote({ ok: true, text: weT("已删除：{name}", { name: label }) });
         if (kind === "toggle") setNote({ ok: true, text: payload.enabled ? weT("开机动画已开启") : weT("开机动画已关闭") });
         if (kind === "settings") setNote({ ok: true, text: weT("已保存") });
         await load(true);
       } else {
         const code = (r && r.error) || "failed";
-        setNote({ ok: false, text: weT("操作失败：") + code + (r && r.detail ? "（" + r.detail + "）" : "") });
+        setNote({ ok: false, text: r && r.detail ? weT("操作失败：{code}（{detail}）", { code, detail: String(r.detail) }) : weT("操作失败：{code}", { code }) });
       }
     } catch (e) {
-      setNote({ ok: false, text: weT("请求失败：") + (e && e.message ? e.message : weT("网络错误")) });
+      setNote({ ok: false, text: weT("请求失败：{msg}", { msg: (e && e.message) ? e.message : weT("网络错误") }) });
     } finally {
       setBusy("");
     }
@@ -92,7 +92,7 @@ function BootTabPanel() {
   const children = [];
 
   children.push(React.createElement("div", { className: "we-picker__section-head", key: "head" },
-    React.createElement("span", { className: "we-picker__section-label" }, weT("🎬 开机动画") + (clips.length ? "  ·  " + clips.length : "")),
+    React.createElement("span", { className: "we-picker__section-label" }, weT("🎬 开机动画")),
     React.createElement("button", {
       type: "button", className: "we-picker__btn", style: { marginLeft: "auto" },
       disabled: Boolean(busy), onClick: () => load(true),
@@ -111,7 +111,7 @@ function BootTabPanel() {
     weT("启用（下次启动播放）"),
   ),
   React.createElement("span", { className: "we-picker__hint" },
-    activeId ? weT("当前：") + ((clips.find((c) => c.id === activeId) || {}).title || activeId) : weT("未选择")),
+    activeId ? weT("当前：{name}", { name: (clips.find((c) => c.id === activeId) || {}).title || activeId }) : weT("未选择")),
   ));
 
   children.push(React.createElement("div", { key: "hint", className: "we-picker__hint", style: { margin: "2px 0 6px", opacity: 0.75 } },
@@ -119,7 +119,7 @@ function BootTabPanel() {
 
   if (state && state.error && !clips.length) {
     children.push(React.createElement("div", { key: "err", className: "we-picker__hint", style: { color: "#ff9a9a" } },
-      weT("候选清单读不到：") + state.error));
+      weT("候选清单读不到：{msg}", { msg: String(state.error) })));
   }
 
   if (note) {
@@ -152,7 +152,7 @@ function BootTabPanel() {
         React.createElement("option", { value: "click" }, weT("点一下才进")),
         ),
       ),
-      opt(weT("淡出时长"), "fadeMs", [[400, "0.4 秒"], [600, "0.6 秒"], [900, "0.9 秒"], [1200, "1.2 秒"], [1600, "1.6 秒"]]),
+      opt(weT("淡出时长"), "fadeMs", [[400, weT("0.4 秒")], [600, weT("0.6 秒")], [900, weT("0.9 秒")], [1200, weT("1.2 秒")], [1600, weT("1.6 秒")]]),
       // 声音：默认关（带声音的自动播放会被浏览器策略拦）。打开后若仍被拦，
       // 脚本会自动退回静音播放 —— 画面优先，不会黑屏。
       React.createElement("label", { style: { display: "flex", gap: "6px", alignItems: "center", fontSize: "12px" } },
@@ -164,13 +164,13 @@ function BootTabPanel() {
         }),
         weT("带声音"),
       ),
-      opt(weT("最短显示"), "minShowMs", [[0, "不限制"], [600, "0.6 秒"], [1200, "1.2 秒"], [2000, "2 秒"]]),
-      opt(weT("最长停留"), "maxHoldMs", [[10000, "10 秒"], [20000, "20 秒（默认）"], [30000, "30 秒"], [60000, "60 秒"]]),
+      opt(weT("最短显示"), "minShowMs", [[0, weT("不限制")], [600, weT("0.6 秒")], [1200, weT("1.2 秒")], [2000, weT("2 秒")]]),
+      opt(weT("最长停留"), "maxHoldMs", [[10000, weT("10 秒")], [20000, weT("20 秒（默认）")], [30000, weT("30 秒")], [60000, weT("60 秒")]]),
     ));
   }
 
   children.push(React.createElement("div", { key: "count", className: "we-picker__hint", style: { margin: "2px 0 4px" } },
-    weT("已下载 ") + installedCount + " / " + clips.length));
+    weT("已下载 {done} / {total}", { done: installedCount, total: clips.length })));
 
   if (clips.length) {
     children.push(React.createElement("div", { key: "grid", style: BOOT_STYLE.grid },
@@ -186,7 +186,7 @@ function BootTabPanel() {
         }, label);
         const actions = [];
         if (!c.installed) {
-          actions.push(btn(isBusy ? (weT("下载中… ") + tick + "s") : weT("下载"), () => act("download", { id: c.id }, c.title), false, true));
+          actions.push(btn(isBusy ? weT("下载中… {s}s", { s: tick }) : weT("下载"), () => act("download", { id: c.id }, c.title), false, true));
         } else if (!isActive) {
           actions.push(btn(weT("使用"), () => act("select", { id: c.id }, c.title), false, true));
           actions.push(btn(weT("删除"), () => act("remove", { id: c.id }, c.title), isBusy, false));

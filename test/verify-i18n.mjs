@@ -67,6 +67,13 @@ const VALUE_ALLOW = [
   ...[
     ...JSON.parse(readFileSync(join(ROOT, 'lib/components/pet-link/src/pet-link-actions.json'), 'utf8')).animations.events.FOLIAWALLPAPER,
   ].map(value => ({ value, why: '桌宠资源池的实际动画名；必须与文件名一致，不能翻译。' })),
+  // 桌宠活动探针（src/pet-layer.js 的 PET_ACTIVITY_TEXTS）：这些串是**拿去匹配 DSH 页面上的文字**，
+  // 不是我们渲染的文案 —— 翻译了就永远匹配不到，活动联动会静默失效。
+  { value: '正在生成', why: '桌宠活动探针的匹配串：照字面匹配宿主界面上的「生成中」字样，翻译后失效。' },
+  { value: '思考中', why: '同上（桌宠活动探针匹配串）。' },
+  { value: '停止生成', why: '同上：模型在跑时宿主会显示这颗按钮，用它当活动信号。' },
+  { value: 'Thinking', why: '同上：英文界面下的活动信号。' },
+  { value: 'Stop generating', why: '同上：英文界面下的活动信号。' },
   {
     value: '设置',
     why: '**宿主的**标签候选（src/sidebar-right.js 的 settingsLabelCandidates）：' +

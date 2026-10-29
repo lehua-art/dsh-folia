@@ -44,9 +44,9 @@ function PetsTabPanel() {
           if (imDoc && imDoc.ok) setImportable(imDoc.pets || []);
         } catch { /* 无外部目录是正常情况 */ }
       }
-      else setNote({ ok: false, text: weT("读取失败：") + ((resp && resp.error) || "unknown") });
+      else setNote({ ok: false, text: weT("读取失败：{msg}", { msg: (resp && resp.error) || "unknown" }) });
     } catch (e) {
-      setNote({ ok: false, text: weT("请求失败：") + ((e && e.message) || weT("网络错误")) });
+      setNote({ ok: false, text: weT("请求失败：{msg}", { msg: (e && e.message) || weT("网络错误") }) });
     }
   }, []);
 
@@ -59,17 +59,17 @@ function PetsTabPanel() {
       const resp = await apiPostJson("/pets/" + kind, payload || {}, { parse: "always" });
       const r = (resp && resp.data) || null;
       if (resp && resp.ok && r && r.ok) {
-        if (kind === "install") setNote({ ok: true, text: weT("已安装并启用：") + (label || "") });
-        if (kind === "remove") setNote({ ok: true, text: weT("已卸载：") + (label || "") });
-        if (kind === "import") setNote({ ok: true, text: weT("已导入并启用：") + (label || "") });
+        if (kind === "install") setNote({ ok: true, text: weT("已安装并启用：{name}", { name: label || "" }) });
+        if (kind === "remove") setNote({ ok: true, text: weT("已卸载：{name}", { name: label || "" }) });
+        if (kind === "import") setNote({ ok: true, text: weT("已导入并启用：{name}", { name: label || "" }) });
         if (kind === "config") setNote({ ok: true, text: weT("已保存") });
         await load(true);
       } else {
         const code = (r && r.error) || "failed";
-        setNote({ ok: false, text: weT("操作失败：") + code });
+        setNote({ ok: false, text: weT("操作失败：{code}", { code }) });
       }
     } catch (e) {
-      setNote({ ok: false, text: weT("请求失败：") + ((e && e.message) || weT("网络错误")) });
+      setNote({ ok: false, text: weT("请求失败：{msg}", { msg: (e && e.message) || weT("网络错误") }) });
     } finally {
       setBusy("");
     }
@@ -89,7 +89,7 @@ function PetsTabPanel() {
 
   children.push(React.createElement("div", { className: "we-picker__section-head", key: "head" },
     React.createElement("span", { className: "we-picker__section-label" },
-      weT("🐾 桌宠") + (pets.length ? "  ·  " + pets.length : "")),
+      weT("🐾 桌宠")),
     React.createElement("button", {
       type: "button", className: "we-picker__btn", style: { marginLeft: "auto" },
       disabled: Boolean(busy), onClick: () => load(true),
@@ -189,7 +189,7 @@ function PetsTabPanel() {
           }),
           React.createElement("div", { style: PET_STYLE.title }, p.name),
           React.createElement("div", { style: PET_STYLE.meta },
-            (p.columns || 8) + weT(" 列 · ") + (p.cell ? p.cell.width + "×" + p.cell.height : "")),
+            weT("{cols} 列 · {size}", { cols: p.columns || 8, size: p.cell ? p.cell.width + "×" + p.cell.height : "" })),
           React.createElement("div", { style: PET_STYLE.row }, actions),
         );
       })
@@ -200,7 +200,7 @@ function PetsTabPanel() {
   if (importable.length) {
     children.push(React.createElement("div", { key: "impHead", className: "we-picker__section-head", style: { marginTop: "14px" } },
       React.createElement("span", { className: "we-picker__section-label" },
-        weT("本机可导入") + "  ·  " + importable.length),
+        weT("本机可导入")),
     ));
     children.push(React.createElement("div", { key: "imp", style: PET_STYLE.grid },
       importable.map((it) => {
@@ -208,7 +208,7 @@ function PetsTabPanel() {
         return React.createElement("div", { key: "imp:" + it.id, style: PET_STYLE.card },
           React.createElement("div", { style: PET_STYLE.title }, it.name || it.id),
           React.createElement("div", { style: PET_STYLE.meta },
-            weT("来自其它宠物插件 · ") + petFmtBytes(it.bytes)),
+            weT("来自其它宠物插件 · {size}", { size: petFmtBytes(it.bytes) })),
           React.createElement("div", { style: PET_STYLE.row },
             btn(isBusy ? weT("导入中…") : weT("导入"), () => act("import", { id: it.id }, it.name || it.id), Boolean(busy))),
         );
@@ -220,7 +220,7 @@ function PetsTabPanel() {
   const available = site.filter((s) => !installedIds.has(s.id));
   children.push(React.createElement("div", { key: "siteHead", className: "we-picker__section-head", style: { marginTop: "14px" } },
     React.createElement("span", { className: "we-picker__section-label" },
-      weT("站点桌宠") + (site.length ? "  ·  " + site.length : "")),
+      weT("站点桌宠")),
     state.siteError
       ? React.createElement("span", { className: "we-picker__hint", style: { marginLeft: "auto" } }, weT("站点不可达"))
       : null,

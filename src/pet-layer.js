@@ -439,9 +439,11 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
       "background:rgba(28,32,40,0.96)", "border:1px solid rgba(255,255,255,0.16)",
       "box-shadow:0 10px 30px rgba(0,0,0,0.45)", "backdrop-filter:blur(8px)",
     ].join(";");
-    const titles = ["闲置", "向右走", "向左走", "挥手", "跳一下", "失败", "发呆", "干活", "完成"];
+    // 九条轨道的中文名是**界面文案**（右键菜单里给用户点的）⇒ 必须走 weT；
+    // 上面 PET_ACTIVITY_TEXTS 那几条是拿去匹配页面文字的，翻不动，登记在 i18n 的 VALUE_ALLOW。
+    const titles = [weT("闲置"), weT("向右走"), weT("向左走"), weT("挥手"), weT("跳一下"), weT("失败"), weT("发呆"), weT("干活"), weT("完成")];
     const head = document.createElement("div");
-    head.textContent = "试演动作";
+    head.textContent = weT("试演动作");
     head.style.cssText = "padding:4px 10px 6px;opacity:0.55;font-size:11px";
     menu.appendChild(head);
     titles.forEach((name, r) => {
@@ -456,15 +458,15 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
     const hr = document.createElement("div");
     hr.style.cssText = "height:1px;margin:6px 0;background:rgba(255,255,255,0.14)";
     menu.appendChild(hr);
-    menu.appendChild(buildMenuItem("再大一点", () => { applyScale(scale + 0.2); closeMenu(); }));
-    menu.appendChild(buildMenuItem("再小一点", () => { applyScale(Math.max(0.5, scale - 0.2)); closeMenu(); }));
-    menu.appendChild(buildMenuItem("回右下角", () => {
+    menu.appendChild(buildMenuItem(weT("再大一点"), () => { applyScale(scale + 0.2); closeMenu(); }));
+    menu.appendChild(buildMenuItem(weT("再小一点"), () => { applyScale(Math.max(0.5, scale - 0.2)); closeMenu(); }));
+    menu.appendChild(buildMenuItem(weT("回右下角"), () => {
       try { localStorage.removeItem("wePetPos"); } catch { /* ignore */ }
       layerEl.style.left = ""; layerEl.style.top = "";
       layerEl.style.right = "24px"; layerEl.style.bottom = "16px";
       closeMenu();
     }));
-    menu.appendChild(buildMenuItem("不显示它", () => {
+    menu.appendChild(buildMenuItem(weT("不显示它"), () => {
       // 只隐藏本地这一层；真正的开关在面板里（下一次轮询会被尊重）。
       if (layerEl) layerEl.style.display = "none";
       closeMenu();
