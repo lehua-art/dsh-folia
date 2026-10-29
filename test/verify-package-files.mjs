@@ -380,7 +380,7 @@ async function main() {
     // 地板 = **实测步数**，不是留余量的估计：多挂一条守卫就抬一次（抬本身即证据）。
     // 本轮抬到 98/111：新增 verify-features / verify-route-registry / verify-settings-ownership
     // 与 boot-http / pets-http / pets-layer 三条功能测试。下面的负对照保证「删一步即红」。
-    const CHAIN_FLOOR = { verify: 100, docs: 6, smoke: 6, all: 113 };
+    const CHAIN_FLOOR = { verify: 102, docs: 6, smoke: 6, all: 115 };
     /** 地板表与 GROUPS 的对齐体检：键名必须与**组名**逐一对齐（纯函数 ⇒ 负对照可直接喂）。 */
     const floorGaps = (groups, floors) => groups.map(([, g]) => g).filter((g) => !Number.isInteger(floors[g]));
     const problems = floorGaps(GROUPS, CHAIN_FLOOR).map((g) => '地板表缺组 ' + g

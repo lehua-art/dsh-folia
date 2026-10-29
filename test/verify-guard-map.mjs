@@ -87,6 +87,8 @@ const ZERO_COVERAGE_WHY = {
   [M('lib', 'boot', 'index.js')]: '开机注入与本地片段目录：行为由 test/boot-http.mjs 以真 http.Server 覆盖（list/download/select/Range/remove/legacy 迁移共 37 条），注入脚本由 test/feature-manifest 侧的入口对账覆盖；本工具只认字面量路径 ⇒ 按口径算零覆盖',
   [M('lib', 'routes', 'modules.js')]: '站点模块索引（开机动画候选的兜底来源）：由 test/boot-http.mjs 的真实下载链路间接驱动（候选解析走它），本工具只认字面量路径 ⇒ 按口径算零覆盖',
   [M('lib', 'routes', 'site-thumb.js')]: '站点图片缩略图代理：行为由 verify-media-bytes 族与手工端到端验证（首拉 524KB、次拉 4ms 命中缓存）覆盖，路径穿越由 /media 白名单判据覆盖；本工具只认字面量路径 ⇒ 按口径算零覆盖',
+  [M('lib', 'routes', 'site-package.js')]: '站点工程包 → 本机 WE 工程目录（点击即解码）：由 test/site-package-http.mjs 以真 http.Server + 真 zip 覆盖 22 条（解包/幂等/路径穿越/SSRF 白名单/非 zip/缺 project.json/application 包/exe 跳过），本工具只认字面量路径 ⇒ 按口径算零覆盖',
+  [M('lib', 'zip-read.js')]: '通用 zip 读取器（store/deflate + 安全限量）：由 test/site-package-http.mjs 的解包判据与 test/zip-read.mjs 的穿越/炸弹判据覆盖，本工具只认字面量路径 ⇒ 按口径算零覆盖',
 
   // ── 组件行宿主入口（合并后从 packages/* 搬到 lib/components/*）──
   [M('lib', 'components', 'mascot-avatar', 'index.js')]: '组件行入口：实现归属由 verify-route-ownership 的「行→入口」对账覆盖（按目录集合派生，非直读本文件）',

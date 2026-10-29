@@ -273,6 +273,10 @@ const VERIFY_STEPS = [
   step('test/verify-panel-interactions.mjs'),
   // ⑱ 站点条目类型：zip 工程包不得判成视频（实测踩过：56MB zip 塞进 <video>）。
   step('test/inventory-types.mjs'),
+  // ⑲ 站点工程包 → 本机工程目录（点击即解码）：幂等 / 穿越 / SSRF / 非 zip。
+  step('test/site-package-http.mjs'),
+  // ⑳ zip 读取器的安全边界：穿越 / 限量 / 炸弹比 / 非法输入。
+  step('test/zip-read.mjs'),
   // ⑭ 我们自己的三条功能级测试：开机动画路由 / 桌宠路由 / 桌宠渲染层。
   //    它们是真 http.Server + 假 DOM，不依赖外部进程或网络，适合进链。
   step('test/boot-http.mjs'),

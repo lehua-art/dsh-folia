@@ -590,6 +590,41 @@ const CSS_PANEL = `  /* ── 吉祥物形态**3D 圆环转盘**（四次返工
   /* Scene-wallpaper "实时帧" badge — top-right under the hide button.
      作用域钉在**缩略图卡片**里：卡头的可播放计数徽标（.we-picker__card-head 下）
      同名，不能被这条 absolute 角标规则盖掉（那一枚走 .we-picker__card-badge 的基样式，行内计数）。 */
+  /* ── 站点工程包条带（.we-picker__pkg-*）────────────────────────────────────
+     为什么单列一条：工程包（zip）不能进 <video>，点它要先解码一次。
+     形态上刻意与网格卡片区分（横向小卡 + 明确的"点击解码"徽标），
+     避免用户把它当成"点了立刻切的壁纸"而误以为失败。 */
+  .we-picker__pkg-strip { margin: 6px 0 10px; }
+  .we-picker__pkg-row {
+    display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 6px;
+    scrollbar-width: thin;
+  }
+  .we-picker__pkg {
+    position: relative; flex: 0 0 auto;
+    width: 168px; padding: 6px;
+    display: flex; flex-direction: column; gap: 4px;
+    border-radius: 8px; cursor: pointer;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    transition: background 120ms linear, border-color 120ms linear;
+  }
+  .we-picker__pkg:hover { background: rgba(255, 255, 255, 0.12); border-color: rgba(255, 255, 255, 0.24); }
+  .we-picker__pkg.is-busy { opacity: 0.7; cursor: progress; }
+  .we-picker__pkg-thumb {
+    display: block; width: 100%; aspect-ratio: 16 / 9;
+    border-radius: 6px; background-size: cover; background-position: center;
+    background-color: rgba(0, 0, 0, 0.25);
+  }
+  .we-picker__pkg-title {
+    font-size: 0.72em; line-height: 1.35; max-height: 2.7em;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .we-picker__pkg-badge {
+    font-size: 0.66em; opacity: 0.85;
+    padding: 1px 6px; border-radius: 4px;
+    background: rgba(30, 90, 160, 0.55);
+    align-self: flex-start;
+  }
   .we-picker__card .we-picker__card-badge {
     position: absolute; top: 4px; right: 4px; z-index: 1;
     padding: 1px 6px; font-size: 0.62em; line-height: 1.6;

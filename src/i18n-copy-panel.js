@@ -467,6 +467,17 @@ const WE_I18N_EN_PANEL = {
   "…": "…",
   // 开机动画：已开启但无选片时的提示（4.8.2）
   "已开启，但还没有选片 —— 下载一条后点「使用」": "Enabled, but no clip is selected yet — download one, then press Use",
+
+  // ── 站点工程包（zip）：点击即解码的文案（4.9.0）──────────────────────────
+  "正在解码工程包…（首次会下载，之后立即生效）": "Decoding the project package… (downloads on first use, instant afterwards)",
+  "这个工程包是可执行程序（application），不能当壁纸": "This package is an application, not a wallpaper",
+  "解码失败：{code}": "Decode failed: {code}",
+  "已就绪：{name}": "Ready: {name}",
+  "已解码，但清单里还没出现 —— 点「刷新」重试": "Decoded, but it has not shown up yet — press Refresh",
+  "{n} 个站点工程包 · 点一下就能当背景（首次会下载）": "{n} site project packages · one click and it becomes your background (downloads on first use)",
+  "点击解码并应用（首次需下载）": "Click to decode and apply (downloads the first time)",
+  "解码中…": "Decoding…",
+  "工程包 · 点击解码": "Project package · click to decode",
 };
 
 export { WE_I18N_EN_PANEL };

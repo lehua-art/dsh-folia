@@ -245,6 +245,42 @@
       );
   }
 
+  /**
+   * 站点工程包条带（`type === "package"`）：它们不能被 <video> 播，点一下要先解码。
+   *
+   * 为什么不放进网格：网格语义是"点一下就切过去"，包里没有可直接播的媒体；混进去会让
+   * "可播放 N 张"的计数与轮播候选都失真。所以独立一条，文案也直说"会下载一次"。
+   */
+  function renderPackageStrip(ctx) {
+    const { packageList, packageInstalling, packageNote, sel } = ctx;
+    if (!packageList || packageList.length === 0) return null;
+    const cards = packageList.map((w) => React.createElement("div", {
+      key: "pkg-" + w.id,
+      role: "button",
+      tabIndex: 0,
+      className: "we-picker__pkg" + (packageInstalling === w.id ? " is-busy" : ""),
+      title: weT("点击解码并应用（首次需下载）"),
+      onClick: () => ctx.onPickCard(w),
+      onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); ctx.onPickCard(w); } },
+    },
+      w.preview ? React.createElement("span", {
+        className: "we-picker__pkg-thumb",
+        style: { backgroundImage: "url(" + JSON.stringify(w.preview) + ")" },
+      }) : null,
+      React.createElement("span", { className: "we-picker__pkg-title" }, String(w.title || "")),
+      React.createElement("span", { className: "we-picker__pkg-badge" },
+        packageInstalling === w.id ? weT("解码中…") : weT("工程包 · 点击解码")),
+    ));
+    return React.createElement("div", { className: "we-picker__pkg-strip" },
+      React.createElement("div", { className: "we-picker__row" },
+        React.createElement("span", { className: "we-picker__hint" },
+          weT("{n} 个站点工程包 · 点一下就能当背景（首次会下载）", { n: packageList.length })),
+      ),
+      React.createElement("div", { className: "we-picker__pkg-row" }, cards),
+      packageNote ? React.createElement("span", { className: "we-picker__hint" }, packageNote) : null,
+    );
+  }
+
   function renderPickerNormalBody(ctx, draft, draftIdSet, normalWin) {
     const { sel, playableList, onToggleBatchMode, armedConfirm, onBatchHide, onDisarmConfirm, cdMode, gridRef, query } = ctx;
     return React.createElement("div", { className: "we-picker__modal-body" },
@@ -270,6 +306,8 @@
           weT("隐藏选中的 {n} 张壁纸？可在「已隐藏」中随时恢复。", { n: sel.batchSelected.length }),
           onBatchHide, onDisarmConfirm),
         renderPickerFilterRow(ctx),
+        // 工程包条带：在网格之上、过滤行之下 —— 它属于"从这里挑"，但不参与网格的虚拟化计数。
+        renderPackageStrip(ctx),
         React.createElement("div", { ref: cdMode ? undefined : gridRef, className: "we-picker__grid" },
           // "Close wallpaper" card — equivalent of the first <option> in the
           // select-based UI. Rendered as a <div role="button"> like every other card:

@@ -149,6 +149,21 @@ function playableWallpapers(wallpapers, ratingFilter, typeFilter, hiddenIds, sou
   );
 }
 
+/**
+ * **可安装的工程包**（站点上的 WE 工程包 zip）：`type === "package"`。
+ *
+ * 为什么不并进 `playableList`：网格的语义是"点一下就切过去"，而工程包要先解码一次
+ * （下载 + 解包 + 登记成 WE 工程目录）才能播。混进网格会让轮播候选与"可播放"计数都失真。
+ * 所以它自己一档，由选择器在网格上方单独渲染一条条带，点击走 `onPickCard` 的解码分支。
+ */
+function packageWallpapers(wallpapers, ratingFilter, typeFilter, hiddenIds, sourceFilter) {
+  return wallpapers.filter((w) => w && w.type === "package"
+    && !isHiddenWallpaper(w.id, hiddenIds)
+    && matchesRatingFilter(w, ratingFilter)
+    && matchesSourceFilter(w, sourceFilter)
+    && (typeFilter === "all" || typeFilter === "package" || typeFilter === "video"));
+}
+
 /** 已隐藏列表（保持库存顺序）。 */
 function hiddenWallpapers(wallpapers, hiddenIds) {
   return wallpapers.filter((w) => isHiddenWallpaper(w.id, hiddenIds));
@@ -181,6 +196,9 @@ function pickerModel(input) {
     typeCounts[w.type] = (typeCounts[w.type] || 0) + 1;
   }
   const editorList = playableWallpapers(list, ratingFilter, typeFilter, hiddenIds, sourceFilter);
+  // 工程包条带（见 packageWallpapers 的注释）：只受分级/来源过滤，不受"可播放"闸门影响。
+  const packageList = packageWallpapers(list, ratingFilter, typeFilter, hiddenIds, sourceFilter)
+    .filter((w) => !query || String(w.title || "").toLowerCase().indexOf(query) !== -1);
   const hiddenList = hiddenWallpapers(list, hiddenIds);
   return {
     query,
@@ -189,6 +207,8 @@ function pickerModel(input) {
     ratingCounts,
     typeCounts,
     editorList,
+    packageList,
+    packageCount: packageList.length,
     hiddenList,
     sourceCounts,
     normalPage: pageSlice(playableList, input.page),
@@ -212,5 +232,6 @@ export {
   PICKER_PAGE_SIZE,
   pageSlice,
   playableWallpapers,
+  packageWallpapers,
   pickerModel,
 };

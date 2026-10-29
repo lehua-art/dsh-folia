@@ -789,6 +789,22 @@
         {
           "kind": "guard",
           "npm": null,
+          "file": "test/site-package-http.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/zip-read.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
           "file": "test/boot-http.mjs",
           "args": [],
           "tier": "hard",
@@ -1707,6 +1723,22 @@
           "kind": "guard",
           "npm": null,
           "file": "test/inventory-types.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/site-package-http.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/zip-read.mjs",
           "args": [],
           "tier": "hard",
           "probe": false
