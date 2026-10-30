@@ -220,7 +220,6 @@
     }
   },
   "dependencies": {
-    "@linxin666/dsh-client-ui-skin-center": "0.4.8",
     "webwallgl": "^3.0.0",
     "x11": "^4.3.1"
   },

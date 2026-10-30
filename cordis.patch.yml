@@ -1,23 +1,23 @@
 # dsh-plugin-folia bundle patch.
 #
-# Row set: this bundle + the skin centre it brings along.
+# ⚠️ 这里**只有一条** row。皮肤中心由桌面端/市场自己那条 row 负责，我们不再插第二条（见下）。
 #
-# ── 为什么这里有第二条 row ──────────────────────────────────────────────────
-# 我们不再自己实现皮肤渲染：皮肤包（`skin.json` + `skin.css` + 可选 `hooks.mjs`）由
-# `@linxin666/dsh-client-ui-skin-center` 加载与启用，我们的「助手皮肤」页签只负责把站点 zip
-# 解到它读的那个目录（`$DSH_HOME/skins`）。所以它必须是**装得上的**：本包把它列为
-# `dependencies`，并在下面插一条 row —— 用户装 dsh-folia 就同时得到两件套，不用再单独装。
+# ── 为什么不再声明 skin-center 的 row 与依赖（2026-10-30 实测）─────────────────
+# 我们一厢情愿地"随身携带"皮肤中心（`dependencies` + 第二条 insert row），结果与桌面端自己
+# 管理的同一条 row 撞了：`.dsh-market/log.ndjson` 每次启动都会写
 #
-# ── 重复 row 为什么不会打起来（实测依据，不是猜测）────────────────────────
-# 1) 宿主半边：它的 `apply` 走 `mountOnce('@linxin666/dsh-client-ui-skin-center', …)`，
-#    以 `globalThis[Symbol.for('dsh-web.mounted-plugins')]` 记账 ⇒ 第二次挂载是空操作，
-#    不会重复注册 webserver 路由。
-# 2) 客户端半边：它的设置分区注册包在 `try { ctx.slots.register(...) } catch { return () => {} }`，
-#    重复注册被吞掉 ⇒ 不会出现两张「皮肤」设置页。
-# 于是「用户已有 dsh-web-all（它也插了一条 row）」与「只用我们」两种情形都成立。
+#     "@linxin666/dsh-client-ui-skin-center -> off: fiber=true"
+#     "plugin kept off: @linxin666/dsh-client-ui-skin-center"
 #
-# 版本：依赖写 `^0.4.8`（本仓实测过的版本线）；它若大改 v1alpha1 契约，我们跟着升级即可。
-# 判据：test/verify-skin-center-bundle.mjs 会同时钉住「声明了依赖」与「插了唯一 id 的 row」。
+# 也就是**它被关掉了**，于是 `/api/skin-center/v2/*` 整族变成路由 miss（带会话实测：404），
+# 「助手皮肤」页签里点「应用」必然失败。把依赖钉到 0.4.8 只在那一次启动里生效，桌面端重启后
+# 会把 0.4.12 投影回来（engines 要求 `dsh >= 0.2.1-rc.3`，而当前桌面端是 rc.2）→ 又被关掉。
+# 直接改 profile 的 package.json / overrides 会让桌面端"Profile 恢复未完成"进安全模式 —— 那条路
+# 我们已经走过一次并回滚，不再重复。
+#
+# 结论：**不由我们替用户装这个插件**。它该由用户在自己的插件市场/桌面端里装（那里管版本与引擎
+# 匹配），我们的页签只做两件事：把站点 zip 解到 `$DSH_HOME/skins`，以及在它确实在跑时写选择。
+# 判据见 test/verify-skin-center-bundle.mjs：**只允许一条 row**，且不得再声明为依赖。
 #
 # A patch replaces the targeted row's whole `config`, so only additive `insert`
 # rows appear here (we never override an existing shipped row).
@@ -25,19 +25,3 @@
 - insert:
     - id: folia
       name: 'dsh-folia'
-    # 皮肤中心：独立 npm 包（BSD-3-Clause），本包作为依赖携带。
-    #
-    # ⚠️ row id **不能**以 `folia-` 开头：`lib/subpackage-boot.js#subpackageSpecifiers` 把
-    #    「id 以 `folia-` 开头的行」当作**我们自己的子包行**做启动自检（解析不到就抛，因为宿主
-    #    对行级失败是静默的）。给第三方行起 `folia-skin-center` 这种 id 会被误判成"我们的子包"
-    #    ⇒ 自检去仓库 node_modules 里解析它，开发树里没有这个依赖就直接抛，整个 apply 失败。
-    #    所以这里用不撞前缀的 `skin-center`（也与 web-all 的 `web-ui-skin-center`、
-    #    官方包的 `ui-skin-center` 都不同名）。
-    #
-    # ⚠️ 版本**钉死 0.4.8**（package.json 里也是 exact）：0.4.9+ 起的 peer 要求
-    #    `@deepseek-ai/dsh >= 0.2.1-rc.3`，而当前桌面端跑的是 0.2.1-rc.2 —— 于是市场把这条行
-    #    **保持为 off**（`.dsh-market/log.ndjson` 里写着 "plugin kept off: …skin-center"），
-    #    皮肤中心的 /api/skin-center/v2/* 全部变成路由 miss（401/404），页签里点「应用」必失败。
-    #    0.4.8 的 peer 是 `>=0.2.1-rc.2`，与现在的宿主匹配。等桌面端升到 rc.3 再放开版本范围。
-    - id: skin-center
-      name: '@linxin666/dsh-client-ui-skin-center'
