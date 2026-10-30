@@ -287,6 +287,8 @@ const VERIFY_STEPS = [
   step('test/verify-site-media.mjs'),
   // ㉒ 站点资源本地化队列：并发上限 / 幂等 / 续传 / 原子 / 可失败（点击即下载的那条链路）。
   step('test/verify-downloads.mjs'),
+  // ㉓ 出货包不许带本机路径（用户目录 / 用户名），这是机械判据，不靠人记得检查。
+  step('test/verify-no-local-paths.mjs'),
   step('test/pets-layer.mjs'),
 ];
 
