@@ -161,8 +161,14 @@ function call(route, { method = 'GET', body = null, url = null, host = null } = 
   // 无法判定 —— 这个态是实测补上的：把 401 当成 present 会让界面"看起来能用、点应用必然失败"）。
   check('响应里带 skinCenter 四态',
     ['present', 'absent', 'auth-gated', 'unknown'].includes(r.json.skinCenter), 'skinCenter=' + r.json.skinCenter);
-  check('皮肤中心不在跑时给出钉住版本的提示', r.json.skinCenter === 'present' || r.json.skinCenterHint === 'skin-center-0.4.8',
+  check('皮肤中心不在跑时给出钉住版本的提示（随 package.json 的精确版本走）',
+    r.json.skinCenter === 'present' || r.json.skinCenterHint === 'skin-center-0.4.12',
     'hint=' + r.json.skinCenterHint);
+  // 「用户在插件市场里手动禁用」是比 401 更准确的原因，列表必须把它带出来（字段受控即可，
+  // 这里没有真实市场状态文件，所以只断言类型）。
+  check('带出 skinCenterDisabled（布尔）与 skinCenterMarketKnown（布尔）',
+    typeof r.json.skinCenterDisabled === 'boolean' && typeof r.json.skinCenterMarketKnown === 'boolean',
+    JSON.stringify({ d: r.json.skinCenterDisabled, k: r.json.skinCenterMarketKnown }));
 }
 
 /* ② 安装（幂等分支：demo-skin 已存在 ⇒ 不该下载） */

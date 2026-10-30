@@ -211,11 +211,19 @@ function SkinsTabPanel() {
   //   不在 → 明说它是个**独立插件**（不在 dsh-web-all 里），给一条可复制的安装命令
   //   unknown（探测失败）→ 保守地按"在"讲，不吓唬用户
   const skinCenter = (state && state.skinCenter) || "unknown";
+  // 用户在插件市场里手动禁用了它 —— 这是最准确的原因，优先于所有 http 状态码推测。
+  const marketDisabled = Boolean(state && state.skinCenterDisabled);
   // `present` 是**唯一**允许点「应用」的状态：只有真的拿到 catalog JSON 才算它在跑。
   // `absent`=路由不存在（插件没装/未启用）；`auth-gated`=鉴权在路由前面挡住（无法判定）；
   // `unknown`=探测失败。后三种都如实告诉用户"现在点应用不会成功"，而不是让他点了看 404。
   const canApply = skinCenter === "present";
-  if (skinCenter === "absent") {
+  if (marketDisabled) {
+    children.push(React.createElement("div", {
+      key: "hint-disabled",
+      className: "we-picker__hint",
+      style: { margin: "6px 0 4px", color: "#ffd08a", lineHeight: "1.6" },
+    }, weT("皮肤中心被**你在插件市场里禁用了**（市场记录里它在 disabled 列表里）。皮肤的实际渲染方就是它，禁用它 ⇒ 这里只能装/卸皮肤包，不能应用。到插件市场把它重新启用即可（dsh-folia 已把它作为依赖随身携带，不需要另装）。")));
+  } else if (skinCenter === "absent") {
     children.push(React.createElement("div", {
       key: "hint-absent",
       className: "we-picker__hint",
