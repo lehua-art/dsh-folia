@@ -243,7 +243,7 @@ function SkinsTabPanel() {
       className: "we-picker__btn", type: "button",
       disabled: Boolean(busy),
       onClick: () => load(true),
-    }, weT("刷新")),
+    }, busyIsStructural ? weT("下载中…（可继续切换皮肤）") : weT("刷新")),
   ));
 
   // 皮肤中心在不在，决定这段提示说什么：
@@ -306,6 +306,14 @@ function SkinsTabPanel() {
       opacity: note ? 1 : 0, transition: "opacity 120ms linear",
     },
   }, note ? note.text : "\u00a0"));
+
+  // ⚠️ 「正在下载/安装」**不能**把整块面板锁住：实测用户点「安装」后想切到另一套皮肤，
+  // 结果所有「应用」都灰着，必须等 zip 下完 —— 下载是长任务，切换应该与它互不阻塞。
+  // 所以把 busy 拆成两条互不相干的通道：
+  //   · 结构操作（install / remove / repair）：改动磁盘目录，串行，期间只锁**结构按钮**
+  //   · 切换（activate）：只写 active，幂等且"最后动作优先"，期间只锁**该卡片的「应用」**
+  const busyIsStructural = /^(install|remove|repair):/.test(String(busy || ""));
+  const busyIsActivating = /^activate:/.test(String(busy || ""));
 
   const installed = (state && state.installed) || [];
   const activeId = (state && state.active) || "";
@@ -409,7 +417,7 @@ function SkinsTabPanel() {
               ? React.createElement("span", { style: { ...SKIN_STYLE.badge, background: "rgba(60,160,90,0.55)" } }, weT("使用中"))
               : React.createElement("button", {
                 className: "we-picker__btn", type: "button",
-                disabled: Boolean(busy) || !canApply || notListed,
+                disabled: (busyIsActivating && busyThis) || !canApply || notListed,
                 title: notListed ? notListedWhy : (applyBlockedReason || undefined),
                 onClick: () => act("activate", { id: s.id }, s.name),
               }, busyThis ? weT("切换中…") : weT("应用")),
@@ -418,14 +426,14 @@ function SkinsTabPanel() {
             notListed
               ? React.createElement("button", {
                 className: "we-picker__btn", type: "button",
-                disabled: Boolean(busy),
+                disabled: busyIsStructural,
                 title: notListedWhy,
                 onClick: () => act("repair", { id: s.dirId || s.id }, s.name),
               }, busy === "repair:" + (s.dirId || s.id) ? weT("修复中…") : weT("修复清单"))
               : null,
             React.createElement("button", {
               className: "we-picker__btn", type: "button",
-              disabled: Boolean(busy) || isActive,
+              disabled: busyIsStructural || isActive,
               title: isActive ? weT("正在使用，先切到别的再卸") : undefined,
               onClick: () => act("remove", { id: s.id }, s.name),
             }, busy === "remove:" + s.id ? weT("卸载中…") : weT("卸载")),
@@ -466,7 +474,7 @@ function SkinsTabPanel() {
                   : React.createElement("button", {
                     key: "apply",
                     className: "we-picker__btn", type: "button",
-                    disabled: Boolean(busy) || !canApply,
+                    disabled: (busyIsActivating && busy === "activate:" + localId) || !canApply,
                     title: applyBlockedReason || undefined,
                     onClick: () => act("activate", { id: localId }, s.title),
                   }, busy === "activate:" + localId ? weT("切换中…") : weT("应用")),
@@ -474,7 +482,7 @@ function SkinsTabPanel() {
               ]
               : React.createElement("button", {
                 className: "we-picker__btn", type: "button",
-                disabled: Boolean(busy),
+                disabled: busyIsStructural || busy === "install:" + s.id,
                 title: skinCenter === "absent" ? weT("先装皮肤中心，否则皮肤装好也没法启用") : undefined,
                 onClick: () => act("install", { id: s.id, url: s.url }, s.title),
               }, busyThis ? weT("安装中…") : weT("安装")),
