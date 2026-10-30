@@ -114,13 +114,15 @@ const routes = [];
 const deps = { disposers: [], base: '/folia', log: () => {} };
 registerSkinsRoutes({ register: (spec) => { routes.push(spec); return () => {}; } }, deps);
 const find = (p) => routes.find((r) => r.path === p);
-// 切换皮肤与"当前皮肤"走的是**浏览器**对皮肤中心 /api/skin-center/v2/active 的直读直写
-// （DSH 对该路径做会话鉴权，宿主 fetch 没有 cookie ⇒ 代理只会 401），所以这里只剩三条宿主路由。
-check('三条路由都注册了（list / install / remove）',
-  ['/folia/skins/list', '/folia/skins/install', '/folia/skins/remove'].every(find),
+// 五条路由：list / install / remove + activate / active。
+// 后两条是**写入兜底**：浏览器直连皮肤中心的 /api/skin-center/v2/active 可能拿不到会话或打错源，
+// 于是宿主代理会转发凭据；若 HTTP 仍不可用，就直接写它自己的持久层（skin-center-active.json）。
+check('五条路由都注册了（list / install / remove / activate / active）',
+  ['/folia/skins/list', '/folia/skins/install', '/folia/skins/remove',
+    '/folia/skins/activate', '/folia/skins/active'].every(find),
   routes.map((r) => r.path).join(','));
 
-function call(route, { method = 'GET', body = null, url = null } = {}) {
+function call(route, { method = 'GET', body = null, url = null, host = null } = {}) {
   return new Promise((resolve) => {
     const resObj = {
       statusCode: 0, headers: {},
@@ -130,7 +132,7 @@ function call(route, { method = 'GET', body = null, url = null } = {}) {
     const chunks = body === null ? [] : [Buffer.from(JSON.stringify(body))];
     const req = {
       method, url: url || route.path,
-      headers: {},
+      headers: host ? { host } : {},
       on(ev, fn) {
         if (ev === 'data') for (const c of chunks) fn(c);
         if (ev === 'end') setTimeout(fn, 0);
@@ -153,9 +155,14 @@ function call(route, { method = 'GET', body = null, url = null } = {}) {
   const other = siteItems.find((x) => x.id === 'other-skin');
   check('没装的 installed=false', Boolean(other && other.installed === false));
   check('本机已装清单含 demo-skin', ((r.json && r.json.installed) || []).some((x) => x.id === 'demo-skin'));
-  // 皮肤中心在线探测：本用例里请求没有真实 Host（假站点不是 DSH 服务器），所以只断言"三态之一"，
+  // 皮肤中心在线探测：本用例里请求没有真实 Host（假站点不是 DSH 服务器），所以只断言"四态之一"，
   // 不假装知道答案 —— 判据的价值是"这个字段一定存在且取值受控"，而不是在这里伪造一个 200。
-  check('响应里带 skinCenter 三态', ['present', 'absent', 'unknown'].includes(r.json.skinCenter), 'skinCenter=' + r.json.skinCenter);
+  // 四态：present（真拿到 catalog JSON）/ absent（路由不存在）/ auth-gated（鉴权挡在路由前，
+  // 无法判定 —— 这个态是实测补上的：把 401 当成 present 会让界面"看起来能用、点应用必然失败"）。
+  check('响应里带 skinCenter 四态',
+    ['present', 'absent', 'auth-gated', 'unknown'].includes(r.json.skinCenter), 'skinCenter=' + r.json.skinCenter);
+  check('皮肤中心不在跑时给出钉住版本的提示', r.json.skinCenter === 'present' || r.json.skinCenterHint === 'skin-center-0.4.8',
+    'hint=' + r.json.skinCenterHint);
 }
 
 /* ② 安装（幂等分支：demo-skin 已存在 ⇒ 不该下载） */
@@ -228,6 +235,50 @@ function call(route, { method = 'GET', body = null, url = null } = {}) {
   check('目录确实删了', !existsSync(join(dshHome, 'skins', 'fresh-skin')));
   const other = await call(find('/folia/skins/remove'), { method: 'POST', body: { id: 'demo-skin' } });
   check('已装的还能删', other.status === 200);
+}
+
+/* ⑥ 切换皮肤：HTTP 走不通时的**落盘兜底**（这是用户实测 401/404 之后加的最后一道） */
+{
+  // 把 demo-skin 装回来（activate 会校验目录真实存在）
+  mkdirSync(join(dshHome, 'skins', 'demo-skin'), { recursive: true });
+  writeFileSync(join(dshHome, 'skins', 'demo-skin', 'skin.json'), SKIN_MANIFEST, 'utf8');
+  const statePath = join(dshHome, 'skin-center-active.json');
+  // 预置一份带 background 的状态，验证"只改 active、其它字段原样保留"
+  writeFileSync(statePath, JSON.stringify({ active: null, initialized: true, background: { enabled: true, inputCardBlur: 10 } }, null, 2), 'utf8');
+
+  // host 指向一个必然连不上的地址 ⇒ 代理失败 ⇒ 落到写文件
+  const dead = '127.0.0.1:1';
+  const r = await call(find('/folia/skins/activate'), { method: 'POST', body: { id: 'demo-skin' }, host: dead });
+  check('代理不可用 ⇒ 仍返回 200（落盘兜底）', r.status === 200 && r.json.ok === true, JSON.stringify(r.json));
+  check('返回 via=state-file', r.json && r.json.via === 'state-file', String(r.json && r.json.via));
+  let doc = {};
+  try { doc = JSON.parse(readFileSync(statePath, 'utf8')); } catch { doc = {}; }
+  check('状态文件里 active 已写成 demo-skin', doc.active === 'demo-skin', JSON.stringify(doc.active));
+  check('background 字段原样保留', Boolean(doc.background && doc.background.inputCardBlur === 10), JSON.stringify(doc.background));
+
+  // 读：HTTP 不可用时读同一个文件
+  const cur = await call(find('/folia/skins/active'), { host: dead });
+  check('读当前皮肤 ⇒ 200 via=state-file', cur.status === 200 && cur.json.via === 'state-file', JSON.stringify(cur.json));
+  check('读到 demo-skin', cur.json && cur.json.active === 'demo-skin', String(cur.json && cur.json.active));
+
+  // 清空（恢复默认）同样落盘
+  const clear = await call(find('/folia/skins/activate'), { method: 'POST', body: { id: '' }, host: dead });
+  doc = {};
+  try { doc = JSON.parse(readFileSync(statePath, 'utf8')); } catch { doc = {}; }
+  check('清空 ⇒ 200 且文件里 active 变 null', clear.status === 200 && doc.active === null, JSON.stringify(doc.active));
+
+  // 未安装的 id：拒绝，且**不写文件**
+  writeFileSync(statePath, JSON.stringify({ active: null, initialized: true }, null, 2), 'utf8');
+  const ghost = await call(find('/folia/skins/activate'), { method: 'POST', body: { id: 'no-such-skin' }, host: dead });
+  check('未安装 ⇒ 404 not-installed', ghost.status === 404 && ghost.json.error === 'not-installed', JSON.stringify(ghost.json));
+  doc = JSON.parse(readFileSync(statePath, 'utf8'));
+  check('被拒时没有动状态文件', doc.active === null, String(doc.active));
+
+  // 非法 id 与错误方法
+  const badId = await call(find('/folia/skins/activate'), { method: 'POST', body: { id: '../x' }, host: dead });
+  check('非法 id ⇒ 400 bad-id', badId.status === 400 && badId.json.error === 'bad-id', JSON.stringify(badId.json));
+  const wrongMethod = await call(find('/folia/skins/activate'), { host: dead });
+  check('activate 只收 POST ⇒ 405', wrongMethod.status === 405, 'status=' + wrongMethod.status);
 }
 
 server.close();

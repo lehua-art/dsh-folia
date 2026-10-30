@@ -33,5 +33,11 @@
     #    ⇒ 自检去仓库 node_modules 里解析它，开发树里没有这个依赖就直接抛，整个 apply 失败。
     #    所以这里用不撞前缀的 `skin-center`（也与 web-all 的 `web-ui-skin-center`、
     #    官方包的 `ui-skin-center` 都不同名）。
+    #
+    # ⚠️ 版本**钉死 0.4.8**（package.json 里也是 exact）：0.4.9+ 起的 peer 要求
+    #    `@deepseek-ai/dsh >= 0.2.1-rc.3`，而当前桌面端跑的是 0.2.1-rc.2 —— 于是市场把这条行
+    #    **保持为 off**（`.dsh-market/log.ndjson` 里写着 "plugin kept off: …skin-center"），
+    #    皮肤中心的 /api/skin-center/v2/* 全部变成路由 miss（401/404），页签里点「应用」必失败。
+    #    0.4.8 的 peer 是 `>=0.2.1-rc.2`，与现在的宿主匹配。等桌面端升到 rc.3 再放开版本范围。
     - id: skin-center
       name: '@linxin666/dsh-client-ui-skin-center'

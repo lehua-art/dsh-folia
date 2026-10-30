@@ -55,14 +55,13 @@ function SkinsTabPanel() {
       const resp = await apiJson("/skins/list" + (force ? "?refresh=1" : ""), { parse: "always" });
       const doc = (resp && resp.data) || null;
       if (resp && resp.ok && doc && doc.ok) {
-        // 读"当前在用哪套皮肤"必须**由浏览器发**，不能走宿主代理：
-        // `/api/skin-center/v2/*` 的读写被 DSH 自己的会话鉴权挡着，宿主 fetch 没有 cookie ⇒ 401。
-        // 路径用**相对 `/api/...`**：不要拼 `location.origin` —— 我们跑在宿主页面里，origin 不一定
-        // 等于宿主 HTTP API 的源；拼错会得到一个不存在的地址，而它的 404 还会被误读成业务 404。
-        // api-client 对 `/api/**` 原样放行（不补 /folia 前缀）。
+        // 读"当前在用哪套皮肤"：**先直连**（同源相对路径 `/api/**`，凭据天然带全），
+        // 直连不通（页面的 origin 可能不等于宿主 HTTP 服务的 origin ⇒ 路由没到）再退回宿主代理
+        // `/folia/skins/active` —— 代理会把浏览器这一侧的 cookie 与同源头转发过去。
         if (doc.skinCenter === "present") {
           try {
-            const a = await apiJson("/api/skin-center/v2/active", { parse: "always" });
+            let a = await apiJson("/api/skin-center/v2/active", { parse: "always" });
+            if (!(a && a.ok)) a = await apiJson("/skins/active", { parse: "always" });
             if (a && a.ok) doc.active = (a.data && a.data.active) || "";
           } catch { /* 读不到就显示"无使用中" */ }
         }
@@ -99,16 +98,27 @@ function SkinsTabPanel() {
             return;
           }
         }
-        // 切换皮肤**由浏览器直接写**皮肤中心自己的端点（同源、自带会话）；
-        // 走宿主代理会 401 —— DSH 对 `/api/skin-center/v2/*` 的读写都做会话鉴权，宿主 fetch 没有 cookie。
-        // 统一走 api-client（不裸 fetch），路径用相对 `/api/...`（不拼 location.origin ——
-        // 拼错会得到一个不存在的地址，404 又会被误读成业务 404）。
-        const resp = await apiPostJson("/api/skin-center/v2/active", { active: wantId }, { parse: "always" });
+        // 写入有两条路，**先直连、再代理**：
+        //   ① 直连：相对 `/api/skin-center/v2/active`（同源、凭据天然带全）。
+        //      前提是页面的 origin 就是宿主 HTTP 服务那个源；桌面端内嵌页面的 origin 未必是它 ⇒ 路由没到 ⇒ 404。
+        //   ② 代理：`/folia/skins/activate`，宿主把浏览器这侧的 cookie 与同源头转发给皮肤中心。
+        //      这条在"origin 不一致"时仍然成立，所以作为兜底存在。
+        // 两条都失败时把两边的状态码都显示出来 —— 下一次不用再猜是哪一段断的。
+        const direct = await apiPostJson("/api/skin-center/v2/active", { active: wantId }, { parse: "always" });
+        let resp = direct;
         if (!(resp && resp.ok)) {
-          // 把响应体里的 error 一起显示：`skin-not-found`（它的 catalog 不收）与"路径不对"
-          // 从状态码上看都是 404，只有 body 能分开（实测踩过：把 URL 拼错当成了业务 404）。
-          const detail = (resp && resp.data && resp.data.error) ? ":" + resp.data.error : "";
-          setNote({ ok: false, text: weT("操作失败：{code}", { code: "skin-center-" + ((resp && resp.status) || 0) + detail }) });
+          resp = await apiPostJson("/skins/activate", { id: wantId || "" }, { parse: "always" });
+        }
+        if (!(resp && resp.ok)) {
+          const up = (resp && resp.data && resp.data.upstream) || null;
+          const det = (up && up.error) ? ":" + up.error
+            : ((resp && resp.data && resp.data.error) ? ":" + resp.data.error : "");
+          setNote({
+            ok: false,
+            text: weT("操作失败：{code}", {
+              code: "direct=" + ((direct && direct.status) || 0) + " proxy=" + ((resp && resp.status) || 0) + det,
+            }),
+          });
           return;
         }
         // 两条收敛路径：① 广播皮肤中心自己监听的 `dsh-skin-applied`（立即就地切换）；
@@ -174,21 +184,33 @@ function SkinsTabPanel() {
   //   不在 → 明说它是个**独立插件**（不在 dsh-web-all 里），给一条可复制的安装命令
   //   unknown（探测失败）→ 保守地按"在"讲，不吓唬用户
   const skinCenter = (state && state.skinCenter) || "unknown";
+  // `present` 是**唯一**允许点「应用」的状态：只有真的拿到 catalog JSON 才算它在跑。
+  // `absent`=路由不存在（插件没装/未启用）；`auth-gated`=鉴权在路由前面挡住（无法判定）；
+  // `unknown`=探测失败。后三种都如实告诉用户"现在点应用不会成功"，而不是让他点了看 404。
+  const canApply = skinCenter === "present";
   if (skinCenter === "absent") {
     children.push(React.createElement("div", {
       key: "hint-absent",
       className: "we-picker__hint",
       style: { margin: "6px 0 4px", color: "#ffd08a", lineHeight: "1.6" },
-    }, weT("皮肤中心没装：它是**独立插件** @linxin666/dsh-client-ui-skin-center（不在 dsh-web-all 里，那个只是聚合包）。装它才能启用皮肤：")));
+    }, weT("皮肤中心**没在运行**（它的 /api/skin-center/v2/* 路由不存在）。它是独立插件 @linxin666/dsh-client-ui-skin-center；常见原因是版本与当前桌面端不匹配 —— 0.4.9+ 要求 dsh ≥ 0.2.1-rc.3，而本机是 rc.2，市场会把这条行保持为 off。装/降级到 0.4.8 即可：")));
     children.push(React.createElement("div", { key: "cmd", style: { display: "flex", gap: "8px", alignItems: "center", margin: "0 0 6px" } },
       React.createElement("code", {
         style: { fontSize: "11px", padding: "3px 8px", borderRadius: "6px", background: "rgba(255,255,255,0.08)" },
-      }, "dsh plugin --profile web add @linxin666/dsh-client-ui-skin-center"),
+      }, "dsh plugin --profile web add @linxin666/dsh-client-ui-skin-center@0.4.8"),
       React.createElement("button", {
         className: "we-picker__btn", type: "button",
-        onClick: () => { try { navigator.clipboard.writeText("dsh plugin --profile web add @linxin666/dsh-client-ui-skin-center"); setNote({ ok: true, text: weT("已复制安装命令") }); } catch { setNote({ ok: false, text: weT("复制失败，请手动选中上面的命令") }); } },
+        onClick: () => { try { navigator.clipboard.writeText("dsh plugin --profile web add @linxin666/dsh-client-ui-skin-center@0.4.8"); setNote({ ok: true, text: weT("已复制安装命令") }); } catch { setNote({ ok: false, text: weT("复制失败，请手动选中上面的命令") }); } },
       }, weT("复制命令")),
     ));
+  } else if (skinCenter === "auth-gated" || skinCenter === "unknown") {
+    children.push(React.createElement("div", {
+      key: "hint-unknown",
+      className: "we-picker__hint",
+      style: { margin: "6px 0 4px", color: "#ffd08a", lineHeight: "1.6" },
+    }, skinCenter === "auth-gated"
+      ? weT("探测不到皮肤中心的状态（它的接口被会话鉴权挡住了，宿主拿不到会话）。先点一次「刷新」；若下面点「应用」仍报错，就按 0.4.8 版本重装它。")
+      : weT("皮肤中心状态未知（探测超时/网络错误）。点「刷新」重试。")));
   } else {
     children.push(React.createElement("div", {
       key: "hint",
@@ -196,6 +218,8 @@ function SkinsTabPanel() {
       style: { margin: "6px 0 4px", opacity: 0.8 },
     }, weT("本页签可以直接切换皮肤：装完点「应用」即可，无需打开设置页。皮肤包落在皮肤中心目录，两边读同一份。")));
   }
+  // 皮肤中心不在跑时，「应用」按钮直接禁用并给出原因 —— 比"点了报错"诚实。
+  const applyBlockedReason = canApply ? "" : weT("皮肤中心没在运行，先按上面的命令装/降级到 0.4.8");
 
   // 提示行常驻占位（与开机动画/桌宠页签同一条纪律：不因 note 出现/消失让面板跳高度）
   children.push(React.createElement("div", {
@@ -264,7 +288,8 @@ function SkinsTabPanel() {
               ? React.createElement("span", { style: { ...SKIN_STYLE.badge, background: "rgba(60,160,90,0.55)" } }, weT("使用中"))
               : React.createElement("button", {
                 className: "we-picker__btn", type: "button",
-                disabled: Boolean(busy),
+                disabled: Boolean(busy) || !canApply,
+                title: applyBlockedReason || undefined,
                 onClick: () => act("activate", { id: s.id }, s.name),
               }, busyThis ? weT("切换中…") : weT("应用")),
             React.createElement("button", {
@@ -310,7 +335,8 @@ function SkinsTabPanel() {
                   : React.createElement("button", {
                     key: "apply",
                     className: "we-picker__btn", type: "button",
-                    disabled: Boolean(busy),
+                    disabled: Boolean(busy) || !canApply,
+                    title: applyBlockedReason || undefined,
                     onClick: () => act("activate", { id: localId }, s.title),
                   }, busy === "activate:" + localId ? weT("切换中…") : weT("应用")),
                 React.createElement("span", { key: "done", style: SKIN_STYLE.badge }, weT("已安装")),
