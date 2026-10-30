@@ -408,6 +408,11 @@ const INLINE_MODULES = [
     markers: ['function SkinsTabPanel()', 'const SKIN_STYLE = '],
   },
   {
+    file: 'src/skin-compat.js',
+    why: '皮肤兼容层：把宿主槽位翻成分栏词表（data-pane / data-dsh-frame）—— 皮肤包写的是 web-all 的 compat 标记，没装 web-all 时否则整套选择器不命中',
+    markers: ['const PANE_ANCHORS = ', 'function stampPanes()', 'function installSkinCompat()'],
+  },
+  {
     file: 'src/features.js',
     why: '客户端功能注册表：页签条 / 整区面板 / 常驻挂载层。装配点（quick-panel、client.js）只查表，不写功能名',
     markers: ['const WE_FEATURE_TABS = [', 'const WE_FEATURE_PANELS = {', 'const WE_FEATURE_MOUNTS = ['],

@@ -45,6 +45,9 @@ const WE_FEATURE_PANELS = {
  */
 const WE_FEATURE_MOUNTS = [
   { id: "pets", mount: mountPetLayer },
+  // 皮肤兼容层：补写 `data-pane` / `data-dsh-frame`（皮肤包写的是 web-all 的 compat 词表）。
+  // 它只写自己的惰性属性、幂等、可失败，所以随墙纸引擎常驻，不依赖皮肤是否在台上。
+  { id: "skin-compat", mount: installSkinCompat },
 ];
 
 /** 页签 → 功能归属（宿主清单 lib/features.js 的客户端镜像，供守卫对账）。 */

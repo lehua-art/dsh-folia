@@ -84,6 +84,89 @@ function rowNames(src) {
   check('正对照: 真实 patch 的 id 列表非空', idsNow.length >= 2, 'ids=' + idsNow.join(','));
 }
 
+/* ⑤ 皮肤兼容层（src/skin-compat.js）：它补的 `data-pane` / `data-dsh-frame` 是**皮肤包写的词表**，
+ *    所以它的判据不是风格问题，而是"皮肤到底能不能画对"：
+ *      · 锚点必须是**列那一级**的槽名（sidebar / main / rightbar）。宿主的 `renderSlot` 锚点带
+ *        `ANCHOR_STYLE = { display: "contents" }`（app.asar 实证），`main.conversation` /
+ *        `rightbar.session` 这类**深层槽名**的父元素是另一个 contents 锚点或内层 div ⇒ 写在那里
+ *        没有布局效果，皮肤的分栏规则照样不命中（就是"皮肤显示不全"那个症状）。
+ *      · 幂等：已存在 `data-pane` 就不许覆盖（装了 web-all 时以它为准）。
+ *      · 自身可失败：只观察 childList，不观察属性（否则自激）。
+ *    这张表同时是它的守卫覆盖登记 —— 覆盖面口径只认代码里的字面量路径。 */
+{
+  const compatSrc = readFileSync(join(ROOT, 'src', 'skin-compat.js'), 'utf8');
+  const buildSrc = readFileSync(join(ROOT, 'scripts', 'build-client.mjs'), 'utf8');
+  const featuresSrc = readFileSync(join(ROOT, 'src', 'features.js'), 'utf8');
+
+  /** 列级槽名（缺一不可）。 */
+  const COLUMN_KEYS = ['[data-slot="sidebar"]', '[data-slot="main"]', '[data-slot="rightbar"]'];
+  const hasColumnKeys = (src) => COLUMN_KEYS.every((k) => src.includes("'" + k + "'"));
+  /** 退路选择器只在列级之后：深层槽名不许抢在列级前面。 */
+  const columnKeysFirst = (src) => {
+    const at = (k) => src.indexOf("'" + k + "'");
+    return at(COLUMN_KEYS[1]) !== -1 && at('[data-slot="main.conversation"]') !== -1
+      && at(COLUMN_KEYS[1]) < at('[data-slot="main.conversation"]')
+      && at(COLUMN_KEYS[2]) !== -1 && at('[data-slot="rightbar.session"]') !== -1
+      && at(COLUMN_KEYS[2]) < at('[data-slot="rightbar.session"]');
+  };
+  /** 幂等：`hasAttribute('data-pane')` 的判据必须出现在 `setAttribute` **之前**。 */
+  const idempotent = (src) => {
+    const a = src.indexOf("hasAttribute('data-pane')");
+    const b = src.indexOf("setAttribute('data-pane'");
+    return a !== -1 && b !== -1 && a < b;
+  };
+  /** 每条规则各判各的（累计计数会让后一条规则跳过自己的退路选择器）。 */
+  const perRuleBreak = (src) => /if \(ruleStamped\) break;/.test(src) && !/if \(stamped\) break;/.test(src);
+  /** 穿过 display:contents 锚点。 */
+  const climbsAnchors = (src) => /hasAttribute\('data-slot'\)/.test(src);
+
+  check('src/skin-compat.js 在构建面里被内联（INLINE_MODULES）', buildSrc.includes("file: 'src/skin-compat.js'"));
+  check('皮肤兼容层注册成常驻挂载（features.js WE_FEATURE_MOUNTS）',
+    featuresSrc.includes('id: "skin-compat"') && featuresSrc.includes('mount: installSkinCompat'));
+  check('分栏锚点用**列级**槽名（sidebar / main / rightbar）', hasColumnKeys(compatSrc), COLUMN_KEYS.join(' '));
+  check('深层槽名只作退路：列级选择器排在它前面', columnKeysFirst(compatSrc));
+  check('paneHost 穿过 display:contents 的 `[data-slot]` 锚点再落笔', climbsAnchors(compatSrc));
+  check('幂等：已有 data-pane 就不覆盖（装了 web-all 时以它为准）', idempotent(compatSrc));
+  check('每条 pane 规则各自判断命中（`ruleStamped`），不用累计计数短路退路', perRuleBreak(compatSrc));
+  check('只观察 childList / subtree，不观察属性（否则自激）',
+    /observer\.observe\(document\.body, \{ childList: true, subtree: true \}\)/.test(compatSrc)
+    && !/attributes: true/.test(compatSrc) && !/attributeFilter/.test(compatSrc));
+  check('installSkinCompat 返回 teardown（与仓库其它 install* 同形）',
+    /function installSkinCompat\(\)/.test(compatSrc) && /return \(\) => \{/.test(compatSrc));
+  check('只写三种 pane 值（不发明词表）',
+    (compatSrc.match(/pane: '/g) || []).length === 3
+    && ["pane: 'sidebar'", "pane: 'conversation'", "pane: 'details'"].every((v) => compatSrc.includes(v)));
+
+  /* 挂载点必须**可失败**：`ctx.effect(() => feat.mount())` 不做保护，mount 一抛就顺着 apply 链
+   * 把整个宿主插件带崩。实测（2026-10-30）：fake DOM 的沙箱里没有 `setTimeout`，裸调它让
+   * verify-playback-controls / verify-transcode-state / verify-softrender 一起变红（含 17 条判据）。
+   * 判据：① 不许有裸 `setTimeout(` 调用（只许 `window.setTimeout` 或 typeof 探测后的变量调用）；
+   *       ② install 自己吞掉异常并返回 noop teardown。 */
+  const timerTolerant = (src) => !/(^|[^.\w])setTimeout\(/m.test(src) && /typeof setTimeout/.test(src);
+  const failureContained = (src) => /catch \{ return \(\) => \{\}; \}/.test(src)
+    && /function installSkinCompat\(\) \{[\s\S]*?try \{/.test(src);
+  check('挂载点不裸调 setTimeout（fake DOM 沙箱里没有定时器）', timerTolerant(compatSrc));
+  check('挂载点自吞异常并返回 noop teardown（mount 抛会带崩整个 apply 链）', failureContained(compatSrc));
+  check('negative control: 塞一处裸 `setTimeout(` ⇒ 定时器判据会红',
+    !timerTolerant(compatSrc.replace('stampAll();', 'setTimeout(stampAll, 1);')));
+  check('negative control: 去掉兜底 catch ⇒ 可失败判据会红',
+    !failureContained(compatSrc.replace('} catch { return () => {}; }\n}', '}\n}')));
+
+  /* 负对照：把任一条判据的前提改坏，上面的判据必须变红。 */
+  const noMainKey = compatSrc.replace("'[data-slot=\"main\"]', ", '');
+  check('negative control: 删掉 `[data-slot="main"]` ⇒ 列级判据会红', !hasColumnKeys(noMainKey));
+  const deepFirst = compatSrc.replace(
+    "'[data-slot=\"main\"]', '[data-slot=\"main.conversation\"]'",
+    "'[data-slot=\"main.conversation\"]', '[data-slot=\"main\"]'");
+  check('negative control: 把深层槽名排到列级前面 ⇒ 顺序判据会红', !columnKeysFirst(deepFirst));
+  const noGuard = compatSrc.replace("if (!host || host.hasAttribute('data-pane')) continue;", 'if (!host) continue;');
+  check('negative control: 删掉幂等判据 ⇒ 幂等会红', !idempotent(noGuard));
+  const oldStyle = compatSrc.replace('if (ruleStamped) break;', 'if (stamped) break;');
+  check('negative control: 退回累计计数 ⇒ 逐规则判据会红', !perRuleBreak(oldStyle));
+  check('正对照: 真实文件四条判据全真',
+    hasColumnKeys(compatSrc) && columnKeysFirst(compatSrc) && idempotent(compatSrc) && perRuleBreak(compatSrc));
+}
+
 /* ── 汇总 ────────────────────────────────────────────────────────────────── */
 let failed = 0;
 for (const r of results) {
