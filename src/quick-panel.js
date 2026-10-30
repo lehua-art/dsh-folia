@@ -318,6 +318,63 @@
     return shortSide > 0 && shortSide < 1280;
   }
 
+  /**
+   * 把一条清单数据**归一**成渲染层可以无条件相信的形状。
+   *
+   * 为什么在渲染前统一做，而不是每处判空：站点清单来自外部（154+ 条、每天都在变），
+   * 字段形状出现一次意外（`tags` 是字符串、`preview` 是对象、`bytes` 是 "1.2 MB"）就会让
+   * 卡片渲染期抛错。判空散落在十几个位置必然漏，归一只有一处。
+   */
+  function qpNormalizeItem(raw) {
+    const w = (raw && typeof raw === "object") ? raw : {};
+    const str = (v) => (typeof v === "string" && v ? v : null);
+    const num = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 ? n : 0;
+    };
+    let tags = w.tags;
+    if (typeof tags === "string") tags = tags.split(/[,，\s]+/).filter(Boolean);
+    if (!Array.isArray(tags)) tags = [];
+    tags = tags.filter((t) => typeof t === "string");
+    const type = str(w.type);
+    return {
+      ...w,
+      id: (typeof w.id === "string" || typeof w.id === "number") ? w.id : String(w.id || ""),
+      title: str(w.title) || String(w.id || ""),
+      type: (type === "video" || type === "image" || type === "scene" || type === "package") ? type : "image",
+      preview: str(w.preview),
+      thumb: str(w.thumb),
+      media: str(w.media),
+      mediaProxy: str(w.mediaProxy),
+      bytes: num(w.bytes),
+      width: num(w.width),
+      height: num(w.height),
+      duration: num(w.duration),
+      tags,
+      rating: str(w.rating) || "unknown",
+    };
+  }
+
+  /**
+   * 渲染一张卡，**任何异常都只影响这一张**。
+   * 失败时渲染一张"不可用"占位卡（带原因），而不是抛出把整棵树带走。
+   */
+  function qpRenderCardGuarded(raw, sel, cardsView) {
+    const w = qpNormalizeItem(raw);
+    try {
+      return cardsView ? qpRenderCard(w, sel) : qpRenderRow(w, sel);
+    } catch (e) {
+      const why = (e && (e.message || String(e))) || "unknown";
+      try { console.warn("[folia] 卡片渲染失败，已跳过：", w && w.id, why); } catch { /* ignore */ }
+      return React.createElement("div", {
+        key: "bad-" + String((w && w.id) || Math.random()),
+        className: "we-qp__card we-qp__card--broken",
+        title: why,
+        style: { opacity: 0.5, padding: "8px", fontSize: "12px", lineHeight: 1.4 },
+      }, weT("这条无法显示（数据异常）"), React.createElement("br"), String((w && w.id) || ""), " · ", why.slice(0, 80));
+    }
+  }
+
   function qpRenderCard(w, sel) {
     // ── 卡：缩略图网格形态（视图切换的「卡片」档；点击语义与列表行一致）──
     return React.createElement("div", {
@@ -644,7 +701,10 @@
       rows.length
         ? React.createElement(React.Fragment, null,
             vTopH > 0 ? qpRenderSpacer("we-qp-vtop", vTopH) : null,
-            rows.map(cardsView ? qpRenderCard : qpRenderRow),
+            // **单卡错离**：一条数据坏掉只丢那一张卡，不许带走整片列表。
+            // 实测故障：站点清单里出现字段形状异常（tags 非数组 / preview 非字符串 / media 缺失）后，
+            // 卡片渲染期抛错 ⇒ React 丢弃整棵树 ⇒ 整个面板一片空白且没有任何提示。
+            rows.map((w) => qpRenderCardGuarded(w, sel, cardsView)),
             vBtmH > 0 ? qpRenderSpacer("we-qp-vbtm", vBtmH) : null,
           )
         : React.createElement(React.Fragment, null,

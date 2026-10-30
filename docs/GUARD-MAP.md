@@ -5,7 +5,7 @@
 > 口径：只统计守卫**代码**里真正碰到的模块（先剥注释），并区分"直接读源文件"与"隔着产物 `lib/client.js`"。
 > 写法：字面量路径 / `join(...)` 拼接 / 唯一 basename / 产物配方 / **前缀族读法** `scopeFiles|scopeText(<前缀>)` / **经共享族助手读**（`import { panelText } from './tools/src-scope.mjs'` + 真调用；族口径封在那个库里，见 DEV-GUIDE §4.6「同时是守卫的库」）/ **真源定位读**（`locate('符号')` / `locateFile('文件名')`，`test/tools/source-locator.mjs`：符号唯一声明在哪就是读了哪个模块）。
 
-模块面 190 个 · 守卫 118 个
+模块面 190 个 · 守卫 119 个
 
 ## 守卫 → 模块
 
@@ -72,6 +72,7 @@
 | `verify-occlusion-hub.mjs` | `lib/index.js` `lib/json-response.js` `lib/occlusion/index.js` `lib/occlusion/rects.js` `lib/occlusion/x11.js` `lib/routes/occlusion.js` |  |
 | `verify-package-files.mjs` | `lib/http-body.js` `lib/index.js` `lib/pkg-read.js` `lib/routes/upload.js` | ✅ |
 | `verify-package-publish.mjs` | `lib/index.js` `lib/pkg-read.js` `src/client.js` | ✅ |
+| `verify-panel-defensive.mjs` | `src/quick-panel.js` |  |
 | `verify-panel-interactions.mjs` | `src/panel-tabs-boot.js` `src/panel-tabs-pets.js` |  |
 | `verify-pet-hotplug-client.mjs` | `lib/components/pet-link/src/official-pet.js` `lib/components/pet-link/src/pet-link.js` |  |
 | `verify-pet-hotplug-host.mjs` | `lib/components/pet-link/src/official-pet.js` `lib/subpackage-boot.js` |  |
@@ -306,7 +307,7 @@
 | `src/picker-model.js` | 1 | `verify-picker-model` |
 | `src/picker-props-panel.js` | 2 | `verify-client` `verify-fontset` |
 | `src/preset-store.js` | 2 | `verify-client` `verify-presets` |
-| `src/quick-panel.js` | 8 | `e2e-web-media-origin` `verify-client` `verify-extra-glass` `verify-features` `verify-i18n` `verify-presets` `verify-scene-live` `verify-system-fonts` |
+| `src/quick-panel.js` | 9 | `e2e-web-media-origin` `verify-client` `verify-extra-glass` `verify-features` `verify-i18n` `verify-panel-defensive` `verify-presets` `verify-scene-live` `verify-system-fonts` |
 | `src/section-head.js` | 2 | `verify-fontset` `verify-scene-live` |
 | `src/sidebar-right.js` | 4 | `verify-i18n` `verify-pet-package` `verify-pet-sidebar-rebound` `verify-scene-live` |
 | `src/skin-compat.js` | 1 | `verify-skin-center-bundle` |

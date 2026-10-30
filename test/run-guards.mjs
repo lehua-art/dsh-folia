@@ -274,6 +274,8 @@ const VERIFY_STEPS = [
   step('test/verify-skin-center-bundle.mjs'),
   // ⑰ 交互手感：开关不绑选片状态、幂等设置合并响应、提示行占位（用户实测报过的两类闪动/点不动）。
   step('test/verify-panel-interactions.mjs'),
+  // 面板不许再整片变白：畸形数据归一 + 单卡/整页错离（真实故障的守卫）。
+  step('test/verify-panel-defensive.mjs'),
   // ⑱ 站点条目类型：zip 工程包不得判成视频（实测踩过：56MB zip 塞进 <video>）。
   step('test/inventory-types.mjs'),
   // ⑭ 我们自己的三条功能级测试：开机动画路由 / 桌宠路由 / 桌宠渲染层。

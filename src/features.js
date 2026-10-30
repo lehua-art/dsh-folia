@@ -33,10 +33,40 @@ const WE_FEATURE_TABS = [
  * 整区面板：这个页签的内容**整个**由功能自己的组件渲染（而不是 quick-panel 内的通用列表）。
  * 没登记的页签走 quick-panel 自己的通用布局（壁纸列表 / 外观节 / 播放节）。
  */
+/**
+ * 整区面板的**守卫包装**：任何一个页签在渲染期抛错，只让这一页显示错误信息，
+ * 不许把整个面板带走。
+ *
+ * 实测故障：站点数据里出现一条字段形状异常的条目，渲染期抛错 ⇒ React 丢弃整棵树 ⇒
+ * 整个「壁纸」窗口一片空白，用户只看到"界面消失了"，换版本也一样（故障在数据）。
+ * 单卡错离在 quick-panel 里做；这里补"整页错离"，两层缺一就会重演那种空白。
+ */
+function guardTabPanel(name, Panel) {
+  if (typeof Panel !== "function") return Panel;
+  function GuardedTabPanel(props) {
+    try {
+      return Panel(props);
+    } catch (e) {
+      const why = (e && (e.message || String(e))) || "unknown";
+      try { console.warn("[folia] 页签渲染失败：" + name, why); } catch { /* ignore */ }
+      return React.createElement("div", {
+        className: "we-picker",
+        style: { padding: "12px", fontSize: "13px", lineHeight: 1.6, color: "#ff9a9a" },
+      },
+      React.createElement("div", null, weT("这一页加载失败：{name}", { name })),
+      React.createElement("div", { style: { opacity: 0.8, marginTop: "4px", fontSize: "12px" } }, String(why).slice(0, 240)),
+      React.createElement("div", { style: { opacity: 0.6, marginTop: "6px", fontSize: "12px" } },
+        weT("其它页签仍可用；把这行原因发给作者即可定位。")));
+    }
+  }
+  GuardedTabPanel.displayName = "Guarded(" + name + ")";
+  return GuardedTabPanel;
+}
+
 const WE_FEATURE_PANELS = {
-  boot: BootTabPanel,
-  pets: PetsTabPanel,
-  skins: SkinsTabPanel,
+  boot: guardTabPanel("boot", BootTabPanel),
+  pets: guardTabPanel("pets", PetsTabPanel),
+  skins: guardTabPanel("skins", SkinsTabPanel),
 };
 
 /**
