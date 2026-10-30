@@ -53,6 +53,13 @@ function SkinsTabPanel() {
   const busyRef = React.useRef("");
   const [note, setNote] = React.useState(null);
 
+  // ⚠️ 这两面旗必须**在函数体最前面**算出来：下面「刷新」按钮的文案就要用它。
+  // 曾把它们写在列表渲染处（更靠后）⇒ 首次渲染读到 TDZ 里的 const
+  // ⇒ `Cannot access 'busyIsStructural' before initialization` ⇒ 整页被守卫接住变红。
+  // 教训：渲染函数里任何"靠后声明的 const"都可能被靠前的 JSX 读到，声明一律前置。
+  const busyIsStructural = /^(install|remove|repair):/.test(String(busy || ""));
+  const busyIsActivating = /^activate:/.test(String(busy || ""));
+
   const load = React.useCallback(async (force) => {
     try {
       const resp = await apiJson("/skins/list" + (force ? "?refresh=1" : ""), { parse: "always" });
@@ -312,8 +319,7 @@ function SkinsTabPanel() {
   // 所以把 busy 拆成两条互不相干的通道：
   //   · 结构操作（install / remove / repair）：改动磁盘目录，串行，期间只锁**结构按钮**
   //   · 切换（activate）：只写 active，幂等且"最后动作优先"，期间只锁**该卡片的「应用」**
-  const busyIsStructural = /^(install|remove|repair):/.test(String(busy || ""));
-  const busyIsActivating = /^activate:/.test(String(busy || ""));
+  // （这两面旗已上移到函数开头声明 —— 上面的「刷新」按钮文案要用到它们，写在这里会触发 TDZ。）
 
   const installed = (state && state.installed) || [];
   const activeId = (state && state.active) || "";

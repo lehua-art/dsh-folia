@@ -103,6 +103,29 @@ if (normalize) {
     !/rows\.map\(cardsView \? qpRenderCard : qpRenderRow\)/.test(src));
 }
 
+
+/* ⑤ 「渲染函数里先用到、后声明」= TDZ ⇒ 整页被守卫接住变红（真实发生：
+   `Cannot access 'busyIsStructural' before initialization`）。
+   判据：任何在渲染函数体里声明的 const，其**首次使用行号**必须大于**声明行号**。 */
+{
+  const rel = join('src', 'panel-tabs-skins.js');
+  const text = readFileSync(join(ROOT, rel), 'utf8');
+  const lines = text.split(/\r?\n/);
+  const bad = [];
+  for (const name of ['busyIsStructural', 'busyIsActivating', 'canApply', 'notListedWhy']) {
+    const declIdx = lines.findIndex((l) => new RegExp('^\\s*const ' + name + '\\s*=').test(l));
+    if (declIdx < 0) continue;
+    const useIdx = lines.findIndex((l, i) => i !== declIdx && new RegExp('\\b' + name + '\\b').test(l) && !/^\s*\/\//.test(l));
+    if (useIdx >= 0 && useIdx < declIdx) bad.push(name + ' 首次用于第 ' + (useIdx + 1) + ' 行、声明在第 ' + (declIdx + 1) + ' 行');
+  }
+  check('⑤ 渲染函数里没有"先使用、后声明"的常量（TDZ 会让整页变红）', bad.length === 0, bad.join(' | '));
+
+  // 负对照：同一判据喂一段"使用在前"的代码必须报出来
+  const probe = ['const a = 1;', 'function f() { return b + 1; }', 'const b = 2;'];
+  const declIdx2 = probe.findIndex((l) => /^\s*const b\s*=/.test(l));
+  const useIdx2 = probe.findIndex((l, i) => i !== declIdx2 && /\bb\b/.test(l));
+  check('⑤ negative control: 使用在前、声明在后会被判出', useIdx2 >= 0 && useIdx2 < declIdx2, useIdx2 + ' vs ' + declIdx2);
+}
 let failed = 0;
 for (const r of results) {
   if (r.ok) process.stdout.write('  ✓ ' + r.name + '\n');
