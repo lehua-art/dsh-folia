@@ -1,23 +1,24 @@
 # dsh-plugin-folia bundle patch.
 #
-# ⚠️ 这里**只有一条** row。皮肤中心由桌面端/市场自己那条 row 负责，我们不再插第二条（见下）。
+# 两条 row：我们自己的 `folia` + 随身携带的皮肤中心 `skin-center`。
 #
-# ── 为什么不再声明 skin-center 的 row 与依赖（2026-10-30 实测）─────────────────
-# 我们一厢情愿地"随身携带"皮肤中心（`dependencies` + 第二条 insert row），结果与桌面端自己
-# 管理的同一条 row 撞了：`.dsh-market/log.ndjson` 每次启动都会写
+# ── 皮肤中心为什么"带过一次、去掉、又带回来"（两次都是实测结论）──────────────
+# 1) 4.12.x：带着它（dependencies + row）→ 0.4.12 的 engines 要求 `dsh >= 0.2.1-rc.3`，
+#    而当时桌面端是 0.2.1-rc.2 ⇒ 市场把这条行**保持为 off**：
+#       ".dsh-market/log.ndjson": "plugin kept off: @linxin666/dsh-client-ui-skin-center"
+#    `/api/skin-center/v2/*` 整族变成路由 miss（带会话实测 404），页签点「应用」必失败。
+#    当时把依赖钉到 0.4.8 只在一两次启动里有效，桌面端会把 0.4.12 投影回来 ⇒ 又 off。
+# 2) 现在：桌面端基线升到 0.2.1-rc.3+（本机实测 dsh=0.2.1-rc.3），engines 满足 ⇒ 可以正常携带。
+#    携带的意义：用户装 dsh-folia 就同时得到"皮肤渲染方"，不必再自己去市场找。
 #
-#     "@linxin666/dsh-client-ui-skin-center -> off: fiber=true"
-#     "plugin kept off: @linxin666/dsh-client-ui-skin-center"
-#
-# 也就是**它被关掉了**，于是 `/api/skin-center/v2/*` 整族变成路由 miss（带会话实测：404），
-# 「助手皮肤」页签里点「应用」必然失败。把依赖钉到 0.4.8 只在那一次启动里生效，桌面端重启后
-# 会把 0.4.12 投影回来（engines 要求 `dsh >= 0.2.1-rc.3`，而当前桌面端是 rc.2）→ 又被关掉。
-# 直接改 profile 的 package.json / overrides 会让桌面端"Profile 恢复未完成"进安全模式 —— 那条路
-# 我们已经走过一次并回滚，不再重复。
-#
-# 结论：**不由我们替用户装这个插件**。它该由用户在自己的插件市场/桌面端里装（那里管版本与引擎
-# 匹配），我们的页签只做两件事：把站点 zip 解到 `$DSH_HOME/skins`，以及在它确实在跑时写选择。
-# 判据见 test/verify-skin-center-bundle.mjs：**只允许一条 row**，且不得再声明为依赖。
+# ── 仍然保留的纪律 ─────────────────────────────────────────────────────────
+# · 重复挂载是安全的（实测）：宿主侧 apply 走 `mountOnce`，客户端 slots.register 包 try/catch
+#   ⇒ 用户市场里再装一份也不会打起来（第二次是空操作）。
+# · 若某台机器 dsh 低于 0.4.12 的要求：市场会 keep off，我们的页签会如实显示
+#   "皮肤中心未运行"，壁纸/桌宠/开机动画/玻璃**完全不受影响**（探测四态 + 应用禁用）。
+# · row id 不得以 `folia-` 开头：`lib/subpackage-boot.js#subpackageSpecifiers` 会把
+#   「id 以 folia- 开头的行」当成我们自己的子包去仓库解析（解析不到就抛）。
+# · 依赖版本**精确**（不带 ^）：0.4.9+ 的 engines 会随上游再抬，我们不能让用户被动中招。
 #
 # A patch replaces the targeted row's whole `config`, so only additive `insert`
 # rows appear here (we never override an existing shipped row).
@@ -25,3 +26,5 @@
 - insert:
     - id: folia
       name: 'dsh-folia'
+    - id: skin-center
+      name: '@linxin666/dsh-client-ui-skin-center'

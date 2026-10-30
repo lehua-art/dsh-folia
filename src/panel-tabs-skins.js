@@ -78,7 +78,12 @@ function SkinsTabPanel() {
         }
         setState(doc);
         if (doc.siteError && doc.siteError !== "site-off") {
-          setNote({ ok: false, text: weT("站点清单读不到：{msg}", { msg: String(doc.siteError) }) });
+          // `site-locked` = 站点整站上锁（登录页 + {"code":"site_locked"}），不是网络/插件问题。
+          // 给它一句能照做的说明，而不是甩一个 http-401（实测：这个错误码让人误判成插件坏了）。
+          const msg = doc.siteError === "site-locked"
+            ? weT("站点已锁定：只对已登录的管理员开放（需站点侧放行 GET /api/public/wallpapers）")
+            : String(doc.siteError);
+          setNote({ ok: false, text: weT("站点清单读不到：{msg}", { msg }) });
         }
       } else {
         setNote({ ok: false, text: weT("读取失败：{msg}", { msg: (doc && doc.error) || "unknown" }) });

@@ -47,23 +47,26 @@ function rowNames(src) {
   return [...src.matchAll(/^\s*name:\s*['"]?([^'"\n]+)['"]?\s*$/gm)].map((m) => m[1].trim());
 }
 
-/* ① 不许替用户装（依赖面） */
+/* ① 随身携带（依赖面）：精确版本，且必须写进 dependencies（不能只放 devDependencies） */
 {
   const dep = (pkgJson.dependencies || {})[SKIN_CENTER];
   const devDep = (pkgJson.devDependencies || {})[SKIN_CENTER];
-  check('package.json 不把皮肤中心列为 dependency（由用户自己的市场/桌面端装）', !dep, 'dep=' + String(dep));
-  check('也不列进 devDependencies（同样会进 profile）', !devDep, 'devDep=' + String(devDep));
-  check('negative control: 把它塞回 dependencies ⇒ 上面那条会红',
-    Boolean({ ...(pkgJson.dependencies || {}), [SKIN_CENTER]: '0.4.8' }[SKIN_CENTER]));
+  check('package.json 把皮肤中心列为 dependency（用户装我们就得到渲染方）', Boolean(dep), 'dep=' + String(dep));
+  check('版本**精确**钉住（不带 ^ / ~）：上游抬 engines 时用户不能被动中招',
+    Boolean(dep) && /^\d+\.\d+\.\d+$/.test(String(dep).trim()), 'dep=' + String(dep));
+  check('不是只写在 devDependencies 里（那样用户装包时不会带上）', !devDep, 'devDep=' + String(devDep));
+  check('negative control: 删掉 dependencies 那一行 ⇒ 依赖判据会红',
+    !Object.fromEntries(Object.entries(pkgJson.dependencies || {}).filter(([k]) => k !== SKIN_CENTER))[SKIN_CENTER]);
 }
 
-/* ② patch 只有我们自己那一条 row */
+/* ② patch 两条 row：我们自己的 + 皮肤中心（且 name 精确指向该包） */
 {
   const names = rowNames(patch);
-  check('cordis.patch.yml 里只有 dsh-folia 这一条 row', names.length === 1 && names[0] === PKG, names.join(','));
-  check('不再插指向皮肤中心的 row（重复 fiber 会被市场关掉）', !names.includes(SKIN_CENTER), names.join(','));
-  check('negative control: 塞回一条 skin-center 行 ⇒ 上面那条会红',
-    rowNames(patch + '\n    - id: skin-center\n      name: \'' + SKIN_CENTER + '\'\n').includes(SKIN_CENTER));
+  check('cordis.patch.yml 恰好两条 row', names.length === 2, names.join(','));
+  check('包含我们自己的 dsh-folia', names.includes(PKG), names.join(','));
+  check('包含皮肤中心这一条（随身携带的意义就在这里）', names.includes(SKIN_CENTER), names.join(','));
+  const noSkinRow = patch.split('\n').filter((l) => !l.includes(SKIN_CENTER)).join('\n');
+  check('negative control: 删掉皮肤中心那条 row ⇒ 行判据会红', !rowNames(noSkinRow).includes(SKIN_CENTER));
 }
 
 /* ③ id 唯一 + **id 前缀纪律** */
@@ -71,7 +74,8 @@ function rowNames(src) {
   const ids = rowIds(patch);
   const dup = ids.filter((v, i) => ids.indexOf(v) !== i);
   check('patch 里所有 row id 唯一', dup.length === 0, 'ids=' + ids.join(','));
-  check('唯一那条 row 的 id 就是 folia', ids.length === 1 && ids[0] === 'folia', 'ids=' + ids.join(','));
+  check('皮肤中心的 row id 是 `skin-center`（不与 web-all / 官方包撞名）',
+    ids.includes('skin-center'), 'ids=' + ids.join(','));
   // ⚠️ 这条不是风格问题：`lib/subpackage-boot.js#subpackageSpecifiers` 把「id 以 folia- 开头」的行
   //    当作**我们自己的子包行**去仓库 node_modules 里解析，解析不到就抛（宿主对行级失败静默）。
   //    给第三方行起 `folia-xxx` 会被误判 ⇒ apply 直接失败。实测踩过：整条 audit 因此红了 7 个。
@@ -83,7 +87,8 @@ function rowNames(src) {
 /* ④ 正对照：真实文件确实通过上面三条（不是"因为空所以过"） */
 {
   const idsNow = rowIds(patch);
-  check('正对照: 真实 patch 的 id 列表就是 [folia]', idsNow.length === 1 && idsNow[0] === 'folia', 'ids=' + idsNow.join(','));
+  check('正对照: 真实 patch 的 id 列表就是 [folia, skin-center]',
+    idsNow.length === 2 && idsNow[0] === 'folia' && idsNow[1] === 'skin-center', 'ids=' + idsNow.join(','));
   check('正对照: 负对照用的注入确实能被 rowNames 解析出来',
     rowNames("    - id: x\n      name: 'probe-pkg'\n").includes('probe-pkg'));
 }
