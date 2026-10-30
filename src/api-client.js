@@ -43,6 +43,10 @@ function apiUrl(path) {
   // 应用侧封面恒 404，而同路径 curl 200）。
   if (/^[a-z][a-z0-9+.-]*:/i.test(p) || p.startsWith('data:') || p.startsWith('blob:')) return p;
   if (p.startsWith(BASE)) return p;
+  // **宿主自己的 HTTP API** 挂在 `/api/**`（我们的是 `/folia/**`）：这类绝对路径必须原样放行。
+  // 补成 `/folia/api/...` 会得到一个不存在的路径 —— 那个 404 还会被调用方误读成"业务侧返回 404"
+  // （实测：皮肤切换报 `skin-center-404`，真因是 URL 被我们拼错，不是皮肤中心说没这套皮肤）。
+  if (p === '/api' || p.startsWith('/api/')) return p;
   return BASE + (p.startsWith('/') ? p : '/' + p);
 }
 

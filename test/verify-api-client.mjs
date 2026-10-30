@@ -123,6 +123,12 @@ console.log('\n② URL 前缀 / 默认值');
     apiUrl('dsh-app://app/folia/now-playing/artwork') === 'dsh-app://app/folia/now-playing/artwork'
       && apiUrl('blob:http://x/y') === 'blob:http://x/y');
   check('绝对 URL 原样返回', apiUrl('https://x/y') === 'https://x/y');
+  // 宿主自己的 API 挂在 `/api/**`（不是我们插件的 `/folia/**`）：这类路径必须原样通过。
+  // 实测事故：面板把地址拼成 `location.origin + "/api/skin-center/v2/active"`，而页面 origin
+  // 不等于宿主 HTTP API 的 origin 时该串**没有 scheme** ⇒ 被补成 `/folia/<...>` ⇒ 纯路由 404
+  // （表现成「操作失败：skin-center-404」，看着像皮肤中心的业务错误）。
+  check('宿主自己的 /api/** 原样通过（不补 /folia）', apiUrl('/api/x') === '/api/x');
+  check('边界：形似前缀但不是 /api/ 段的仍补 /folia', apiUrl('/apix') === BASE + '/apix');
   check('空值不炸', apiUrl(null) === BASE + '/' && apiUrl(undefined) === BASE + '/');
 
   const calls = [];

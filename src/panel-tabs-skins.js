@@ -56,13 +56,13 @@ function SkinsTabPanel() {
       const doc = (resp && resp.data) || null;
       if (resp && resp.ok && doc && doc.ok) {
         // 读"当前在用哪套皮肤"必须**由浏览器发**，不能走宿主代理：
-        // `/api/skin-center/v2/*` 的读写被 DSH 自己的会话鉴权挡着，宿主 fetch 没有 cookie
-        // ⇒ 代理拿到 401（实测报错「操作失败：skin-center-401」）。
-        // 但**不许裸 fetch**（src/api-client.js 的不变量：业务代码零裸 fetch）——
-        // apiUrl() 对带 scheme 的地址原样放行，而 location.origin 是同源 ⇒ 照旧带会话。
+        // `/api/skin-center/v2/*` 的读写被 DSH 自己的会话鉴权挡着，宿主 fetch 没有 cookie ⇒ 401。
+        // 路径用**相对 `/api/...`**：不要拼 `location.origin` —— 我们跑在宿主页面里，origin 不一定
+        // 等于宿主 HTTP API 的源；拼错会得到一个不存在的地址，而它的 404 还会被误读成业务 404。
+        // api-client 对 `/api/**` 原样放行（不补 /folia 前缀）。
         if (doc.skinCenter === "present") {
           try {
-            const a = await apiJson(location.origin + "/api/skin-center/v2/active", { parse: "always" });
+            const a = await apiJson("/api/skin-center/v2/active", { parse: "always" });
             if (a && a.ok) doc.active = (a.data && a.data.active) || "";
           } catch { /* 读不到就显示"无使用中" */ }
         }
@@ -87,8 +87,6 @@ function SkinsTabPanel() {
     if (kind === "activate") setBusy("activate:" + ((payload && payload.id) || ""));
     setNote(null);
     try {
-      // 切换皮肤**由浏览器直接写**皮肤中心自己的端点（同源请求自带会话）；
-      // 走宿主代理会 401 —— DSH 对 `/api/skin-center/v2/*` 的读写都做会话鉴权，宿主 fetch 没有 cookie。
       if (kind === "activate") {
         const wantId = (payload && payload.id) || null;
         // ⚠️ 这里写入的必须是**皮肤中心自己认识的 id**（= skin.json 里的原始 id），
@@ -103,10 +101,14 @@ function SkinsTabPanel() {
         }
         // 切换皮肤**由浏览器直接写**皮肤中心自己的端点（同源、自带会话）；
         // 走宿主代理会 401 —— DSH 对 `/api/skin-center/v2/*` 的读写都做会话鉴权，宿主 fetch 没有 cookie。
-        // 统一走 api-client（不裸 fetch）：绝对 URL 原样放行，`location.origin` 是同源 ⇒ 会话照旧带上。
-        const resp = await apiPostJson(location.origin + "/api/skin-center/v2/active", { active: wantId }, { parse: "always" });
+        // 统一走 api-client（不裸 fetch），路径用相对 `/api/...`（不拼 location.origin ——
+        // 拼错会得到一个不存在的地址，404 又会被误读成业务 404）。
+        const resp = await apiPostJson("/api/skin-center/v2/active", { active: wantId }, { parse: "always" });
         if (!(resp && resp.ok)) {
-          setNote({ ok: false, text: weT("操作失败：{code}", { code: "skin-center-" + ((resp && resp.status) || 0) }) });
+          // 把响应体里的 error 一起显示：`skin-not-found`（它的 catalog 不收）与"路径不对"
+          // 从状态码上看都是 404，只有 body 能分开（实测踩过：把 URL 拼错当成了业务 404）。
+          const detail = (resp && resp.data && resp.data.error) ? ":" + resp.data.error : "";
+          setNote({ ok: false, text: weT("操作失败：{code}", { code: "skin-center-" + ((resp && resp.status) || 0) + detail }) });
           return;
         }
         // 两条收敛路径：① 广播皮肤中心自己监听的 `dsh-skin-applied`（立即就地切换）；
