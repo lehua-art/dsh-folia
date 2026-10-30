@@ -417,6 +417,15 @@ function applySelection(id, opts) {
   if (id && opts && opts.fromManual) {
     try { apiPostJson("/skins/activate", { id: "" }, { parse: "always" }).catch(() => {}); } catch { /* ignore */ }
   }
+  // 「先下载到本地，再本地渲染」+「点击即下载、连点即并发」（用户 2026-10-30 的规则）。
+  //
+  // ⚠️ 这里**只入队、不拦截本次播放**：本次照旧用现有地址起播（站点代理会边下边播并落盘），
+  // 同时把这条资源放进本地库队列。下次再点它时 inventory 已经 `local: true`，直接读本地文件。
+  // 早期版本在入队后 `return`（等下载完再播），结果是"点了没反应"且让两条播放判据失败 ——
+  // 用户要的是"点一下就下、能同时下多个"，不是"点一下必须等下载完"。
+  if (id && opts && opts.fromManual && typeof localFirstApply === "function") {
+    try { localFirstApply(id); } catch { /* 下载链路不可用不影响本次播放 */ }
+  }
   reportClientDiag("apply", "id=" + String(id || "").slice(0, 40));
   // 手动切换/清除/revalidate：取消进行中的轮换准备（staged/探测元素全部
   // 释放），并丢弃任何滞留的就绪元素。轮换提交（fromRotation）例外 ——

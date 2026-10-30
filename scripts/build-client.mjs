@@ -428,6 +428,13 @@ const INLINE_MODULES = [
     markers: ['function probeVideoPoster(', 'function videoContentReady(', 'VIDEO_POSTER_BUDGET_MS', 'let mediaInfoToken = ', 'function clearUpgradePoll(', 'async function refreshMediaInfo(', 'function abortTranscodeUpgrade(', 'function maybeUpgradeToTranscoded(', 'function invalidateMediaInfoProbe('],
   },
   {
+    // 「站点资源先下载到本地，再本地渲染」的客户端那一半：点击即入队、连点即并发、
+    // 完成后自动重新应用。排在 `src/media-prep.js` **之前**：applySelection 会按名字调它。
+    file: 'src/local-first.js',
+    why: '本地优先：站点条目点击 → 入队下载（并发由宿主队列控制）→ 完成后再应用一次',
+    markers: ['function localFirstApply(', 'function setLocalFirstNote(', 'function lfPoll('],
+  },
+  {
     file: 'src/media-prep.js',
     why: '选中项落地：预准备（预挂载 + 探测 + 超时记账）→ buildMedia → applySelection',
     markers: ['function beginRotationPrepare(', 'function prepareWallpaper(', 'const prepareLiveTimeouts = ',

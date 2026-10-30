@@ -5,7 +5,7 @@
 > 口径：只统计守卫**代码**里真正碰到的模块（先剥注释），并区分"直接读源文件"与"隔着产物 `lib/client.js`"。
 > 写法：字面量路径 / `join(...)` 拼接 / 唯一 basename / 产物配方 / **前缀族读法** `scopeFiles|scopeText(<前缀>)` / **经共享族助手读**（`import { panelText } from './tools/src-scope.mjs'` + 真调用；族口径封在那个库里，见 DEV-GUIDE §4.6「同时是守卫的库」）/ **真源定位读**（`locate('符号')` / `locateFile('文件名')`，`test/tools/source-locator.mjs`：符号唯一声明在哪就是读了哪个模块）。
 
-模块面 187 个 · 守卫 117 个
+模块面 190 个 · 守卫 118 个
 
 ## 守卫 → 模块
 
@@ -43,6 +43,7 @@
 | `verify-contracts.mjs` | `lib/components/fonts/src/fontset-editor.js` `lib/host-boot.js` `lib/index.js` `lib/kernel/host-kernel.js` `lib/media/media-dirs.js` `lib/settings-schema.js` `src/api-client.js` `src/client.js` `src/fontset-store.js` `src/panel-tabs-advanced.js` `src/panel-tabs-appearance.js` `src/panel-tabs-boot.js` `src/panel-tabs-effects.js` `src/panel-tabs-mascot.js` `src/panel-tabs-pets.js` `src/panel-tabs-skins.js` `src/panel-tabs-wallpaper.js` `src/panel-tabs.js` |  |
 | `verify-dead-declarations.mjs` | — |  |
 | `verify-deployment.mjs` | — |  |
+| `verify-downloads.mjs` | `lib/download-queue.js` `lib/routes/downloads.js` `src/local-first.js` `src/media-prep.js` |  |
 | `verify-eol.mjs` | — |  |
 | `verify-extra-glass.mjs` | `lib/settings-schema.js` `src/client.js` `src/effects.js` `src/glass-extra.js` `src/glass-panel.js` `src/quick-panel.js` | ✅ |
 | `verify-features.mjs` | `lib/features.js` `lib/routes/boot.js` `lib/routes/inventory.js` `lib/routes/pets.js` `src/client.js` `src/features.js` `src/pet-layer.js` `src/quick-panel.js` | ✅ |
@@ -176,6 +177,7 @@
 | `lib/components/pet-link/src/pet-link-tuner.js` | 2 | `verify-pet-tuner-browser` `verify-pet-tuner` |
 | `lib/components/pet-link/src/pet-link.js` | 4 | `verify-pet-hotplug-client` `verify-pet-official` `verify-pet-tuner-browser` `verify-pet-tuner` |
 | `lib/diag-trace.js` | 2 | `verify-host-diag` `verify-scene-live` |
+| `lib/download-queue.js` | 1 | `verify-downloads` |
 | `lib/faststart.js` | 3 | `verify-cache-dir` `verify-mp4-vfs` `verify-scene-live` |
 | `lib/features.js` | 1 | `verify-features` |
 | `lib/fs-paths.js` | 3 | `verify-avatar-interval-and-rotation` `verify-scene-live` `verify-wallpaper-scan` |
@@ -209,6 +211,7 @@
 | `lib/routes/boot.js` | 1 | `verify-features` |
 | `lib/routes/cache-dir.js` | 1 | `verify-cache-dir` |
 | `lib/routes/diag.js` | 2 | `verify-logging` `verify-scene-live` |
+| `lib/routes/downloads.js` | 1 | `verify-downloads` |
 | `lib/routes/inventory.js` | 4 | `verify-avatar-interval-and-rotation` `verify-component-visibility` `verify-features` `verify-route-index` |
 | `lib/routes/live-frame.js` | 1 | `verify-scene` |
 | `lib/routes/media-bytes.js` | 4 | `verify-avatar-interval-and-rotation` `verify-route-index` `verify-scene-live` `verify-scene` |
@@ -283,7 +286,8 @@
 | `src/live-layer-underlay.js` | 5 | `verify-glass-surfaces` `verify-logging` `verify-occlusion-client` `verify-scene-live` `verify-theme-follow` |
 | `src/live-layer-watch.js` | 6 | `verify-client` `verify-glass-surfaces` `verify-logging` `verify-occlusion-client` `verify-scene-live` `verify-theme-follow` |
 | `src/live-layer.js` | 6 | `verify-client` `verify-glass-surfaces` `verify-logging` `verify-occlusion-client` `verify-scene-live` `verify-theme-follow` |
-| `src/media-prep.js` | 5 | `verify-client` `verify-fontset` `verify-scene-live` `verify-theme-follow` `verify-transcode-state` |
+| `src/local-first.js` | 1 | `verify-downloads` |
+| `src/media-prep.js` | 6 | `verify-client` `verify-downloads` `verify-fontset` `verify-scene-live` `verify-theme-follow` `verify-transcode-state` |
 | `src/module-reset.js` | 2 | `verify-fontset` `verify-scene-live` |
 | `src/nav-icon.js` | 2 | `verify-client` `verify-i18n` |
 | `src/occlusion.js` | 1 | `verify-occlusion-client` |
