@@ -1,16 +1,23 @@
-# dsh-plugin-folia bundle patch — single-row form.
+# dsh-plugin-folia bundle patch.
 #
-# This bundle used to contribute EIGHT host rows (the plugin itself plus seven
-# subpackage rows: about-notice / mascot-avatar / media-bridge / fonts / fx /
-# parallax / pet-link). Those seven now live in this package under
-# `lib/components/` and are mounted from `apply()` in `lib/index.js`, so the row
-# set is exactly one row: this bundle.
+# Row set: this bundle + the skin centre it brings along.
 #
-# Why the merge (see lib/index.js "BUNDLE-MERGE"): each subpackage browser half
-# used to reach the host half through `require('<main package name>')`, which is
-# the most fragile edge in the plugin — it broke every time the main package was
-# renamed, and an id mismatch silently blanked the font / effect panels. One
-# package means no cross-package module id at all.
+# ── 为什么这里有第二条 row ──────────────────────────────────────────────────
+# 我们不再自己实现皮肤渲染：皮肤包（`skin.json` + `skin.css` + 可选 `hooks.mjs`）由
+# `@linxin666/dsh-client-ui-skin-center` 加载与启用，我们的「助手皮肤」页签只负责把站点 zip
+# 解到它读的那个目录（`$DSH_HOME/skins`）。所以它必须是**装得上的**：本包把它列为
+# `dependencies`，并在下面插一条 row —— 用户装 dsh-folia 就同时得到两件套，不用再单独装。
+#
+# ── 重复 row 为什么不会打起来（实测依据，不是猜测）────────────────────────
+# 1) 宿主半边：它的 `apply` 走 `mountOnce('@linxin666/dsh-client-ui-skin-center', …)`，
+#    以 `globalThis[Symbol.for('dsh-web.mounted-plugins')]` 记账 ⇒ 第二次挂载是空操作，
+#    不会重复注册 webserver 路由。
+# 2) 客户端半边：它的设置分区注册包在 `try { ctx.slots.register(...) } catch { return () => {} }`，
+#    重复注册被吞掉 ⇒ 不会出现两张「皮肤」设置页。
+# 于是「用户已有 dsh-web-all（它也插了一条 row）」与「只用我们」两种情形都成立。
+#
+# 版本：依赖写 `^0.4.8`（本仓实测过的版本线）；它若大改 v1alpha1 契约，我们跟着升级即可。
+# 判据：test/verify-skin-center-bundle.mjs 会同时钉住「声明了依赖」与「插了唯一 id 的 row」。
 #
 # A patch replaces the targeted row's whole `config`, so only additive `insert`
 # rows appear here (we never override an existing shipped row).
@@ -18,3 +25,13 @@
 - insert:
     - id: folia
       name: 'dsh-folia'
+    # 皮肤中心：独立 npm 包（BSD-3-Clause），本包作为依赖携带。
+    #
+    # ⚠️ row id **不能**以 `folia-` 开头：`lib/subpackage-boot.js#subpackageSpecifiers` 把
+    #    「id 以 `folia-` 开头的行」当作**我们自己的子包行**做启动自检（解析不到就抛，因为宿主
+    #    对行级失败是静默的）。给第三方行起 `folia-skin-center` 这种 id 会被误判成"我们的子包"
+    #    ⇒ 自检去仓库 node_modules 里解析它，开发树里没有这个依赖就直接抛，整个 apply 失败。
+    #    所以这里用不撞前缀的 `skin-center`（也与 web-all 的 `web-ui-skin-center`、
+    #    官方包的 `ui-skin-center` 都不同名）。
+    - id: skin-center
+      name: '@linxin666/dsh-client-ui-skin-center'

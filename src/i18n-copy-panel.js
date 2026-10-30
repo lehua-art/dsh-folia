@@ -495,6 +495,24 @@ const WE_I18N_EN_PANEL = {
   "复制失败，请手动选中上面的命令": "Copy failed — select the command above manually",
   "复制命令": "Copy command",
   "先装皮肤中心，否则皮肤装好也没法启用": "Install the skin centre first, or the skin cannot be enabled",
+
+  // ── 助手皮肤：页签内直接切换（4.12.0）────────────────────────────────
+  " · 使用中：{name}": " · active: {name}",
+  "✓ ": "✓ ",
+  "正在恢复…": "Restoring…",
+  "恢复默认外观": "Restore default look",
+  "应用": "Apply",
+  "切换中…": "Switching…",
+  "使用中": "Active",
+  "正在使用，先切到别的再卸": "Currently active — switch to another skin before removing",
+  "已切换到：{name}": "Switched to: {name}",
+  "已恢复官方默认外观": "Restored the default look",
+  "这个皮肤不在本机（先安装）": "This skin is not installed locally — install it first",
+  "装皮肤中心后才能切换皮肤（见下面的安装命令）": "The skin centre is required to switch skins (install command below)",
+  "皮肤 id 不合法": "Invalid skin id",
+  "已安装：{name} —— 点「应用」就能切换": "Installed: {name} — press Apply to switch",
+  "本页签可以直接切换皮肤：装完点「应用」即可，无需打开设置页。皮肤包落在皮肤中心目录，两边读同一份。":
+    "This tab switches skins directly: install, then press Apply — no need to open the settings page. Packs land in the skin centre's folder and both sides read the same files.",
 };
 
 export { WE_I18N_EN_PANEL };

@@ -146,6 +146,9 @@ const NO_MODULE_TARGET_WHY = {
   // `verify-glass-runtime-browser.mjs` import（后者才是链上的守卫，也是真读源文件的那个），
   // 自己既不被单独 spawn、也不直接读源文件 —— 目标全在宿主传入的 `bundle`/`runtime` 里。
   'verify-pet-sidebar-glass-browser-case.mjs': '是 `verify-glass-runtime-browser.mjs` 的**用例模块**（导出函数被 import，由宿主守卫传入已构建的 bundle 与 runtime），自身不 spawn、不读源文件',
+  // 皮肤中心随包契约（跨**包**面）：判据是 `package.json` 的 dependencies 与 `cordis.patch.yml`
+  // 的 insert 行/id 唯一性，目标是发布元数据，不是 lib/src 里某个模块。
+  'verify-skin-center-bundle.mjs': '管的是**跨包装配契约**（`package.json` 把皮肤中心列为 dependency + `cordis.patch.yml` 插一条唯一 id 的 row），读的是包元数据与 patch 文本，不针对某个 lib/src 模块',
 };
 
 const map = buildMap(ROOT);

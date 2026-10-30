@@ -269,6 +269,9 @@ const VERIFY_STEPS = [
   step('test/verify-route-registry.mjs'),
   // ⑯ 设置键归属：每个键恰好一个功能（拆 settings-schema 的前提对账）。
   step('test/verify-settings-ownership.mjs'),
+  // ⑯b 皮肤中心随包：`package.json` 声明依赖 + patch 插一条唯一 id 的 row —— 少任一半，
+  //     皮肤页签都会「在、但点不动」，且只会静默失败（跨包契约，两个方向都是负对照）。
+  step('test/verify-skin-center-bundle.mjs'),
   // ⑰ 交互手感：开关不绑选片状态、幂等设置合并响应、提示行占位（用户实测报过的两类闪动/点不动）。
   step('test/verify-panel-interactions.mjs'),
   // ⑱ 站点条目类型：zip 工程包不得判成视频（实测踩过：56MB zip 塞进 <video>）。

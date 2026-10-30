@@ -1,0 +1,3 @@
+# 待接线的重构草稿（4.13.0，不属于 4.12.1）
+
+这两个文件是 **4.13.0** 的重构草稿：`env.js` 要成为站点基址与 `$DSH_HOME` 的唯一真源（`siteBase()` / `dshHome()` / `DEFAULT_SITE`，现状在 boot / modules / pets / skins / site-thumb 五个路由文件里各写一遍），`zip-read.js` 要成为唯一一份 zip 读取器（中央目录遍历 + `inflateRaw` + 路径穿越检查 + 限量，现状由 `routes/pets.js` 与 `routes/skins.js` 各实现一遍，而穿越与 zip bomb 是安全面）。它们**还没有接线**（`lib/routes/skins.js` 目前仍是内联的 `siteBase()` 与 `unzipSkinZip()`，也还没有 `test/zip-read.mjs`），因此**故意放在 `lib/` 之外**：留在 `lib/` 下会逼着 `verify-package-files`（`lib/` 下每个文件都必须在 `package.json` 的 `files` 里）与 `verify-guard-map`（每个模块要么有守卫真的碰它、要么在零覆盖例外表里如实登记理由）为两个没人 import 的草稿开绿灯，而这两条判据正是为了防"新模块静默脱离判据" —— 让守卫保持诚实，比让草稿先占位重要。4.13.0 接线时把它们搬回 `lib/`、补 `test/zip-read.mjs`、补 `files` 条目，再跑 `node test/tools/guard-targets.mjs --write`。
