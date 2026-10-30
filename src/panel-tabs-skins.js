@@ -55,6 +55,17 @@ function SkinsTabPanel() {
       const resp = await apiJson("/skins/list" + (force ? "?refresh=1" : ""), { parse: "always" });
       const doc = (resp && resp.data) || null;
       if (resp && resp.ok && doc && doc.ok) {
+        // 皮肤中心在不在跑，**由浏览器判定**，不信宿主探测的结论。
+        // 宿主 fetch 不带会话：`/api/**` 一旦被鉴权挡在前面就只会拿到 401，而 401 既可能是
+        // "装了但需要会话"也可能是"路由没挂载"，从宿主那一侧**无法区分**（实测踩过：
+        // 报文纯 401 就把整个页签的「应用」按钮锁死）。浏览器同源请求天然带会话，
+        // 拿得到就是真在跑，拿不到再退回宿主给的三态。
+        if (doc.skinCenter !== "present") {
+          try {
+            const cat = await apiJson("/api/skin-center/v2/catalog", { parse: "always" });
+            if (cat && cat.ok && cat.data && cat.data.ok) doc.skinCenter = "present";
+          } catch { /* 仍旧用宿主给的状态 */ }
+        }
         // 读"当前在用哪套皮肤"：**先直连**（同源相对路径 `/api/**`，凭据天然带全），
         // 直连不通（页面的 origin 可能不等于宿主 HTTP 服务的 origin ⇒ 路由没到）再退回宿主代理
         // `/folia/skins/active` —— 代理会把浏览器这一侧的 cookie 与同源头转发过去。
@@ -220,7 +231,7 @@ function SkinsTabPanel() {
       className: "we-picker__hint",
       style: { margin: "6px 0 4px", color: "#ffd08a", lineHeight: "1.6" },
     }, skinCenter === "auth-gated"
-      ? weT("探测不到皮肤中心的状态（它的接口被会话鉴权挡住了，宿主拿不到会话）。先点一次「刷新」；若下面点「应用」仍报错，就按 0.4.8 版本重装它。")
+      ? weT("读不到皮肤中心的清单（浏览器侧也被鉴权挡住）。先点一次「刷新」；仍不行就说明它没在运行 —— 去设置里确认皮肤中心已启用。")
       : weT("皮肤中心状态未知（探测超时/网络错误）。点「刷新」重试。")));
   } else {
     children.push(React.createElement("div", {
@@ -230,7 +241,7 @@ function SkinsTabPanel() {
     }, weT("本页签可以直接切换皮肤：装完点「应用」即可，无需打开设置页。皮肤包落在皮肤中心目录，两边读同一份。")));
   }
   // 皮肤中心不在跑时，「应用」按钮直接禁用并给出原因 —— 比"点了报错"诚实。
-  const applyBlockedReason = canApply ? "" : weT("皮肤中心没在运行，先按上面的命令装/降级到 0.4.8");
+  const applyBlockedReason = canApply ? "" : weT("读不到皮肤中心的清单，先点「刷新」；仍不行说明它没在运行");
 
   // 提示行常驻占位（与开机动画/桌宠页签同一条纪律：不因 note 出现/消失让面板跳高度）
   children.push(React.createElement("div", {
