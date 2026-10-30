@@ -123,7 +123,7 @@ function SkinsTabPanel() {
     const structural = kind === "install" || kind === "remove";
     const busyKey = structural
       ? kind + ":" + ((payload && payload.id) || "")
-      : (kind === "activate" ? "activate:" + ((payload && payload.id) || "") : "");
+      : (kind === "activate" || kind === "repair" ? kind + ":" + ((payload && payload.id) || "") : "");
     if (busyKey) { setBusy(busyKey); busyRef.current = busyKey; }
     setNote(null);
     try {
@@ -190,14 +190,28 @@ function SkinsTabPanel() {
       const r = (resp && resp.data) || null;
       if (resp && resp.ok && r && r.ok) {
         if (kind === "install") {
+          // 安装时宿主会把 skin.json **规范化**成皮肤中心一定收的样子（它的规则比我们严：
+          // id 必须等于目录名、必须 v2、name/nameEn/author/stylesheet 齐全、不允许未知顶层键）。
+          // 这一步做了什么要如实告诉用户，否则"为什么它动了我的清单"会变成新的疑问。
+          const fixed = r.manifestFixed === true
+            ? weT("（已按皮肤中心规则规范化清单：{what}）", { what: (r.manifestFixes || []).join("、") })
+            : "";
           setNote({
             ok: true,
             text: r.exists
               ? weT("已安装过：{name}", { name: label || "" })
-              : weT("已安装：{name} —— 点「应用」就能切换", { name: label || "" }),
+              : weT("已安装：{name} —— 点「应用」就能切换", { name: label || "" }) + fixed,
           });
         }
         if (kind === "remove") setNote({ ok: true, text: weT("已卸载：{name}", { name: label || "" }) });
+        if (kind === "repair") {
+          setNote({
+            ok: true,
+            text: r.changed
+              ? weT("已按皮肤中心规则修复清单：{what} —— 点「刷新」后应能被收录", { what: (r.fixes || []).join("、") })
+              : weT("这套清单本来就合规（没有可修的）；若仍未被收录，把卡片上的原因发我"),
+          });
+        }
         await load(true);
       } else {
         const code = (r && r.error) || "failed";
@@ -340,8 +354,14 @@ function SkinsTabPanel() {
           // ⚠️ 只有 `=== false` 才下结论：`null` 表示"问不到它的 catalog"（未知），
           // 未知绝不能禁用按钮 —— 那会变成"替我猜错了就不让我点"。
           const notListed = s.inCatalog === false;
+          // 它给出的**具体拒收原因**（catalog diagnostics 里 subject = 目录名）。
+          // 有原因就直接显示原因，比我们复述规则更有用。
+          const whyDetail = notListed && Array.isArray(s.catalogWarnings) && s.catalogWarnings.length
+            ? "：" + s.catalogWarnings.slice(0, 2).join("；")
+            : "";
           const notListedWhy = notListed
-            ? weT("皮肤中心仍未收录这套（它按 manifest 规则筛选：id 必须等于目录名、必须 v2、name/nameEn/author/stylesheet 齐全）。点「刷新」会强制它对账一次；若仍显示这条，说明确实被它拒收")
+            ? weT("皮肤中心未收录这套（它按自己的 manifest 规则筛选：id 必须等于目录名、必须 v2、name/nameEn/author/stylesheet 齐全、不允许未知顶层键）。可点「修复清单」按它的规则补一次；修完点刷新")
+              + whyDetail
             : "";
           return React.createElement("div", {
             key: s.id,
@@ -363,6 +383,16 @@ function SkinsTabPanel() {
                 title: notListed ? notListedWhy : (applyBlockedReason || undefined),
                 onClick: () => act("activate", { id: s.id }, s.name),
               }, busyThis ? weT("切换中…") : weT("应用")),
+            // 未被皮肤中心收录时给一个**可执行**的出口：按它的规则就地修一次清单。
+            // 只是补/裁 skin.json 的字段，不动 skin.css / hooks / 资产。
+            notListed
+              ? React.createElement("button", {
+                className: "we-picker__btn", type: "button",
+                disabled: Boolean(busy),
+                title: notListedWhy,
+                onClick: () => act("repair", { id: s.dirId || s.id }, s.name),
+              }, busy === "repair:" + (s.dirId || s.id) ? weT("修复中…") : weT("修复清单"))
+              : null,
             React.createElement("button", {
               className: "we-picker__btn", type: "button",
               disabled: Boolean(busy) || isActive,
