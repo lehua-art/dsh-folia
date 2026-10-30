@@ -114,42 +114,13 @@ const routes = [];
 const deps = { disposers: [], base: '/folia', log: () => {} };
 registerSkinsRoutes({ register: (spec) => { routes.push(spec); return () => {}; } }, deps);
 const find = (p) => routes.find((r) => r.path === p);
-check('五条路由都注册了（list / install / remove / activate / active）',
-  ['/folia/skins/list', '/folia/skins/install', '/folia/skins/remove',
-    '/folia/skins/activate', '/folia/skins/active'].every(find),
+// 切换皮肤与"当前皮肤"走的是**浏览器**对皮肤中心 /api/skin-center/v2/active 的直读直写
+// （DSH 对该路径做会话鉴权，宿主 fetch 没有 cookie ⇒ 代理只会 401），所以这里只剩三条宿主路由。
+check('三条路由都注册了（list / install / remove）',
+  ['/folia/skins/list', '/folia/skins/install', '/folia/skins/remove'].every(find),
   routes.map((r) => r.path).join(','));
 
-/** 假皮肤中心：activate/active 两个路由会用请求的 Host 反查它的 /api/skin-center/v2/* 端点。 */
-let skinCenterActive = 'demo-skin';
-let skinCenterPresent = true;
-const skinCenter = createServer((req, res) => {
-  if (!skinCenterPresent || !req.url.startsWith('/api/skin-center/v2/')) { res.statusCode = 404; res.end('nope'); return; }
-  if (req.url === '/api/skin-center/v2/catalog') {
-    res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify({ ok: true, skins: [] }));
-    return;
-  }
-  if (req.url === '/api/skin-center/v2/active') {
-    if (req.method === 'POST') {
-      let acc = '';
-      req.on('data', (d) => { acc += d; });
-      req.on('end', () => {
-        try { skinCenterActive = (JSON.parse(acc || '{}').active) || null; } catch { /* 忽略 */ }
-        res.setHeader('content-type', 'application/json');
-        res.end(JSON.stringify({ ok: true, active: skinCenterActive }));
-      });
-      return;
-    }
-    res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify({ ok: true, active: skinCenterActive }));
-    return;
-  }
-  res.statusCode = 404; res.end('nope');
-});
-await new Promise((r) => skinCenter.listen(0, '127.0.0.1', r));
-const skinCenterHost = '127.0.0.1:' + skinCenter.address().port;
-
-function call(route, { method = 'GET', body = null, url = null, host = null } = {}) {
+function call(route, { method = 'GET', body = null, url = null } = {}) {
   return new Promise((resolve) => {
     const resObj = {
       statusCode: 0, headers: {},
@@ -159,7 +130,7 @@ function call(route, { method = 'GET', body = null, url = null, host = null } = 
     const chunks = body === null ? [] : [Buffer.from(JSON.stringify(body))];
     const req = {
       method, url: url || route.path,
-      headers: host ? { host } : {},
+      headers: {},
       on(ev, fn) {
         if (ev === 'data') for (const c of chunks) fn(c);
         if (ev === 'end') setTimeout(fn, 0);
@@ -259,50 +230,6 @@ function call(route, { method = 'GET', body = null, url = null, host = null } = 
   check('已装的还能删', other.status === 200);
 }
 
-/* ⑥ 切换皮肤：写皮肤中心的 active + 读回（这两条是"页签内直接换"的全部宿主逻辑） */
-{
-  // 先把 demo-skin 装回来（上一段把它删了），activate 会校验目录真实存在
-  mkdirSync(join(dshHome, 'skins', 'demo-skin'), { recursive: true });
-  writeFileSync(join(dshHome, 'skins', 'demo-skin', 'skin.json'), SKIN_MANIFEST, 'utf8');
-
-  const act = await call(find('/folia/skins/activate'), {
-    method: 'POST', body: { id: 'demo-skin' }, host: skinCenterHost,
-  });
-  check('切到已装皮肤 ⇒ 200', act.status === 200 && act.json.ok === true, JSON.stringify(act.json));
-  check('返回选中的 id', act.json && act.json.active === 'demo-skin', String(act.json && act.json.active));
-  check('皮肤中心侧真的收到了 active', skinCenterActive === 'demo-skin', String(skinCenterActive));
-
-  const cur = await call(find('/folia/skins/active'), { host: skinCenterHost });
-  check('读回当前皮肤 ⇒ 200 且是 demo-skin', cur.status === 200 && cur.json.active === 'demo-skin', JSON.stringify(cur.json));
-
-  // 清空（回到官方默认）：空串等价于 null
-  const clear = await call(find('/folia/skins/activate'), { method: 'POST', body: { id: '' }, host: skinCenterHost });
-  check('清空选择 ⇒ 200', clear.status === 200 && clear.json.ok === true, JSON.stringify(clear.json));
-  check('皮肤中心侧 active 变 null', skinCenterActive === null, String(skinCenterActive));
-
-  // 不在本机 ⇒ 404（皮肤中心会去渲染一个不存在的目录，必须挡住）
-  const ghost = await call(find('/folia/skins/activate'), { method: 'POST', body: { id: 'no-such-skin' }, host: skinCenterHost });
-  check('切到未安装皮肤 ⇒ 404 not-installed', ghost.status === 404 && ghost.json.error === 'not-installed', JSON.stringify(ghost.json));
-
-  // 非法 id
-  const badId = await call(find('/folia/skins/activate'), { method: 'POST', body: { id: '../x' }, host: skinCenterHost });
-  check('非法 id ⇒ 400 bad-id', badId.status === 400 && badId.json.error === 'bad-id', JSON.stringify(badId.json));
-
-  // 皮肤中心不在（探针拿到 404）⇒ 409，而不是静默失败
-  skinCenterPresent = false;
-  const noCenter = await call(find('/folia/skins/activate'), { method: 'POST', body: { id: 'demo-skin' }, host: skinCenterHost });
-  check('皮肤中心不在 ⇒ 409 skin-center-missing',
-    noCenter.status === 409 && noCenter.json.error === 'skin-center-missing', JSON.stringify(noCenter.json));
-  const noCenterGet = await call(find('/folia/skins/active'), { host: skinCenterHost });
-  check('读当前皮肤时皮肤中心不在 ⇒ 409', noCenterGet.status === 409, 'status=' + noCenterGet.status);
-  skinCenterPresent = true;
-
-  // GET 不接受写
-  const wrongMethod = await call(find('/folia/skins/activate'), { host: skinCenterHost });
-  check('activate 只收 POST ⇒ 405', wrongMethod.status === 405, 'status=' + wrongMethod.status);
-}
-
-skinCenter.close();
 server.close();
 try { rmSync(dshHome, { recursive: true, force: true }); } catch { /* ignore */ }
 

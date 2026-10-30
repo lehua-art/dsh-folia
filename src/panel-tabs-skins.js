@@ -55,12 +55,15 @@ function SkinsTabPanel() {
       const resp = await apiJson("/skins/list" + (force ? "?refresh=1" : ""), { parse: "always" });
       const doc = (resp && resp.data) || null;
       if (resp && resp.ok && doc && doc.ok) {
-        // 顺带问一下当前在用哪套皮肤（皮肤中心没装时它会 409，忽略即可 —— 页签本来就会提示"缺插件"）
+        // 读"当前在用哪套皮肤"必须**由浏览器发**，不能走宿主代理：
+        // `/api/skin-center/v2/*` 的读写被 DSH 自己的会话鉴权挡着，宿主 fetch 没有 cookie
+        // ⇒ 代理拿到 401（实测报错「操作失败：skin-center-401」）。
+        // 但**不许裸 fetch**（src/api-client.js 的不变量：业务代码零裸 fetch）——
+        // apiUrl() 对带 scheme 的地址原样放行，而 location.origin 是同源 ⇒ 照旧带会话。
         if (doc.skinCenter === "present") {
           try {
-            const a = await apiJson("/skins/active", { parse: "always" });
-            const ad = (a && a.data) || null;
-            if (a && a.ok && ad && ad.ok) doc.active = ad.active || "";
+            const a = await apiJson(location.origin + "/api/skin-center/v2/active", { parse: "always" });
+            if (a && a.ok) doc.active = (a.data && a.data.active) || "";
           } catch { /* 读不到就显示"无使用中" */ }
         }
         setState(doc);
@@ -84,6 +87,39 @@ function SkinsTabPanel() {
     if (kind === "activate") setBusy("activate:" + ((payload && payload.id) || ""));
     setNote(null);
     try {
+      // 切换皮肤**由浏览器直接写**皮肤中心自己的端点（同源请求自带会话）；
+      // 走宿主代理会 401 —— DSH 对 `/api/skin-center/v2/*` 的读写都做会话鉴权，宿主 fetch 没有 cookie。
+      if (kind === "activate") {
+        const wantId = (payload && payload.id) || null;
+        // 只允许切到本机已装的那几套（state.installed 是权威清单）
+        if (wantId) {
+          const known = ((state && state.installed) || []).some((s) => normSkinId(s.id) === normSkinId(wantId));
+          if (!known) {
+            setNote({ ok: false, text: weT("这个皮肤不在本机（先安装）") });
+            return;
+          }
+        }
+        // 切换皮肤**由浏览器直接写**皮肤中心自己的端点（同源、自带会话）；
+        // 走宿主代理会 401 —— DSH 对 `/api/skin-center/v2/*` 的读写都做会话鉴权，宿主 fetch 没有 cookie。
+        // 统一走 api-client（不裸 fetch）：绝对 URL 原样放行，`location.origin` 是同源 ⇒ 会话照旧带上。
+        const resp = await apiPostJson(location.origin + "/api/skin-center/v2/active", { active: wantId }, { parse: "always" });
+        if (!(resp && resp.ok)) {
+          setNote({ ok: false, text: weT("操作失败：{code}", { code: "skin-center-" + ((resp && resp.status) || 0) }) });
+          return;
+        }
+        // 两条收敛路径：① 广播皮肤中心自己监听的 `dsh-skin-applied`（立即就地切换）；
+        // ② 它另外每 2 秒轮询 /api/skin-center/v2/active（事件丢了也会在 2 秒内跟上）。
+        try {
+          window.dispatchEvent(new CustomEvent("dsh-skin-applied", { detail: { id: wantId } }));
+        } catch { /* 老环境没有 CustomEvent 也无所谓，②会兜住 */ }
+        setNote({
+          ok: true,
+          text: wantId ? weT("已切换到：{name}", { name: label || "" }) : weT("已恢复官方默认外观"),
+        });
+        await load(true);
+        return;
+      }
+
       const resp = await apiPostJson("/skins/" + kind, payload || {}, { parse: "always" });
       const r = (resp && resp.data) || null;
       if (resp && resp.ok && r && r.ok) {
@@ -96,19 +132,6 @@ function SkinsTabPanel() {
           });
         }
         if (kind === "remove") setNote({ ok: true, text: weT("已卸载：{name}", { name: label || "" }) });
-        if (kind === "activate") {
-          // 两条收敛路径：① 广播皮肤中心自己监听的 `dsh-skin-applied`（立即就地切换）；
-          // ② 它另外每 2 秒轮询 /api/skin-center/v2/active（事件丢了也会在 2 秒内跟上）。
-          try {
-            window.dispatchEvent(new CustomEvent("dsh-skin-applied", { detail: { id: (payload && payload.id) || null } }));
-          } catch { /* 老环境没有 CustomEvent 也无所谓，②会兜住 */ }
-          setNote({
-            ok: true,
-            text: payload && payload.id
-              ? weT("已切换到：{name}", { name: label || "" })
-              : weT("已恢复官方默认外观"),
-          });
-        }
         await load(true);
       } else {
         const code = (r && r.error) || "failed";
