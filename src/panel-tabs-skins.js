@@ -308,6 +308,13 @@ function SkinsTabPanel() {
         : installed.map((s) => {
           const isActive = isActiveSkin(s.id);
           const busyThis = busy === "activate:" + s.id;
+          // 皮肤中心**没收录**这套（它有自己的 manifest 规则）⇒ 应用后它会回退到内置默认款，
+          // 用户看到的是"点哪套都不变"。这是实测症状（别人机器上"只剩鲸鱼娘"），所以这里
+          // 直接把原因与「应用」的禁用一起给出来，而不是让人一遍遍点。
+          const notListed = s.inCatalog === false;
+          const notListedWhy = notListed
+            ? weT("皮肤中心没有收录这套（它的 manifest 规则更严：id 必须等于目录名、必须 v2、name/nameEn/author/stylesheet 齐全）")
+            : "";
           return React.createElement("div", {
             key: s.id,
             style: isActive ? { ...SKIN_STYLE.card, borderColor: "rgba(120,220,150,0.75)" } : SKIN_STYLE.card,
@@ -315,7 +322,8 @@ function SkinsTabPanel() {
           React.createElement("div", { style: { ...SKIN_STYLE.title, color: s.accent || undefined } },
             (isActive ? weT("✓ ") : "") + (s.name || s.id)),
           React.createElement("div", { style: SKIN_STYLE.meta },
-            [s.version ? "v" + s.version : "", skinFmtBytes(s.bytes), s.hasHooks ? weT("含动效钩子") : ""]
+            [s.version ? "v" + s.version : "", skinFmtBytes(s.bytes), s.hasHooks ? weT("含动效钩子") : "",
+              notListed ? weT("皮肤中心未收录") : ""]
               .filter(Boolean).join(" · ")),
           React.createElement("div", { style: { display: "flex", gap: "6px", alignItems: "center" } },
             // 「应用」= 写皮肤中心的 active + 广播 `dsh-skin-applied`，就地切换（不刷新页面）。
@@ -323,8 +331,8 @@ function SkinsTabPanel() {
               ? React.createElement("span", { style: { ...SKIN_STYLE.badge, background: "rgba(60,160,90,0.55)" } }, weT("使用中"))
               : React.createElement("button", {
                 className: "we-picker__btn", type: "button",
-                disabled: Boolean(busy) || !canApply,
-                title: applyBlockedReason || undefined,
+                disabled: Boolean(busy) || !canApply || notListed,
+                title: notListed ? notListedWhy : (applyBlockedReason || undefined),
                 onClick: () => act("activate", { id: s.id }, s.name),
               }, busyThis ? weT("切换中…") : weT("应用")),
             React.createElement("button", {
