@@ -410,6 +410,13 @@ function applySelection(id, opts) {
       && typeof skinYieldActive === "function" && skinYieldActive()) {
     exitSkinYield("manual-pick", { skipRestore: true });
   }
+  // 「最后动作优先」的另一半：**用户选了壁纸** ⇒ 皮肤中心那边的 selection 也该清掉。
+  // 否则它的 active 一直留着上一套皮肤，页签读了它就显示「使用中」——可屏上其实是壁纸
+  //（它自己检测到 `body[data-we-wallpaper]` 就 withhold 了）。实测症状：壁纸在播、页签却标着
+  // "皮肤使用中"。fire-and-forget：写失败不影响这次壁纸应用（页签按读到的事实显示）。
+  if (id && opts && opts.fromManual) {
+    try { apiPostJson("/skins/activate", { id: "" }, { parse: "always" }).catch(() => {}); } catch { /* ignore */ }
+  }
   reportClientDiag("apply", "id=" + String(id || "").slice(0, 40));
   // 手动切换/清除/revalidate：取消进行中的轮换准备（staged/探测元素全部
   // 释放），并丢弃任何滞留的就绪元素。轮换提交（fromRotation）例外 ——

@@ -309,8 +309,15 @@ function SkinsTabPanel() {
 
   const installed = (state && state.installed) || [];
   const activeId = (state && state.active) || "";
+  // 「皮肤中心记着哪套」≠「屏上现在是哪套」：壁纸在台上时皮肤会 withhold 自己，
+  // 但它持久化的 active 不会自动清（我们 4.15.1 起在用户选壁纸时主动清一次）。
+  // 这台机器的旧状态（或清理失败）仍可能出现"壁纸在播、页签却标使用中"，所以这里先看
+  // 我们的壁纸标记，标了就不把 active 说成"使用中"，而是说"已让位"。
+  const wallpaperOn = (() => {
+    try { return Boolean(document && document.body && document.body.hasAttribute("data-we-wallpaper")); } catch { return false; }
+  })();
   /** 这个 id 是不是"正在用"的那套（两边都归一后比，站点 slug 可能带 skin- 前缀）。 */
-  const isActiveSkin = (id) => Boolean(activeId) && normSkinId(activeId) === normSkinId(id);
+  const isActiveSkin = (id) => Boolean(activeId) && !wallpaperOn && normSkinId(activeId) === normSkinId(id);
 
   /**
    * 站点条目 → 本机已装皮肤的真实 id（皮肤中心只认这个）。
@@ -331,7 +338,19 @@ function SkinsTabPanel() {
   if (state) {
     children.push(React.createElement("div", { key: "installed-head", className: "we-picker__hint" },
       weT("本机已装（{n}）", { n: installed.length }),
-      activeId ? weT(" · 使用中：{name}", { name: activeId }) : ""));
+      // 壁纸在台上时不说"使用中"：皮肤已让位，说了就是骗人（实测：壁纸在播却标皮肤使用中）
+      activeId
+        ? (wallpaperOn
+          ? weT(" · 皮肤已让位（壁纸在使用中）：{name}", { name: activeId })
+          : weT(" · 使用中：{name}", { name: activeId }))
+        : ""));
+    if (activeId && wallpaperOn) {
+      children.push(React.createElement("div", {
+        key: "yield-note",
+        className: "we-picker__hint",
+        style: { margin: "0 0 6px", opacity: 0.8 },
+      }, weT("当前是壁纸在台上，皮肤中心记着的这套没有在画。点「应用」会让皮肤上台（壁纸自动让位）。")));
+    }
     // 「恢复默认」：清空选择、回到官方外观。只有确实有皮肤在用的时候才有意义。
     if (activeId) {
       children.push(React.createElement("button", {
