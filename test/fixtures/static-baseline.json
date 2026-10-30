@@ -8,7 +8,7 @@
       "no-unmodified-loop-condition": 2,
       "no-unused-expressions": 2,
       "no-unused-vars": 14,
-      "no-useless-assignment": 19,
+      "no-useless-assignment": 18,
       "no-void": 4,
       "object-shorthand": 24,
       "prefer-const": 2,

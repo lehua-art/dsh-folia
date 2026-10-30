@@ -392,6 +392,17 @@ function SkinsTabPanel() {
             [s.version ? "v" + s.version : "", skinFmtBytes(s.bytes), s.hasHooks ? weT("含动效钩子") : "",
               notListed ? weT("皮肤中心未收录") : ""]
               .filter(Boolean).join(" · ")),
+          // 未收录时把**原因直接印在卡片上**（不只放在 title 里）：实测用户看不到悬浮提示，
+          // 只能看到一句"未收录"，于是只能来问"为什么"。
+          notListed
+            ? React.createElement("div", {
+              style: { fontSize: "11px", lineHeight: "1.5", color: "#ffd08a", opacity: 0.95, margin: "2px 0 4px" },
+            }, weT("原因：{why}", {
+              why: (Array.isArray(s.catalogWarnings) && s.catalogWarnings.length)
+                ? s.catalogWarnings.slice(0, 2).join("；")
+                : weT("皮肤中心没有给出原因（常见于它还没重扫，或它的用户皮肤目录与我们的不同）"),
+            }))
+            : null,
           React.createElement("div", { style: { display: "flex", gap: "6px", alignItems: "center" } },
             // 「应用」= 写皮肤中心的 active + 广播 `dsh-skin-applied`，就地切换（不刷新页面）。
             isActive
