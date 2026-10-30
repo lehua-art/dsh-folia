@@ -311,9 +311,11 @@ function SkinsTabPanel() {
           // 皮肤中心**没收录**这套（它有自己的 manifest 规则）⇒ 应用后它会回退到内置默认款，
           // 用户看到的是"点哪套都不变"。这是实测症状（别人机器上"只剩鲸鱼娘"），所以这里
           // 直接把原因与「应用」的禁用一起给出来，而不是让人一遍遍点。
+          // ⚠️ 只有 `=== false` 才下结论：`null` 表示"问不到它的 catalog"（未知），
+          // 未知绝不能禁用按钮 —— 那会变成"替我猜错了就不让我点"。
           const notListed = s.inCatalog === false;
           const notListedWhy = notListed
-            ? weT("皮肤中心没有收录这套（它的 manifest 规则更严：id 必须等于目录名、必须 v2、name/nameEn/author/stylesheet 齐全）")
+            ? weT("皮肤中心仍未收录这套（它按 manifest 规则筛选：id 必须等于目录名、必须 v2、name/nameEn/author/stylesheet 齐全）。点「刷新」会强制它对账一次；若仍显示这条，说明确实被它拒收")
             : "";
           return React.createElement("div", {
             key: s.id,
