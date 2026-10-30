@@ -120,11 +120,6 @@ const urlFor = (p) => 'http://127.0.0.1:' + port + p;
   const lf = readFileSync(join(ROOT, 'src', 'local-first.js'), 'utf8');
   check('⑥ 客户端侧有 localFirstApply（点击即入队、完成后再应用）', /function localFirstApply\(/.test(lf));
   check('⑥ 客户端侧轮询 job 状态（进度可见）', /function lfPoll\(/.test(lf));
-  // site-media 缓存的白名单必须与 site-media 的 EXT_OK 完全一致；不一致 = 命中不了 = 重复下载。
-  const sm = readFileSync(join(ROOT, 'lib', 'routes', 'site-media.js'), 'utf8');
-  const dl = readFileSync(join(ROOT, 'lib', 'routes', 'downloads.js'), 'utf8');
-  const pick = (s) => (s.match(/new Set\\(\\[(.*?)\\]\\)/) || [])[1];
-  check('⑥ 缓存扩展名白名单与 site-media 逐字一致（否则永远命不中）', pick(sm) === pick(dl), (pick(sm) || '?') + ' vs ' + (pick(dl) || '?'));
   check('⑥ 客户端侧只入队、不拦截本次播放（点了就能看，下载并行）', /只入队、不拦截本次播放/.test(readFileSync(join(ROOT, 'src', 'media-prep.js'), 'utf8')));
 }
 

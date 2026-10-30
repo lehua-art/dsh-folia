@@ -5,7 +5,7 @@
 > 口径：只统计守卫**代码**里真正碰到的模块（先剥注释），并区分"直接读源文件"与"隔着产物 `lib/client.js`"。
 > 写法：字面量路径 / `join(...)` 拼接 / 唯一 basename / 产物配方 / **前缀族读法** `scopeFiles|scopeText(<前缀>)` / **经共享族助手读**（`import { panelText } from './tools/src-scope.mjs'` + 真调用；族口径封在那个库里，见 DEV-GUIDE §4.6「同时是守卫的库」）/ **真源定位读**（`locate('符号')` / `locateFile('文件名')`，`test/tools/source-locator.mjs`：符号唯一声明在哪就是读了哪个模块）。
 
-模块面 190 个 · 守卫 119 个
+模块面 190 个 · 守卫 118 个
 
 ## 守卫 → 模块
 
@@ -43,7 +43,7 @@
 | `verify-contracts.mjs` | `lib/components/fonts/src/fontset-editor.js` `lib/host-boot.js` `lib/index.js` `lib/kernel/host-kernel.js` `lib/media/media-dirs.js` `lib/settings-schema.js` `src/api-client.js` `src/client.js` `src/fontset-store.js` `src/panel-tabs-advanced.js` `src/panel-tabs-appearance.js` `src/panel-tabs-boot.js` `src/panel-tabs-effects.js` `src/panel-tabs-mascot.js` `src/panel-tabs-pets.js` `src/panel-tabs-skins.js` `src/panel-tabs-wallpaper.js` `src/panel-tabs.js` |  |
 | `verify-dead-declarations.mjs` | — |  |
 | `verify-deployment.mjs` | — |  |
-| `verify-downloads.mjs` | `lib/download-queue.js` `lib/routes/downloads.js` `lib/routes/site-media.js` `src/local-first.js` `src/media-prep.js` |  |
+| `verify-downloads.mjs` | `lib/download-queue.js` `lib/routes/downloads.js` `src/local-first.js` `src/media-prep.js` |  |
 | `verify-eol.mjs` | — |  |
 | `verify-extra-glass.mjs` | `lib/settings-schema.js` `src/client.js` `src/effects.js` `src/glass-extra.js` `src/glass-panel.js` `src/quick-panel.js` | ✅ |
 | `verify-features.mjs` | `lib/features.js` `lib/routes/boot.js` `lib/routes/inventory.js` `lib/routes/pets.js` `src/client.js` `src/features.js` `src/pet-layer.js` `src/quick-panel.js` | ✅ |
@@ -67,7 +67,6 @@
 | `verify-media-probe.mjs` | `lib/media/mp4-probe.js` |  |
 | `verify-module-layout.mjs` | `lib/index.js` `lib/settings-schema.js` `src/client.js` | ✅ |
 | `verify-mp4-vfs.mjs` | `lib/faststart.js` `lib/host-boot.js` `lib/kernel/host-session.js` `lib/mp4-vfs.js` |  |
-| `verify-no-local-paths.mjs` | `lib/routes/downloads.js` |  |
 | `verify-notice-routing.mjs` | `lib/index.js` `src/client.js` |  |
 | `verify-occlusion-client.mjs` | `src/api-client.js` `src/live-layer-diag.js` `src/live-layer-gate.js` `src/live-layer-pointer.js` `src/live-layer-underlay.js` `src/live-layer-watch.js` `src/live-layer.js` `src/occlusion.js` | ✅ |
 | `verify-occlusion-hub.mjs` | `lib/index.js` `lib/json-response.js` `lib/occlusion/index.js` `lib/occlusion/rects.js` `lib/occlusion/x11.js` `lib/routes/occlusion.js` |  |
@@ -212,7 +211,7 @@
 | `lib/routes/boot.js` | 1 | `verify-features` |
 | `lib/routes/cache-dir.js` | 1 | `verify-cache-dir` |
 | `lib/routes/diag.js` | 2 | `verify-logging` `verify-scene-live` |
-| `lib/routes/downloads.js` | 2 | `verify-downloads` `verify-no-local-paths` |
+| `lib/routes/downloads.js` | 1 | `verify-downloads` |
 | `lib/routes/inventory.js` | 4 | `verify-avatar-interval-and-rotation` `verify-component-visibility` `verify-features` `verify-route-index` |
 | `lib/routes/live-frame.js` | 1 | `verify-scene` |
 | `lib/routes/media-bytes.js` | 4 | `verify-avatar-interval-and-rotation` `verify-route-index` `verify-scene-live` `verify-scene` |
@@ -226,7 +225,7 @@
 | `lib/routes/scene-media.js` | 1 | `verify-scene` |
 | `lib/routes/scene-serve.js` | 2 | `verify-logging` `verify-scene-live` |
 | `lib/routes/settings.js` | 2 | `verify-scene` `verify-settings-namespaces` |
-| `lib/routes/site-media.js` | 2 | `verify-downloads` `verify-site-media` |
+| `lib/routes/site-media.js` | 1 | `verify-site-media` |
 | `lib/routes/site-thumb.js` | 0 | **（无）** |
 | `lib/routes/skins.js` | 0 | **（无）** |
 | `lib/routes/upload.js` | 2 | `verify-body-caps` `verify-package-files` |
