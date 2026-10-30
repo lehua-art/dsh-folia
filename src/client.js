@@ -488,9 +488,13 @@ function exitSkinYield(reason, opts) {
  * 才回收）。所以只认"过一拍还在"的出现：宽限结束时 DOM 仍带标记、且我方确实有要退的东西
  * （壁纸在台 ⇒ 清层；或**无壁纸**且设置已就位 ⇒ 只剩玻璃要让）⇒ 才是动作。
  * ⚠️ 450ms 必须显著短于对方的 1500ms 宽限，否则真实动作会在我们确认前被它回收。
+ *
+ * `opts.forced`：**标记值发生了变化**（换了一套皮肤）—— 那是用户刚做的一次显式动作，
+ * 不存在"启动上妆"的竞态可言，所以连"我方是否有层"这条腿都不用再问（见 syncSkinYield）。
  */
-function scheduleSkinYieldEnter(reason) {
+function scheduleSkinYieldEnter(reason, opts) {
   if (skinYieldEnterTimer !== null || skinYielded) return;
+  const forced = !!(opts && opts.forced);
   const fire = () => {
     skinYieldEnterTimer = null;
     try {
@@ -502,8 +506,11 @@ function scheduleSkinYieldEnter(reason) {
       //   · 无壁纸腿：没有层可清、也没有竞态可防，但玻璃整族仍盖在皮肤上（玻璃与壁纸
       //     正交，data-we-glass-page 恒挂）⇒ 这条腿也要进，否则无壁纸用户中途试穿 /
       //     应用皮肤永远摘不掉玻璃（安装期的 adopt 只管启动那一拍）。
-      const wallMarkerOn = !!(document.body && document.body.hasAttribute("data-we-wallpaper"));
-      if (!wallMarkerOn && (selection.id || !selection.loaded)) return;
+      //   · forced（换皮肤 = 用户刚动作）：跳过启动竞态那套判据，直接让路。
+      if (!forced) {
+        const wallMarkerOn = !!(document.body && document.body.hasAttribute("data-we-wallpaper"));
+        if (!wallMarkerOn && (selection.id || !selection.loaded)) return;
+      }
       enterSkinYield(reason + "/dom");
     } catch { /* ignore */ }
   };
@@ -547,10 +554,24 @@ function scheduleSkinYieldExit(reason) {
   } catch { fire(); }
 }
 
-/** 合议当前状态：皮肤"要求上台"且我方确实在台上 ⇒ 退场；持续不在台上则排定复位。 */
+/** 上次看到的 `data-dsh-skin` 值（null = 还没看过；用于区分"启动上妆"与"用户换了一套"）。 */
+let skinAttrSeen = null;
+
+/**
+ * 合议当前状态：皮肤"要求上台"且我方确实在台上 ⇒ 退场；持续不在台上则排定复位。
+ *
+ * **没有优先级，只有"谁最后动的"**（用户明确要求）：
+ *   · 皮肤标记**值发生变化** = 用户刚换/刚应用了一套皮肤 ⇒ 我方立刻让路（哪怕壁纸正在画）；
+ *   · 壁纸被选中 = `media-prep` 的钩子会 `exitSkinYield` ⇒ 皮肤侧 withhold、壁纸接管；
+ *   · 启动那一拍（值没变）= 不改判：我方有壁纸就让壁纸画（皮肤自己 withhold），
+ *     我方无壁纸且在皮肤上 ⇒ 认领让路态（见 installSkinInterop 的 adoptOnLoaded）。
+ */
 function syncSkinYield(reason) {
   try {
-    if (document.documentElement.hasAttribute("data-dsh-skin")) {
+    const attr = document.documentElement.getAttribute("data-dsh-skin");
+    const changed = attr !== skinAttrSeen;
+    skinAttrSeen = attr;
+    if (attr) {
       cancelSkinYieldExit();
       // ⚠️ 「我方在台上」有两条腿：壁纸在台（标记在场 ⇒ 有层要让）与无壁纸（设置已就位
       //    且 id 为空 ⇒ 只剩玻璃要让）。启动竞态只长在壁纸腿上——对方运行时会先于我们的
@@ -559,7 +580,8 @@ function syncSkinYield(reason) {
       //    动作会清掉壁纸（实测报障：有壁纸时刷新掉壁纸）。正确的收场是：让我们的层建起来
       //    → 标记挂上 → 对方 watcher 自行 withhold 撤掉皮肤。无壁纸腿没有竞态（没有层可清），
       //    随宽限进即可。不是立即退场：先排定一次"过一拍再确认"（见 scheduleSkinYieldEnter）。
-      scheduleSkinYieldEnter(reason);
+      //    但 `changed`（换了一套皮肤）是用户的显式动作，不走那套竞态判据（forced）。
+      scheduleSkinYieldEnter(reason, { forced: changed });
       return;
     }
     cancelSkinYieldEnter();
@@ -570,6 +592,9 @@ function syncSkinYield(reason) {
 /** 装上互操作（单腿：DOM 观察）；返回幂等 teardown。 */
 function installSkinInterop() {
   if (typeof document === "undefined" || !document.documentElement) return () => {};
+  // 启动快照：把当前标记记为"已看过"，这样**启动那一拍不会被当成一次换皮肤动作**
+  // （否则每次刷新都会误判成用户刚应用皮肤，进而清掉壁纸）。
+  try { skinAttrSeen = document.documentElement.getAttribute("data-dsh-skin"); } catch { skinAttrSeen = null; }
   let observer = null;
   try {
     observer = new MutationObserver(() => syncSkinYield("dom"));
@@ -579,7 +604,9 @@ function installSkinInterop() {
   //   · 皮肤在台上（文档交付时 tap 已画）+ 我方**没有**选中的壁纸 ⇒ 本来就该在让路态
   //     （玻璃退场）——认领，不清层；记忆从**盘上落的那份**拿（enter 写的
   //     skinYieldRestoreId / skinYieldRestoreRotation），没落过盘才退回空记忆；
-  //   · 皮肤在台上 + 我方有选中的壁纸 ⇒ 壁纸赢（对方的 withhold 会处理皮肤），不动；
+  //   · 皮肤在台上 + 我方有选中的壁纸 ⇒ **启动不改判**：保持现状（壁纸画、皮肤自己 withhold）。
+  //     这不是"优先级"，而是启动那一拍没有"谁最后动"的信息；运行期任一方动作都会立刻改判
+  //     （换皮肤 ⇒ syncSkinYield 的 forced 分支；选壁纸 ⇒ media-prep 的 exitSkinYield）。
   //   · 皮肤**已不在**台上 + 我方没有壁纸 + 盘上留着让路记忆 ⇒ 启动复位：按记忆放回
   //     （应用关闭期间皮肤被移除 / 卸载的那条路 —— 没有它，记忆落了盘也无人消费）。
   // ⚠️ 认领必须等**宿主设置到位**（`selection.loaded`）：本地缓存可能过期（本窗口缓存空、

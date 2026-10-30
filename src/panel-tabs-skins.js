@@ -121,6 +121,15 @@ function SkinsTabPanel() {
           });
           return;
         }
+        // 关键：让**皮肤赢**。皮肤中心检测到 `body[data-we-wallpaper]` 时会**主动停画**
+        // （它的 withhold 合约：壁纸在台时它不上台），所以"写成功但画面不变"完全合理 ——
+        // 用户在这个页签点「应用」，意图就是让皮肤接管外观，因此这里主动进入「皮肤让路」态：
+        // 清掉我们的壁纸层 + 摘下玻璃门控（client.js 里既有的 enterSkinYield，记忆会落盘，
+        // 点「恢复默认外观」时按记忆放回壁纸）。
+        try {
+          if (wantId && typeof enterSkinYield === "function") enterSkinYield("folia-tab-apply");
+          if (!wantId && typeof exitSkinYield === "function") exitSkinYield("folia-tab-clear");
+        } catch { /* 让路是增强：失败也不影响皮肤中心的写入 */ }
         // 两条收敛路径：① 广播皮肤中心自己监听的 `dsh-skin-applied`（立即就地切换）；
         // ② 它另外每 2 秒轮询 /api/skin-center/v2/active（事件丢了也会在 2 秒内跟上）。
         try {
@@ -128,7 +137,9 @@ function SkinsTabPanel() {
         } catch { /* 老环境没有 CustomEvent 也无所谓，②会兜住 */ }
         setNote({
           ok: true,
-          text: wantId ? weT("已切换到：{name}", { name: label || "" }) : weT("已恢复官方默认外观"),
+          text: wantId
+            ? weT("已切换到：{name}（本插件的壁纸与玻璃已让位）", { name: label || "" })
+            : weT("已恢复官方默认外观（壁纸已按记忆放回）"),
         });
         await load(true);
         return;
