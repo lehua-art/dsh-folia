@@ -144,6 +144,12 @@ function check(name, cond, detail) { results.push({ name, ok: Boolean(cond), det
   const layer = makeLayer();
   layer.style.left = '400px';
   layer.style.top = '300px';
+  // ⚠️ 这条判据必须**确定性**：调度器按权重随机挑动作（wave3/jump2/wait2/walkRight3/walkLeft3，
+  //    合计 13），跑动行合计权重只有 6/13 —— 而 19 秒里大约只排 2~3 个动作，于是"没见过跑动"
+  //    的概率约 15%（实测偶发红过一次）。把 Math.random 钉成 0.6 ⇒ 累计权重 7.8 落在 walkRight，
+  //    间隔也固定成 5000+0.6*6000=8600ms，跑动窗口稳定出现。跑完恢复原函数，不影响其它用例。
+  const realRandom = Math.random;
+  Math.random = () => 0.6;
   const inst = createPetLayer(layer, makeCanvas(), PET, 1, { enabled: false });
   inst.scheduleSoon();
   // 先等到它真的进入跑动行（1=右跑 / 2=左跑），再验证位移 —— 随机动作里只有走动会改位置。
@@ -152,6 +158,7 @@ function check(name, cond, detail) { results.push({ name, ok: Boolean(cond), det
     tickFrames(3);
     if (inst.row === 1 || inst.row === 2) sawRun = true;
   }
+  Math.random = realRandom;
   check('调度器会切到跑动行', sawRun, 'row=' + inst.row);
   const before = String(layer.style.left);
   tickFrames(6);

@@ -467,6 +467,27 @@ const WE_I18N_EN_PANEL = {
   "…": "…",
   // 开机动画：已开启但无选片时的提示（4.8.2）
   "已开启，但还没有选片 —— 下载一条后点「使用」": "Enabled, but no clip is selected yet — download one, then press Use",
+
+  // ── 助手皮肤页签（4.10.0）────────────────────────────────────────────────
+  "助手皮肤": "Assistant skins",
+  "🎨 助手皮肤": "🎨 Assistant skins",
+  "皮肤包安装到皮肤中心目录；装完到「设置 → 皮肤中心」里点选即可启用。皮肤中心与本插件读同一个目录，无需重启。": "Skin packs are installed into the skin centre's directory; pick one in Settings → Skin centre to enable it. It reads the same folder, so no restart is needed.",
+  "本机已装（{n}）": "Installed ({n})",
+  "站点皮肤（{n}）": "Skins on the site ({n})",
+  "还没有安装任何皮肤 —— 从下面的站点清单里挑一个。": "No skins installed yet — pick one from the site list below.",
+  "站点上还没有皮肤。": "No skins on the site yet.",
+  "含动效钩子": "animated hooks",
+  "已安装": "Installed",
+  "已安装过：{name}": "Already installed: {name}",
+  "已安装：{name} —— 到「设置 → 皮肤中心」点它即可启用": "Installed: {name} — pick it in Settings → Skin centre to enable",
+  "卸载中…": "Uninstalling…",
+  "动态": "Animated",
+  "这个包里没有 skin.json，不是皮肤包": "No skin.json in this archive — not a skin pack",
+  "包里有非法路径（已整包拒绝）": "The archive contains an unsafe path (rejected entirely)",
+  "包太大了（上限 200 MB）": "Archive is too large (200 MB limit)",
+  "下载地址不在白名单里": "The download host is not allow-listed",
+  "站点被关闭了（DSH_FOLIA_SITE=off）": "The site is disabled (DSH_FOLIA_SITE=off)",
+  "这个文件不是 zip": "This file is not a zip",
 };
 
 export { WE_I18N_EN_PANEL };

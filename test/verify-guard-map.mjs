@@ -86,6 +86,7 @@ const ZERO_COVERAGE_WHY = {
   // ── 我们自己的新模块：覆盖来自功能级测试与守卫（按口径算零覆盖）──
   [M('lib', 'boot', 'index.js')]: '开机注入与本地片段目录：行为由 test/boot-http.mjs 以真 http.Server 覆盖（list/download/select/Range/remove/legacy 迁移共 37 条），注入脚本由 test/feature-manifest 侧的入口对账覆盖；本工具只认字面量路径 ⇒ 按口径算零覆盖',
   [M('lib', 'routes', 'modules.js')]: '站点模块索引（开机动画候选的兜底来源）：由 test/boot-http.mjs 的真实下载链路间接驱动（候选解析走它），本工具只认字面量路径 ⇒ 按口径算零覆盖',
+  [M('lib', 'routes', 'skins.js')]: '助手皮肤装/卸路由（站点 zip → $DSH_HOME/skins）：由 test/skins-http.mjs 以真 http.Server + 真 zip 覆盖 26 条（清单合并、幂等不重下、路径穿越整包拒绝且不残留、非 zip、缺 skin.json、host 白名单、exe 跳过、卸载边界），本工具只认字面量路径 ⇒ 按口径算零覆盖',
   [M('lib', 'routes', 'site-thumb.js')]: '站点图片缩略图代理：行为由 verify-media-bytes 族与手工端到端验证（首拉 524KB、次拉 4ms 命中缓存）覆盖，路径穿越由 /media 白名单判据覆盖；本工具只认字面量路径 ⇒ 按口径算零覆盖',
 
   // ── 组件行宿主入口（合并后从 packages/* 搬到 lib/components/*）──

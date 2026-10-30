@@ -25,6 +25,8 @@ const WE_FEATURE_TABS = [
   { id: "playback", get label() { return weT("播放"); } },
   // 桌宠是"桌面上多出来的一只东西"，与壁纸/开机动画并列。
   { id: "pets", get label() { return weT("桌宠"); } },
+  // 助手皮肤：装的是皮肤中心的皮肤包。我们只管装/卸，渲染与启用归皮肤中心。
+  { id: "skins", get label() { return weT("助手皮肤"); } },
 ];
 
 /**
@@ -34,6 +36,7 @@ const WE_FEATURE_TABS = [
 const WE_FEATURE_PANELS = {
   boot: BootTabPanel,
   pets: PetsTabPanel,
+  skins: SkinsTabPanel,
 };
 
 /**

@@ -403,6 +403,11 @@ const INLINE_MODULES = [
     markers: ['function mountPetLayer()', 'function createPetLayer(', 'const PET_ROW = '],
   },
   {
+    file: 'src/panel-tabs-skins.js',
+    why: '「助手皮肤」页签：站点皮肤清单/安装/卸载 — 渲染由皮肤中心接管，我们只把 zip 解到 $DSH_HOME/skins',
+    markers: ['function SkinsTabPanel()', 'const SKIN_STYLE = '],
+  },
+  {
     file: 'src/features.js',
     why: '客户端功能注册表：页签条 / 整区面板 / 常驻挂载层。装配点（quick-panel、client.js）只查表，不写功能名',
     markers: ['const WE_FEATURE_TABS = [', 'const WE_FEATURE_PANELS = {', 'const WE_FEATURE_MOUNTS = ['],

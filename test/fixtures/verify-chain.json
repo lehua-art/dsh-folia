@@ -805,6 +805,14 @@
         {
           "kind": "guard",
           "npm": null,
+          "file": "test/skins-http.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
           "file": "test/pets-layer.mjs",
           "args": [],
           "tier": "hard",
@@ -1723,6 +1731,14 @@
           "kind": "guard",
           "npm": null,
           "file": "test/pets-http.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/skins-http.mjs",
           "args": [],
           "tier": "hard",
           "probe": false

@@ -277,6 +277,8 @@ const VERIFY_STEPS = [
   //    它们是真 http.Server + 假 DOM，不依赖外部进程或网络，适合进链。
   step('test/boot-http.mjs'),
   step('test/pets-http.mjs'),
+  // ⑳ 助手皮肤：装/卸/幂等/路径穿越/白名单（真 http + 真 zip）。
+  step('test/skins-http.mjs'),
   step('test/pets-layer.mjs'),
 ];
 
