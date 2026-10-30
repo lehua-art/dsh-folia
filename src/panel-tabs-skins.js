@@ -48,6 +48,9 @@ function normSkinId(raw) {
 function SkinsTabPanel() {
   const [state, setState] = React.useState(null);
   const [busy, setBusy] = React.useState("");
+  // 给"静默对账"用的只读镜像：定时器/可见性回调里不能读闭包里的旧 `busy`（会一直看到 ""），
+  // 用一个 ref 跟住最新值，操作进行中就不打扰用户。
+  const busyRef = React.useRef("");
   const [note, setNote] = React.useState(null);
 
   const load = React.useCallback(async (force) => {
@@ -95,11 +98,33 @@ function SkinsTabPanel() {
 
   React.useEffect(() => { load(false); }, [load]);
 
+  // 与外部改动**保持同步**：皮肤可能在皮肤中心那边被删/装，也可能在另一个窗口里操作。
+  // 之前只在挂载时拉一次 ⇒ 那边删了，这边还列着（点了才失败，看起来像"没同步"）。
+  // 三条腿都只做"重拉一次列表"，不做别的：
+  //   ① 页签重新可见（switch 回来）② 窗口重新获得焦点 ③ 每 20 秒的轻量对账
+  // 轻量对账只在**没有正在进行的操作**时跑，避免把用户刚点的"安装中…"状态冲掉。
+  React.useEffect(() => {
+    if (typeof document === "undefined" || typeof window === "undefined") return undefined;
+    let timer = null;
+    const refreshQuietly = () => { try { if (!busyRef.current) load(false); } catch { /* ignore */ } };
+    const onVisible = () => { try { if (document.visibilityState === "visible") refreshQuietly(); } catch { /* ignore */ } };
+    try { document.addEventListener("visibilitychange", onVisible); } catch { /* ignore */ }
+    try { window.addEventListener("focus", refreshQuietly); } catch { /* ignore */ }
+    try { timer = window.setInterval(refreshQuietly, 20000); } catch { timer = null; }
+    return () => {
+      try { document.removeEventListener("visibilitychange", onVisible); } catch { /* ignore */ }
+      try { window.removeEventListener("focus", refreshQuietly); } catch { /* ignore */ }
+      if (timer !== null) { try { window.clearInterval(timer); } catch { /* ignore */ } }
+    };
+  }, [load]);
+
   const act = async (kind, payload, label) => {
     // 结构性操作才锁整块 UI；`activate` 是幂等的、而且要让人能连点换皮肤，所以不锁。
     const structural = kind === "install" || kind === "remove";
-    if (structural) setBusy(kind + ":" + ((payload && payload.id) || ""));
-    if (kind === "activate") setBusy("activate:" + ((payload && payload.id) || ""));
+    const busyKey = structural
+      ? kind + ":" + ((payload && payload.id) || "")
+      : (kind === "activate" ? "activate:" + ((payload && payload.id) || "") : "");
+    if (busyKey) { setBusy(busyKey); busyRef.current = busyKey; }
     setNote(null);
     try {
       if (kind === "activate") {
@@ -193,6 +218,7 @@ function SkinsTabPanel() {
       setNote({ ok: false, text: weT("请求失败：{msg}", { msg: (e && e.message) || weT("网络错误") }) });
     } finally {
       setBusy("");
+      busyRef.current = "";
     }
   };
 
