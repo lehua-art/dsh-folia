@@ -493,7 +493,14 @@ function applySelection(id, opts) {
     return;
   }
   const savedVariant = Number(selection.frameVariants && selection.frameVariants[String(w.id)]) || 0;
-  selection.url = w.type === "scene" ? frameUrlWithVariant(w.frameUrl, savedVariant) : w.media;
+  // 站点条目带 `mediaProxy`（宿主缓存代理，失败一律 302 回原 URL）⇒ 优先用它播放：
+  // 首次边下边播并落盘，之后同一张直接读磁盘，切换不再等网络。没有代理就直连 `w.media`。
+  const playableSrc = w.type === "scene"
+    ? frameUrlWithVariant(w.frameUrl, savedVariant)
+    : (w.mediaProxy || w.media);
+  selection.url = playableSrc;
+  // `media` 仍保留原始站点地址：下载 / 兜底 / 诊断用它（不经过我们的代理）。
+  selection.originUrl = w.media || null;
   // 宿主 inventory 权威标记：已有自定义画面时同步进本地记忆（换机/清配置后恢复）。
   if (w.hasCustomFrame) {
     const cf = Object.assign({}, selection.customFrames || {});

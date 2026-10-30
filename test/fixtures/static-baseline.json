@@ -1,9 +1,28 @@
 {
   "eslint": {
-    "filesLinted": 225,
-    "byRule": {}
+    "filesLinted": 363,
+    "byRule": {
+      "no-dupe-keys": 3,
+      "no-promise-executor-return": 10,
+      "no-undef": 12,
+      "no-unmodified-loop-condition": 2,
+      "no-unused-expressions": 2,
+      "no-unused-vars": 15,
+      "no-useless-assignment": 20,
+      "no-void": 4,
+      "object-shorthand": 24,
+      "prefer-const": 2,
+      "require-atomic-updates": 20
+    }
   },
   "tsc": {
-    "byCode": {}
+    "byCode": {
+      "TS2304": 401,
+      "TS2339": 172,
+      "TS2349": 1,
+      "TS2552": 41,
+      "TS2739": 2,
+      "TS2810": 2
+    }
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "dsh-folia",
-  "version": "4.13.1",
+  "version": "4.14.0",
   "description": "Folia 壁纸引擎：把本机 Wallpaper Engine 壁纸搬进 DSH 界面（场景实时渲染 / 视频 / 网页），内置液态玻璃与 Folia 吉祥物，并可从自建站点拉取壁纸。单包形态（组件已合并）。",
   "type": "module",
   "engines": {

@@ -5,7 +5,7 @@
 > 口径：只统计守卫**代码**里真正碰到的模块（先剥注释），并区分"直接读源文件"与"隔着产物 `lib/client.js`"。
 > 写法：字面量路径 / `join(...)` 拼接 / 唯一 basename / 产物配方 / **前缀族读法** `scopeFiles|scopeText(<前缀>)` / **经共享族助手读**（`import { panelText } from './tools/src-scope.mjs'` + 真调用；族口径封在那个库里，见 DEV-GUIDE §4.6「同时是守卫的库」）/ **真源定位读**（`locate('符号')` / `locateFile('文件名')`，`test/tools/source-locator.mjs`：符号唯一声明在哪就是读了哪个模块）。
 
-模块面 186 个 · 守卫 116 个
+模块面 187 个 · 守卫 117 个
 
 ## 守卫 → 模块
 
@@ -106,6 +106,7 @@
 | `verify-settings-namespaces.mjs` | `lib/index.js` `lib/kernel/data-dir.js` `lib/routes/settings.js` `lib/settings-schema.js` `src/persistence.js` |  |
 | `verify-settings-ownership.mjs` | `lib/settings-schema.js` `lib/settings/ownership.js` |  |
 | `verify-settings-schema-exports.mjs` | `lib/index.js` `lib/subpackage-boot.js` | ✅ |
+| `verify-site-media.mjs` | `lib/routes/site-media.js` |  |
 | `verify-skin-center-bundle.mjs` | `src/features.js` `src/skin-compat.js` |  |
 | `verify-softrender.mjs` | — | ✅ |
 | `verify-static.mjs` | — |  |
@@ -221,6 +222,7 @@
 | `lib/routes/scene-media.js` | 1 | `verify-scene` |
 | `lib/routes/scene-serve.js` | 2 | `verify-logging` `verify-scene-live` |
 | `lib/routes/settings.js` | 2 | `verify-scene` `verify-settings-namespaces` |
+| `lib/routes/site-media.js` | 1 | `verify-site-media` |
 | `lib/routes/site-thumb.js` | 0 | **（无）** |
 | `lib/routes/skins.js` | 0 | **（无）** |
 | `lib/routes/upload.js` | 2 | `verify-body-caps` `verify-package-files` |

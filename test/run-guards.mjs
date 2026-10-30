@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * run-guards.mjs —— 守卫链的**显式有序清单 + 执行器**（`package.json` 的四条 scripts 都指向它）。
  *
@@ -282,6 +282,9 @@ const VERIFY_STEPS = [
   step('test/pets-http.mjs'),
   // ⑳ 助手皮肤：装/卸/幂等/路径穿越/白名单（真 http + 真 zip）。
   step('test/skins-http.mjs'),
+  // ㉑ 站点远程媒体的**本机缓存代理**：白名单 / 命中 / 302 降级 / 只读盘 / 上限淘汰 / 并发去重。
+  //    这条路由是"给别人用的加速器"，判据必须覆盖"任何一环坏掉都还能播"。
+  step('test/verify-site-media.mjs'),
   step('test/pets-layer.mjs'),
 ];
 
