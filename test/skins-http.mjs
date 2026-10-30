@@ -148,6 +148,9 @@ function call(route, { method = 'GET', body = null, url = null } = {}) {
   const other = siteItems.find((x) => x.id === 'other-skin');
   check('没装的 installed=false', Boolean(other && other.installed === false));
   check('本机已装清单含 demo-skin', ((r.json && r.json.installed) || []).some((x) => x.id === 'demo-skin'));
+  // 皮肤中心在线探测：本用例里请求没有真实 Host（假站点不是 DSH 服务器），所以只断言"三态之一"，
+  // 不假装知道答案 —— 判据的价值是"这个字段一定存在且取值受控"，而不是在这里伪造一个 200。
+  check('响应里带 skinCenter 三态', ['present', 'absent', 'unknown'].includes(r.json.skinCenter), 'skinCenter=' + r.json.skinCenter);
 }
 
 /* ② 安装（幂等分支：demo-skin 已存在 ⇒ 不该下载） */

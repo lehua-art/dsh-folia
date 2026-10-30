@@ -106,11 +106,33 @@ function SkinsTabPanel() {
     }, weT("刷新")),
   ));
 
-  children.push(React.createElement("div", {
-    key: "hint",
-    className: "we-picker__hint",
-    style: { margin: "6px 0 4px", opacity: 0.8 },
-  }, weT("皮肤包安装到皮肤中心目录；装完到「设置 → 皮肤中心」里点选即可启用。皮肤中心与本插件读同一个目录，无需重启。")));
+  // 皮肤中心在不在，决定这段提示说什么：
+  //   在   → "装完去皮肤中心点它"（本页签只负责落盘）
+  //   不在 → 明说它是个**独立插件**（不在 dsh-web-all 里），给一条可复制的安装命令
+  //   unknown（探测失败）→ 保守地按"在"讲，不吓唬用户
+  const skinCenter = (state && state.skinCenter) || "unknown";
+  if (skinCenter === "absent") {
+    children.push(React.createElement("div", {
+      key: "hint-absent",
+      className: "we-picker__hint",
+      style: { margin: "6px 0 4px", color: "#ffd08a", lineHeight: "1.6" },
+    }, weT("皮肤中心没装：它是**独立插件** @linxin666/dsh-client-ui-skin-center（不在 dsh-web-all 里，那个只是聚合包）。装它才能启用皮肤：")));
+    children.push(React.createElement("div", { key: "cmd", style: { display: "flex", gap: "8px", alignItems: "center", margin: "0 0 6px" } },
+      React.createElement("code", {
+        style: { fontSize: "11px", padding: "3px 8px", borderRadius: "6px", background: "rgba(255,255,255,0.08)" },
+      }, "dsh plugin --profile web add @linxin666/dsh-client-ui-skin-center"),
+      React.createElement("button", {
+        className: "we-picker__btn", type: "button",
+        onClick: () => { try { navigator.clipboard.writeText("dsh plugin --profile web add @linxin666/dsh-client-ui-skin-center"); setNote({ ok: true, text: weT("已复制安装命令") }); } catch { setNote({ ok: false, text: weT("复制失败，请手动选中上面的命令") }); } },
+      }, weT("复制命令")),
+    ));
+  } else {
+    children.push(React.createElement("div", {
+      key: "hint",
+      className: "we-picker__hint",
+      style: { margin: "6px 0 4px", opacity: 0.8 },
+    }, weT("皮肤包安装到皮肤中心目录；装完到「设置 → 皮肤中心」里点选即可启用。皮肤中心与本插件读同一个目录，无需重启。")));
+  }
 
   // 提示行常驻占位（与开机动画/桌宠页签同一条纪律：不因 note 出现/消失让面板跳高度）
   children.push(React.createElement("div", {
@@ -168,6 +190,7 @@ function SkinsTabPanel() {
             : React.createElement("button", {
               className: "we-picker__btn", type: "button",
               disabled: Boolean(busy),
+              title: skinCenter === "absent" ? weT("先装皮肤中心，否则皮肤装好也没法启用") : undefined,
               onClick: () => act("install", { id: s.id, url: s.url }, s.title),
             }, busyThis ? weT("安装中…") : weT("安装")),
         );

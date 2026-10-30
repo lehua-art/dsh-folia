@@ -488,6 +488,13 @@ const WE_I18N_EN_PANEL = {
   "下载地址不在白名单里": "The download host is not allow-listed",
   "站点被关闭了（DSH_FOLIA_SITE=off）": "The site is disabled (DSH_FOLIA_SITE=off)",
   "这个文件不是 zip": "This file is not a zip",
+
+  // ── 助手皮肤：皮肤中心缺失时的引导（4.10.1）──────────────────────────
+  "皮肤中心没装：它是**独立插件** @linxin666/dsh-client-ui-skin-center（不在 dsh-web-all 里，那个只是聚合包）。装它才能启用皮肤：": "The skin centre is not installed: it is its own plugin, @linxin666/dsh-client-ui-skin-center (dsh-web-all is only an aggregate). Install it to enable skins:",
+  "已复制安装命令": "Install command copied",
+  "复制失败，请手动选中上面的命令": "Copy failed — select the command above manually",
+  "复制命令": "Copy command",
+  "先装皮肤中心，否则皮肤装好也没法启用": "Install the skin centre first, or the skin cannot be enabled",
 };
 
 export { WE_I18N_EN_PANEL };
