@@ -42,6 +42,7 @@
   "files": [
     "icon.png",
     "lib/index.js",
+    "lib/client.js",
     "lib/host-boot.js",
     "lib/log.js",
     "lib/notice.js",
@@ -57,7 +58,6 @@
     "lib/glass-presets/",
     "lib/about/",
     "lib/component-visibility.js",
-    "lib/client.js",
     "lib/http-body.js",
     "lib/json-response.js",
     "lib/pkg-read.js",

@@ -177,5 +177,12 @@ export function createDownloadQueue(opts = {}) {
   load();
   pump();
 
-  return { add, cancel, snapshot, pump, statePath };
+  /** 已落地文件的绝对路径（未完成 / 不存在 ⇒ null）。/folia/local-media/<id> 用它。 */
+  function pathFor(id) {
+    const job = jobs.get(id);
+    if (!job || job.status !== 'done') return null;
+    try { return existsSync(job.dest) ? job.dest : null; } catch { return null; }
+  }
+
+  return { add, cancel, snapshot, pump, statePath, pathFor };
 }
