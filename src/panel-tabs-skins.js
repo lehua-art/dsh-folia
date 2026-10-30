@@ -91,10 +91,12 @@ function SkinsTabPanel() {
       // 走宿主代理会 401 —— DSH 对 `/api/skin-center/v2/*` 的读写都做会话鉴权，宿主 fetch 没有 cookie。
       if (kind === "activate") {
         const wantId = (payload && payload.id) || null;
-        // 只允许切到本机已装的那几套（state.installed 是权威清单）
+        // ⚠️ 这里写入的必须是**皮肤中心自己认识的 id**（= skin.json 里的原始 id），
+        // 不能用归一键：归一只是用来"比对"，拿去当写值会变成另一个名字 ——
+        // 皮肤中心的 activePostHandler 对解析不到的 id 回 404 skin-not-found（实测报错 skin-center-404）。
         if (wantId) {
-          const known = ((state && state.installed) || []).some((s) => normSkinId(s.id) === normSkinId(wantId));
-          if (!known) {
+          const local = ((state && state.installed) || []).find((s) => s.id === wantId);
+          if (!local) {
             setNote({ ok: false, text: weT("这个皮肤不在本机（先安装）") });
             return;
           }
@@ -208,6 +210,23 @@ function SkinsTabPanel() {
   const activeId = (state && state.active) || "";
   /** 这个 id 是不是"正在用"的那套（两边都归一后比，站点 slug 可能带 skin- 前缀）。 */
   const isActiveSkin = (id) => Boolean(activeId) && normSkinId(activeId) === normSkinId(id);
+
+  /**
+   * 站点条目 → 本机已装皮肤的真实 id（皮肤中心只认这个）。
+   *
+   * 站点 slug 由标题生成、并为"全站唯一"可能被加 `skin-` 前缀；本机目录/皮肤中心用的是
+   * skin.json 里的 id。两者可能不同（实测：站点 windows-xp-luna ↔ 本机 xp）。
+   * 先按归一的 id 比，再按标题兜底；都没有就返回空串（表示"本机没有这一套"）。
+   */
+  const localIdOf = (siteItem) => {
+    const list = (state && state.installed) || [];
+    const byId = list.find((x) => normSkinId(x.id) === normSkinId(siteItem.id));
+    if (byId) return byId.id;
+    const wantTitle = String((siteItem && siteItem.title) || "").trim();
+    if (!wantTitle) return "";
+    const byTitle = list.find((x) => String(x.name || "").trim() === wantTitle);
+    return byTitle ? byTitle.id : "";
+  };
   if (state) {
     children.push(React.createElement("div", { key: "installed-head", className: "we-picker__hint" },
       weT("本机已装（{n}）", { n: installed.length }),
@@ -266,6 +285,10 @@ function SkinsTabPanel() {
       ? [React.createElement("span", { key: "none", className: "we-picker__hint" }, weT("站点上还没有皮肤。"))]
       : site.map((s) => {
         const busyThis = busy === "install:" + s.id;
+        // 站点条目的 slug 与本机皮肤 id **不一定相同**（站点 slug 由标题生成/为避撞名会加 skin- 前缀），
+        // 而皮肤中心只认 skin.json 里的原始 id ⇒ 写之前必须换成**本机那个 id**，
+        // 否则它的 activePostHandler 会回 404 skin-not-found（实测报错 skin-center-404）。
+        const localId = localIdOf(s);
         return React.createElement("div", { key: s.id, style: SKIN_STYLE.card },
           s.thumbUrl
             ? React.createElement("div", {
@@ -279,16 +302,15 @@ function SkinsTabPanel() {
             s.installed
               // 已装的站点卡片也要能**直接应用**：用户是照着站点缩略图挑的，
               // 让他再滚回上面的「本机已装」区去点一次是多余的一步（实测反馈）。
-              // 站点 slug 与本机目录名可能差一个 `skin-` 前缀 ⇒ 用归一后的比较。
               ? [
-                isActiveSkin(s.id)
+                localId && isActiveSkin(localId)
                   ? React.createElement("span", { key: "on", style: { ...SKIN_STYLE.badge, background: "rgba(60,160,90,0.55)" } }, weT("使用中"))
                   : React.createElement("button", {
                     key: "apply",
                     className: "we-picker__btn", type: "button",
                     disabled: Boolean(busy),
-                    onClick: () => act("activate", { id: normSkinId(s.id) }, s.title),
-                  }, busy === "activate:" + normSkinId(s.id) ? weT("切换中…") : weT("应用")),
+                    onClick: () => act("activate", { id: localId }, s.title),
+                  }, busy === "activate:" + localId ? weT("切换中…") : weT("应用")),
                 React.createElement("span", { key: "done", style: SKIN_STYLE.badge }, weT("已安装")),
               ]
               : React.createElement("button", {
