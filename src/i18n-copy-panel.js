@@ -503,7 +503,6 @@ const WE_I18N_EN_PANEL = {
   "恢复默认外观": "Restore default look",
   "应用": "Apply",
   "切换中…": "Switching…",
-  "使用中": "Active",
   "正在使用，先切到别的再卸": "Currently active — switch to another skin before removing",
   "已切换到：{name}": "Switched to: {name}",
   "已恢复官方默认外观": "Restored the default look",

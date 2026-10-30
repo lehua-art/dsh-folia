@@ -242,8 +242,14 @@ function buildVideoMedia(sel, fitClass) {
     //     "露出底色"照旧不发生。
     // 场景内嵌 MP4 的 poster 是静态帧，是「先静帧后动态」的既有设计，保留 —— 判据见
     // rotation-prepared-leak-smoke.mjs 的 T2 / T2b（无静态缩略图仍必须等帧）。
+    // 站点（远程）壁纸也带静态缩略图（`thumbUrl`，webp/jpg）。旧判据只认**本机 ffmpeg 抽的**
+    // `/video-preview/`，于是远程视频**没有 poster** ⇒ 闸门必须等首个可解码帧才放行。
+    // 实测代价：一条 8～29 MB 的 4K 远程源，切换要等数秒（首帧在网络那头）。
+    // 现在把**静态图后缀**也认作 poster（`.gif` 仍排除 —— 动图当 poster 会"先播预览"，
+    // 那正是这条判据当初要挡的东西）。放行条件不变：poster **真的加载出来**才算有画面。
+    const siteStaticThumb = !!sel.previewUrl && /\.(jpe?g|png|webp|avif)(?:[?#]|$)/i.test(sel.previewUrl);
     const stillPreview = !!sel.previewUrl
-      && (sel.type !== "video" || /\/video-preview\//.test(sel.previewUrl));
+      && (sel.type !== "video" || /\/video-preview\//.test(sel.previewUrl) || siteStaticThumb);
     if (stillPreview) media.poster = sel.previewUrl;
   }
   media.autoplay = true;

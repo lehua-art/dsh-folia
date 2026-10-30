@@ -202,6 +202,41 @@ export default [
     languageOptions: { ecmaVersion: 2024, sourceType: 'commonjs' },
   },
 
+  // ── 子包里的客户端片段：**同样是扁平作用域**，不是宿主模块 ────────────────────
+  //
+  // 为什么必须单独一块（实测）：`lib/components/<包>/src/**` 与
+  // `lib/components/<包>/lib/client.<包>.js` 是**子包的客户端两半**，由各包
+  // `client.build.json` 的 inline 清单平铺进同一个 factory 作用域（与 `src/**` 完全同形）。
+  // 但它们物理上落在 `lib/**` 下 ⇒ 被上面的宿主配置当成"真 ESM 模块"，
+  // 于是 `no-undef` 对 `weT` / `React` / `document` 这类**跨片段注入名**系统性误报。
+  //
+  // 量化（2026-10-30 实测，`eslint src lib`）：全仓 763 条违规里 **726 条**来自这两处，
+  // 其中 575 条就是 `no-undef`（`weT`×178、`React`×123、`document`×70 …）。宿主面真实
+  // 违规只有 35 条。**误报比不报更坏**：它训练人忽略这门检查，也把 `verify-static` 的棘轮
+  // 基线抬到一个没有意义的高度。所以这里与 `src/**` 同一套口径。
+  {
+    files: ['lib/components/*/src/**/*.js', 'lib/components/*/lib/client.*.js'],
+    languageOptions: {
+      ecmaVersion: 2024,
+      // 与 `src/**` 一致：保留 module 语义以便正确解析片段里的 `export {}` 形状。
+      sourceType: 'module',
+    },
+    rules: {
+      ...js.configs.recommended.rules,
+      ...JUSTIFIED_OFF,
+      // 只关"把片段当独立模块"才成立的两条；未定义/撞名的真判据在构建期
+      // （`readInlinedPrelude()` 提取注入名 + 组装后 `new Script()` 解析）。
+      'no-undef': 'off',
+      'no-unused-vars': 'off',
+      'no-redeclare': 'error',
+      // 与 `src/**` 同理由：片段顶层用 `var` 声明跨片段共享状态，是**不引入 TDZ** 的手段。
+      'no-var': 'off',
+      'prefer-const': 'error',
+      eqeqeq: ['error', 'always', { null: 'ignore' }],
+      'no-console': 'off',
+    },
+  },
+
   // ── 豁免面：**必须排在最后** ─────────────────────────────────────────────────
   // 上面 `src/**` 那块 spread 了 `js.configs.recommended.rules`，而 `@eslint/js` v10 的
   // recommended **包含** `no-irregular-whitespace` ⇒ 任何写在它**之前**的豁免都会被重新打开
