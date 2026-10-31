@@ -126,6 +126,18 @@ if (normalize) {
   const useIdx2 = probe.findIndex((l, i) => i !== declIdx2 && /\bb\b/.test(l));
   check('⑤ negative control: 使用在前、声明在后会被判出', useIdx2 >= 0 && useIdx2 < declIdx2, useIdx2 + ' vs ' + declIdx2);
 }
+
+/* ⑥ 缓存/速度自述（④）：必须"拿不到就什么都不显示"，且异常必须被吞掉。
+   否则一个不存在的端点就能把面板变成空白 —— 这正是我们刚修过的那类故障。 */
+{
+  const qp = readFileSync(join(ROOT, 'src', 'quick-panel.js'), 'utf8');
+  check('⑥ 存在缓存自述组件 QpCacheHint（数据来自 site-media-stats）', /function QpCacheHint\(/.test(qp) && /site-media-stats/.test(qp));
+  check('⑥ 拿不到数据时不渲染（return null）', /if \(!info\) return null;/.test(qp));
+  check('⑥ 请求异常被吞掉（不许影响面板渲染）', /catch \{ \/\* 端点不存在/.test(qp));
+  check('⑥ 轮询有上界（15 秒一次，不刷屏）', /15000/.test(qp));
+  // 负对照：把 try/catch 去掉的写法必须被判出来
+  check('⑥ negative control: 无 catch 的写法不满足判据', !/await apiJson\("\/site-media-stats"\);\s*setInfo/.test(qp.replace(/try \{/g, '')));
+}
 let failed = 0;
 for (const r of results) {
   if (r.ok) process.stdout.write('  ✓ ' + r.name + '\n');

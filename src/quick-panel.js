@@ -375,6 +375,49 @@
     }
   }
 
+  /**
+   * 缓存与速度自述（④）。
+   *
+   * 目的：用户问"为什么慢"时，答案应该在界面上，而不是让他开 F12 或来问作者。
+   * 读宿主 `/folia/site-media-stats`（4.15.3 起存在）：命中/未命中/平均吞吐/缓存是否可写。
+   * 三条纪律：拿不到就**什么都不显示**；每 15 秒最多取一次；任何异常都吞掉（不许影响面板）。
+   */
+  function QpCacheHint() {
+    const [info, setInfo] = React.useState(null);
+    React.useEffect(() => {
+      let alive = true;
+      let timer = null;
+      const pull = () => {
+        (async () => {
+          try {
+            const r = typeof apiJson === "function" ? await apiJson("/site-media-stats") : null;
+            const d = (r && r.data) || r || null;
+            if (alive && d && typeof d === "object") setInfo(d);
+          } catch { /* 端点不存在（老宿主）⇒ 保持不显示 */ }
+        })();
+      };
+      pull();
+      try { timer = window.setInterval(pull, 15000); } catch { timer = null; }
+      return () => {
+        alive = false;
+        if (timer !== null) { try { window.clearInterval(timer); } catch { /* ignore */ } }
+      };
+    }, []);
+    if (!info) return null;
+    const hits = Number(info.hits) || 0;
+    const misses = Number(info.misses) || 0;
+    const mbps = Number(info.avgMBps) || 0;
+    const writable = info.writable !== false;
+    const parts = [
+      weT("缓存命中 {h} · 首次下载 {m}", { h: hits, m: misses }),
+      mbps > 0 ? weT("平均 {v} MB/s", { v: mbps.toFixed(1) }) : "",
+      writable ? "" : weT("⚠ 缓存目录不可写（每次都会重下）"),
+    ].filter(Boolean);
+    return React.createElement("div", {
+      className: "we-picker__hint",
+      style: { marginTop: "2px", opacity: 0.75, fontSize: "11px" },
+    }, parts.join(" · "));
+  }
   function qpRenderCard(w, sel) {
     // ── 卡：缩略图网格形态（视图切换的「卡片」档；点击语义与列表行一致）──
     return React.createElement("div", {
@@ -445,6 +488,9 @@
             ? qpTypeLabel(current, sel) + weT(playbackLive ? " · 播放中" : " · 已暂停")
             : weT("从下面列表挑一张")),
         sel.videoError && React.createElement("div", { className: "we-picker__current-error" }, sel.videoError),
+        // 缓存与速度的**自述**（④）：用户不用开 F12 也能知道"这次是首次下载还是命中缓存"。
+        // 数据来自宿主 `/folia/site-media-stats`；拿不到就**什么都不显示**（绝不因此报错）。
+        React.createElement(QpCacheHint, null),
       ),
       React.createElement("div", { className: "we-qp__current-actions" },
         // ⚠️ **不变量：这一行只放日常操作**（暂停 / 播放 · 刷新 · 清除；场景与网页壁纸再加
