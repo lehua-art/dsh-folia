@@ -381,7 +381,7 @@ async function main() {
     // 本轮抬到 98/111：新增 verify-features / verify-route-registry / verify-settings-ownership
     // 与 boot-http / pets-http / pets-layer 三条功能测试。下面的负对照保证「删一步即红」。
     // 本轮抬到 102/115：皮肤中心随包契约（`test/verify-skin-center-bundle.mjs`）挂一硬档。
-    const CHAIN_FLOOR = { verify: 105, docs: 6, smoke: 6, all: 118 };
+    const CHAIN_FLOOR = { verify: 106, docs: 6, smoke: 6, all: 119 };
     /** 地板表与 GROUPS 的对齐体检：键名必须与**组名**逐一对齐（纯函数 ⇒ 负对照可直接喂）。 */
     const floorGaps = (groups, floors) => groups.map(([, g]) => g).filter((g) => !Number.isInteger(floors[g]));
     const problems = floorGaps(GROUPS, CHAIN_FLOOR).map((g) => '地板表缺组 ' + g

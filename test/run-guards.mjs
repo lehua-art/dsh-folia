@@ -276,6 +276,8 @@ const VERIFY_STEPS = [
   step('test/verify-panel-interactions.mjs'),
   // 面板不许再整片变白：畸形数据归一 + 单卡/整页错离（真实故障的守卫）。
   step('test/verify-panel-defensive.mjs'),
+  // ㉔ 出货包不许带本机隐私路径 / 不许带 token（机械判据，不靠人记得检查）。
+  step('test/verify-no-local-paths.mjs'),
   // ⑱ 站点条目类型：zip 工程包不得判成视频（实测踩过：56MB zip 塞进 <video>）。
   step('test/inventory-types.mjs'),
   // ⑭ 我们自己的三条功能级测试：开机动画路由 / 桌宠路由 / 桌宠渲染层。

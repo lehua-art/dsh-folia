@@ -797,6 +797,14 @@
         {
           "kind": "guard",
           "npm": null,
+          "file": "test/verify-no-local-paths.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
           "file": "test/inventory-types.mjs",
           "args": [],
           "tier": "hard",
@@ -1755,6 +1763,14 @@
           "kind": "guard",
           "npm": null,
           "file": "test/verify-panel-defensive.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-no-local-paths.mjs",
           "args": [],
           "tier": "hard",
           "probe": false
