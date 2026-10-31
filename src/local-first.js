@@ -27,13 +27,22 @@ function lfSay(text, ok) {
   try { if (LF_STATE.note) LF_STATE.note(text, ok !== false); } catch { /* 提示失败不影响下载 */ }
 }
 
-/** 从 inventory 里找这条（`/folia/inventory` 的 items）。 */
+/** 从 inventory 里找这条。
+ *
+ * ⚠️ 老实现只认 `items` / `data.items`，而 `/folia/inventory` 实际把壁纸放在 **`wallpapers`** 里
+ * ⇒ 永远找不到 ⇒ 静默不入队 ⇒ 代理侧也拿不到可复用的 job ⇒ 壁纸退化为"远端流式 + 被播放器背压"
+ *（实测 0.6 MB/s、且缓存永远补不满）。现在按"任何一个对象数组里找 id"兜底，不依赖具体键名。
+ */
 async function lfFindItem(id) {
   try {
     const resp = await apiJson("/inventory");
-    const items = (resp && resp.data && Array.isArray(resp.data.items)) ? resp.data.items
-      : (Array.isArray(resp && resp.items) ? resp.items : []);
-    return items.find((x) => x && x.id === id) || null;
+    const doc = (resp && resp.data && typeof resp.data === 'object') ? resp.data : (resp || {});
+    const pools = [doc.items, doc.wallpapers, doc.list, doc.entries].filter(Array.isArray);
+    for (const pool of pools) {
+      const hit = pool.find((x) => x && x.id === id);
+      if (hit) return hit;
+    }
+    return null;
   } catch { return null; }
 }
 

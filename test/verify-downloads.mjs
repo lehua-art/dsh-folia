@@ -184,6 +184,15 @@ try { rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
   check('⑨ 无新字节时有上限（stalled）不无限挂着', /stalled > 600/.test(sm));
   check('⑨ negative control: 去掉复用块 ⇒ 判据会红', !/serveGrowingFile\(partPath, job, res, headOnly\)/.test(sm.replace(/await serveGrowingFile\(partPath, job, res, headOnly\);/, '')));
 }
+
+/* ⑩ 壁纸入队：必须能从 /inventory 的**真实键名**（wallpapers）里找到条目。
+   实测踩过：只认 items ⇒ 永远找不到 ⇒ 静默不入队 ⇒ 代理没有可复用 job ⇒ 壁纸回到 0.6 MB/s。 */
+{
+  const lf = readFileSync(join(ROOT, 'src', 'local-first.js'), 'utf8');
+  check('⑩ 入队前查找会覆盖 wallpapers 键', /doc\.wallpapers/.test(lf));
+  check('⑩ 查找用"多个对象数组池"兜底，不依赖单一键名', /\[doc\.items, doc\.wallpapers, doc\.list, doc\.entries\]/.test(lf));
+  check('⑩ negative control: 只认 data.items 的旧写法会被判出来', !/resp\.data\.items\) \? resp\.data\.items\s*\n\s*: \(Array\.isArray\(resp && resp\.items\)/.test(lf));
+}
 let failed = 0;
 for (const r of results) {
   if (r.ok) process.stdout.write('  ✓ ' + r.name + '\n');
