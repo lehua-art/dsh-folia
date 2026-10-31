@@ -140,6 +140,40 @@ try { rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
   // 负对照：把阈值改大/删掉 Range 判定 ⇒ 判据会红
   check('⑦ negative control: 没有阈值常量时判据不成立', !/8 \* 1024 \* 1024/.test('const x = 1;'));
 }
+
+/* ⑧ "已存在的 job 也必须被 pump 起来" —— 实测踩过的死锁：
+   皮肤安装 add() 一个已 queued 的 job 后，旧实现在 existed 分支直接 return，没人启动下载，
+   调用方一直等到超时（用户看到"点了安装没反应"）。这里用行为判据钉住它。 */
+{
+  // 用**自己的**小上游：外层 upstream 在这段之前已经 close，复用会测出 failed（踩过）。
+  const srv2 = createServer((req, res) => {
+    const range = String(req.headers.range || '');
+    const m2 = /bytes=(\d+)-/.exec(range);
+    const start2 = m2 ? Number(m2[1]) : 0;
+    res.statusCode = m2 ? 206 : 200;
+    res.setHeader('content-type', 'video/mp4');
+    res.setHeader('accept-ranges', 'bytes');
+    res.setHeader('content-length', String(BODY.length - start2));
+    res.end(BODY.subarray(start2));
+  });
+  await new Promise((ok2) => { srv2.listen(0, '127.0.0.1', ok2); });
+  const q = createDownloadQueue({ home: join(home, 'pump'), log: () => {} });
+  const dest = join(home, 'pump', 'twice.mp4');
+  const url = 'http://127.0.0.1:' + srv2.address().port + '/media/twice.mp4';
+  q.add({ url, dest, kind: 'wallpaper' });
+  q.add({ url, dest, kind: 'wallpaper' });   // existed 分支：必须仍然把队列泵起来
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    const j = q.snapshot()[0];
+    if (j && j.status === 'done') break;
+    await new Promise((r) => { setTimeout(r, 50); });
+  }
+  const j = q.snapshot()[0];
+  check('⑧ 重复 add 同一个 URL 仍会完成（existed 分支必须 pump）', Boolean(j) && j.status === 'done', j && j.status);
+  try { srv2.close(); } catch { /* ignore */ }
+  const qSrc = readFileSync(join(ROOT, 'lib', 'download-queue.js'), 'utf8');
+  check('⑧ 源码里 existed 分支确实调用了 pump()', /existed: true[\s\S]{0,160}pump\(\)/.test(qSrc) || /pump\(\);\s*return \{ job: snapshot\(\)\.find[^}]*existed: true/.test(qSrc));
+}
 let failed = 0;
 for (const r of results) {
   if (r.ok) process.stdout.write('  ✓ ' + r.name + '\n');
