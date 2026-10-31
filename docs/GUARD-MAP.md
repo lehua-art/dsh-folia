@@ -43,7 +43,7 @@
 | `verify-contracts.mjs` | `lib/components/fonts/src/fontset-editor.js` `lib/host-boot.js` `lib/index.js` `lib/kernel/host-kernel.js` `lib/media/media-dirs.js` `lib/settings-schema.js` `src/api-client.js` `src/client.js` `src/fontset-store.js` `src/panel-tabs-advanced.js` `src/panel-tabs-appearance.js` `src/panel-tabs-boot.js` `src/panel-tabs-effects.js` `src/panel-tabs-mascot.js` `src/panel-tabs-pets.js` `src/panel-tabs-skins.js` `src/panel-tabs-wallpaper.js` `src/panel-tabs.js` |  |
 | `verify-dead-declarations.mjs` | — |  |
 | `verify-deployment.mjs` | — |  |
-| `verify-downloads.mjs` | `lib/download-queue.js` `lib/routes/downloads.js` `lib/routes/skins.js` `src/local-first.js` `src/media-prep.js` |  |
+| `verify-downloads.mjs` | `lib/download-queue.js` `lib/routes/downloads.js` `lib/routes/site-media.js` `lib/routes/skins.js` `src/local-first.js` `src/media-prep.js` |  |
 | `verify-eol.mjs` | — |  |
 | `verify-extra-glass.mjs` | `lib/settings-schema.js` `src/client.js` `src/effects.js` `src/glass-extra.js` `src/glass-panel.js` `src/quick-panel.js` | ✅ |
 | `verify-features.mjs` | `lib/features.js` `lib/routes/boot.js` `lib/routes/inventory.js` `lib/routes/pets.js` `src/client.js` `src/features.js` `src/pet-layer.js` `src/quick-panel.js` | ✅ |
@@ -228,7 +228,7 @@
 | `lib/routes/scene-media.js` | 1 | `verify-scene` |
 | `lib/routes/scene-serve.js` | 2 | `verify-logging` `verify-scene-live` |
 | `lib/routes/settings.js` | 2 | `verify-scene` `verify-settings-namespaces` |
-| `lib/routes/site-media.js` | 1 | `verify-site-media` |
+| `lib/routes/site-media.js` | 2 | `verify-downloads` `verify-site-media` |
 | `lib/routes/site-thumb.js` | 0 | **（无）** |
 | `lib/routes/skins.js` | 2 | `verify-downloads` `verify-no-local-paths` |
 | `lib/routes/upload.js` | 2 | `verify-body-caps` `verify-package-files` |

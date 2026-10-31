@@ -174,6 +174,16 @@ try { rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
   const qSrc = readFileSync(join(ROOT, 'lib', 'download-queue.js'), 'utf8');
   check('⑧ 源码里 existed 分支确实调用了 pump()', /existed: true[\s\S]{0,160}pump\(\)/.test(qSrc) || /pump\(\);\s*return \{ job: snapshot\(\)\.find[^}]*existed: true/.test(qSrc));
 }
+
+/* ⑨ 单源复用：代理不再为同一条 URL 开第二条上游连接（实测重复下载抢带宽 5 倍差距）。 */
+{
+  const sm = readFileSync(join(ROOT, 'lib', 'routes', 'site-media.js'), 'utf8');
+  check('⑨ 代理会复用队列里同 URL 的 job（queueJobFor）', /queueJobFor\(u\.toString\(\), 'wallpaper'\)/.test(sm));
+  check('⑨ 存在渐进读函数 serveGrowingFile', /async function serveGrowingFile\(/.test(sm));
+  check('⑨ 渐进读会读 .part（下载中的文件）', /\.dest \+ '\.part'/.test(sm));
+  check('⑨ 无新字节时有上限（stalled）不无限挂着', /stalled > 600/.test(sm));
+  check('⑨ negative control: 去掉复用块 ⇒ 判据会红', !/serveGrowingFile\(partPath, job, res, headOnly\)/.test(sm.replace(/await serveGrowingFile\(partPath, job, res, headOnly\);/, '')));
+}
 let failed = 0;
 for (const r of results) {
   if (r.ok) process.stdout.write('  ✓ ' + r.name + '\n');
