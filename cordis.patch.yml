@@ -28,3 +28,5 @@
       name: 'dsh-folia'
     - id: skin-center
       name: '@linxin666/dsh-client-ui-skin-center'
+    - id: market
+      name: '@linxin666/dsh-client-ui-market'

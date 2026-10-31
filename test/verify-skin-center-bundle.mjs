@@ -57,12 +57,23 @@ function rowNames(src) {
   check('不是只写在 devDependencies 里（那样用户装包时不会带上）', !devDep, 'devDep=' + String(devDep));
   check('negative control: 删掉 dependencies 那一行 ⇒ 依赖判据会红',
     !Object.fromEntries(Object.entries(pkgJson.dependencies || {}).filter(([k]) => k !== SKIN_CENTER))[SKIN_CENTER]);
+
+  // 插件市场同一条纪律：用户装我们的包，就一并得到"能查更新/装插件"的那一半。
+  // 它和皮肤中心是两件独立的事（一个负责渲染，一个负责入口），任何一件缺失都只会在
+  // 用户点开对应界面时才暴露 ⇒ 必须在这里钉住。
+  const MARKET = '@linxin666/dsh-client-ui-market';
+  const mdep = (pkgJson.dependencies || {})[MARKET];
+  const mdev = (pkgJson.devDependencies || {})[MARKET];
+  check('package.json 把插件市场列为 dependency（随包带上入口）', Boolean(mdep), 'dep=' + String(mdep));
+  check('插件市场版本也**精确**钉住（不带 ^ / ~）',
+    Boolean(mdep) && /^\d+\.\d+\.\d+$/.test(String(mdep).trim()), 'dep=' + String(mdep));
+  check('插件市场不是只写在 devDependencies 里', !mdev, 'devDep=' + String(mdev));
 }
 
 /* ② patch 两条 row：我们自己的 + 皮肤中心（且 name 精确指向该包） */
 {
   const names = rowNames(patch);
-  check('cordis.patch.yml 恰好两条 row', names.length === 2, names.join(','));
+  check('cordis.patch.yml 恰好三条 row（folia + skin-center + market）', names.length === 3, names.join(','));
   check('包含我们自己的 dsh-folia', names.includes(PKG), names.join(','));
   check('包含皮肤中心这一条（随身携带的意义就在这里）', names.includes(SKIN_CENTER), names.join(','));
   const noSkinRow = patch.split('\n').filter((l) => !l.includes(SKIN_CENTER)).join('\n');
@@ -87,8 +98,9 @@ function rowNames(src) {
 /* ④ 正对照：真实文件确实通过上面三条（不是"因为空所以过"） */
 {
   const idsNow = rowIds(patch);
-  check('正对照: 真实 patch 的 id 列表就是 [folia, skin-center]',
-    idsNow.length === 2 && idsNow[0] === 'folia' && idsNow[1] === 'skin-center', 'ids=' + idsNow.join(','));
+  check('正对照: 真实 patch 的 id 列表就是 [folia, skin-center, market]',
+    idsNow.length === 3 && idsNow[0] === 'folia' && idsNow[1] === 'skin-center' && idsNow[2] === 'market',
+    'ids=' + idsNow.join(','));
   check('正对照: 负对照用的注入确实能被 rowNames 解析出来',
     rowNames("    - id: x\n      name: 'probe-pkg'\n").includes('probe-pkg'));
 }
