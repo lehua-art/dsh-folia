@@ -303,6 +303,28 @@ function SkinsTabPanel() {
   // 皮肤中心不在跑时，「应用」按钮直接禁用并给出原因 —— 比"点了报错"诚实。
   const applyBlockedReason = canApply ? "" : weT("读不到皮肤中心的清单，先点「刷新」；仍不行说明它没在运行");
 
+  // 内核版本自检（宿主 /skins/list 里带来的 kernel 字段）：
+  // 内核低于皮肤中心要求的版本时，"它被关掉"不是用户操作失误，而是门槛 —— 这里直接给**可点击的升级页**
+  // （URL 由宿主从桌面端自己的 package.json 推导；拿不到就不给按钮，绝不编链接）。
+  const kernel = (state && state.kernel) || null;
+  const kernelTooOld = Boolean(kernel && kernel.kernelOk === false);
+  if (kernelTooOld) {
+    const url = kernel && kernel.upgradeUrl;
+    children.push(React.createElement("div", {
+      key: "kernel-old",
+      className: "we-picker__hint",
+      style: { color: "#ff9a9a", margin: "2px 0 6px", lineHeight: "1.6" },
+    },
+    weT("桌面端内核太低：当前 {cur}，皮肤中心要求 {req}", { cur: (kernel.dshVersion || weT("未知")), req: (kernel.requiredKernel || "0.2.1-rc.3") }),
+    React.createElement("br"),
+    url
+      ? React.createElement("a", {
+        href: url, target: "_blank", rel: "noreferrer",
+        style: { color: "#8ecbff", textDecoration: "underline" },
+      }, weT("点这里升级 DSH Desktop（桌面端 {v}）", { v: kernel.desktopVersion || "" }))
+      : weT("请把 DSH Desktop 升级到满足该内核的版本后重启"),
+    ));
+  }
   // 提示行常驻占位（与开机动画/桌宠页签同一条纪律：不因 note 出现/消失让面板跳高度）
   children.push(React.createElement("div", {
     key: "note",

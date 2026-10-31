@@ -138,6 +138,17 @@ if (normalize) {
   // 负对照：把 try/catch 去掉的写法必须被判出来
   check('⑥ negative control: 无 catch 的写法不满足判据', !/await apiJson\("\/site-media-stats"\);\s*setInfo/.test(qp.replace(/try \{/g, '')));
 }
+
+/* ⑦ 内核太低时的升级引导：必须有可点入口，且 URL 不得凭空编造。 */
+{
+  const sk = readFileSync(join(ROOT, 'src', 'panel-tabs-skins.js'), 'utf8');
+  const kn = readFileSync(join(ROOT, 'lib', 'routes', 'kernel.js'), 'utf8');
+  check('⑦ 界面识别 kernelOk=false 并给提示', /kernelTooOld/.test(sk) && /kernelOk === false/.test(sk));
+  check('⑦ 有可点击的升级入口（a href + 新窗口 + noreferrer）', /target: "_blank"/.test(sk) && /noreferrer/.test(sk));
+  check('⑦ 没有 upgradeUrl 时退化为文字说明（不渲染空链接）', /请把 DSH Desktop 升级到/.test(sk));
+  check('⑦ URL 来自桌面端 manifest 推导，不是硬编码', /github\.com/.test(kn) && /repository/.test(kn) && /homepage/.test(kn));
+  check('⑦ negative control: 硬编码一个下载地址的写法会被判出来', !/https?:\/\/\S*(dsh-desktop\/releases\/latest\/download)/.test(sk + kn));
+}
 let failed = 0;
 for (const r of results) {
   if (r.ok) process.stdout.write('  ✓ ' + r.name + '\n');
