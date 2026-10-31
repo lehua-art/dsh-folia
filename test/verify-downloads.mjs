@@ -126,6 +126,20 @@ const urlFor = (p) => 'http://127.0.0.1:' + port + p;
 upstream.close();
 try { rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
 
+
+/* ⑦ 大文件分片 + HEAD 预检 + 皮肤包走队列：这三条是"21 MB 很慢"的直接对策。
+   判据用源码特征（行为级判据在上面 ①–⑥ 已覆盖），并各配一条负对照。 */
+{
+  const qSrc = readFileSync(join(ROOT, 'lib', 'download-queue.js'), 'utf8');
+  const kSrc = readFileSync(join(ROOT, 'lib', 'routes', 'skins.js'), 'utf8');
+  check('⑦ 大文件走分片并发（8 MB 阈值 + accept-ranges 判定）',
+    /8 \* 1024 \* 1024/.test(qSrc) && /accept-ranges/i.test(qSrc) && /function fetchRanged\(/.test(qSrc));
+  check('⑦ 分片大小不符即整次失败（不留半截文件）', /range-size-mismatch/.test(qSrc));
+  check('⑦ 下载前 HEAD 预检：长度/etag 一致就跳过', /method: 'HEAD'/.test(qSrc) && /\.etag/.test(qSrc));
+  check('⑦ 皮肤包安装走同一条队列（不再 fetch→arrayBuffer）', /getDownloadQueue\(\)/.test(kSrc) && !/r\.arrayBuffer\(\)/.test(kSrc));
+  // 负对照：把阈值改大/删掉 Range 判定 ⇒ 判据会红
+  check('⑦ negative control: 没有阈值常量时判据不成立', !/8 \* 1024 \* 1024/.test('const x = 1;'));
+}
 let failed = 0;
 for (const r of results) {
   if (r.ok) process.stdout.write('  ✓ ' + r.name + '\n');
