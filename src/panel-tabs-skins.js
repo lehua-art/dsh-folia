@@ -195,6 +195,39 @@ function SkinsTabPanel() {
 
       const resp = await apiPostJson("/skins/" + kind, payload || {}, { parse: "always" });
       const r = (resp && resp.data) || null;
+      // 还没下完：宿主回 202 pending（弱网下 13.8 MB 可能要两分钟以上）。
+      // 这里**不能当成失败**，更不能让用户重新点 —— 后台队列继续下、.part 可续传，
+      // 我们只负责轮询进度，下完自动再调一次安装（那次读本地 zip，很快）。
+      if (resp && resp.ok && r && r.pending) {
+        const jobId = r.jobId;
+        const label2 = label || "";
+        setNote({ ok: true, text: weT("正在下载：{name} 0%", { name: label2 }) });
+        const started = Date.now();
+        while (Date.now() - started < 30 * 60 * 1000) {
+          await new Promise((resolve) => { setTimeout(resolve, 1200); });
+          let jobs = [];
+          try {
+            const list = await apiJson("/downloads/list");
+            const doc = (list && list.data) || list || {};
+            jobs = Array.isArray(doc.jobs) ? doc.jobs : [];
+          } catch { /* 拉不到就继续等 */ }
+          const job = jobs.find((x) => x && x.id === jobId);
+          const pct = job && Number(job.percent) ? Number(job.percent) : 0;
+          const rec = job && Number(job.received) ? (Number(job.received) / 1048576).toFixed(1) : "0";
+          const tot = job && Number(job.total) ? (Number(job.total) / 1048576).toFixed(1) : "?";
+          setNote({ ok: true, text: weT("正在下载：{name} {p}%（{a}/{b} MB）", { name: label2, p: pct, a: rec, b: tot }) });
+          if (job && job.status === "failed") {
+            setNote({ ok: false, text: weT("下载失败：{name}（{why}）", { name: label2, why: job.error || "unknown" }) });
+            return;
+          }
+          if (job && job.status === "done") {
+            // 下完了：再调一次安装，这次直接解压本地 zip
+            return act("install", payload, label);
+          }
+        }
+        setNote({ ok: false, text: weT("下载超时：{name}", { name: label2 }) });
+        return;
+      }
       if (resp && resp.ok && r && r.ok) {
         if (kind === "install") {
           // 安装时宿主会把 skin.json **规范化**成皮肤中心一定收的样子（它的规则比我们严：

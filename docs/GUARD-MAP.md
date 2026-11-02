@@ -73,7 +73,7 @@
 | `verify-occlusion-hub.mjs` | `lib/index.js` `lib/json-response.js` `lib/occlusion/index.js` `lib/occlusion/rects.js` `lib/occlusion/x11.js` `lib/routes/occlusion.js` |  |
 | `verify-package-files.mjs` | `lib/http-body.js` `lib/index.js` `lib/pkg-read.js` `lib/routes/upload.js` | ✅ |
 | `verify-package-publish.mjs` | `lib/index.js` `lib/pkg-read.js` `src/client.js` | ✅ |
-| `verify-panel-defensive.mjs` | `lib/routes/kernel.js` `src/panel-tabs-skins.js` `src/quick-panel.js` |  |
+| `verify-panel-defensive.mjs` | `lib/routes/kernel.js` `lib/routes/skins.js` `src/panel-tabs-skins.js` `src/quick-panel.js` |  |
 | `verify-panel-interactions.mjs` | `src/panel-tabs-boot.js` `src/panel-tabs-pets.js` |  |
 | `verify-pet-hotplug-client.mjs` | `lib/components/pet-link/src/official-pet.js` `lib/components/pet-link/src/pet-link.js` |  |
 | `verify-pet-hotplug-host.mjs` | `lib/components/pet-link/src/official-pet.js` `lib/subpackage-boot.js` |  |
@@ -230,7 +230,7 @@
 | `lib/routes/settings.js` | 2 | `verify-scene` `verify-settings-namespaces` |
 | `lib/routes/site-media.js` | 2 | `verify-downloads` `verify-site-media` |
 | `lib/routes/site-thumb.js` | 0 | **（无）** |
-| `lib/routes/skins.js` | 2 | `verify-downloads` `verify-no-local-paths` |
+| `lib/routes/skins.js` | 3 | `verify-downloads` `verify-no-local-paths` `verify-panel-defensive` |
 | `lib/routes/upload.js` | 2 | `verify-body-caps` `verify-package-files` |
 | `lib/routes/we-assets.js` | 1 | `verify-scene-live` |
 | `lib/scene-manifest.js` | 2 | `verify-scene-probe` `verify-scene` |

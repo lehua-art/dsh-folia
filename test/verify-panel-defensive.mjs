@@ -149,6 +149,16 @@ if (normalize) {
   check('⑦ URL 来自桌面端 manifest 推导，不是硬编码', /github\.com/.test(kn) && /repository/.test(kn) && /homepage/.test(kn));
   check('⑦ negative control: 硬编码一个下载地址的写法会被判出来', !/https?:\/\/\S*(dsh-desktop\/releases\/latest\/download)/.test(sk + kn));
 }
+
+/* ⑧ 慢网安装不再"打断":202 pending 时必须轮询并在完成后自动续装，而不是报错。 */
+{
+  const sk = readFileSync(join(ROOT, 'src', 'panel-tabs-skins.js'), 'utf8');
+  const host = readFileSync(join(ROOT, 'lib', 'routes', 'skins.js'), 'utf8');
+  check('⑧ 宿主对未下完的安装返回 202 pending', /sendJson\(res, 202,[\s\S]{0,200}pending: true/.test(host));
+  check('⑧ 客户端识别 pending 并轮询进度', /r\.pending/.test(sk) && /downloads\/list/.test(sk));
+  check('⑧ 下完后自动再次安装（不需要用户重点）', /return act\("install", payload, label\)/.test(sk));
+  check('⑧ negative control: 仍把 pending 当成功提示的写法会被判出来', !/r\.pending[\s\S]{0,40}已安装/.test(sk));
+}
 let failed = 0;
 for (const r of results) {
   if (r.ok) process.stdout.write('  ✓ ' + r.name + '\n');
