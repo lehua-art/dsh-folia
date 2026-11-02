@@ -159,6 +159,15 @@ if (normalize) {
   check('⑧ 下完后自动再次安装（不需要用户重点）', /return act\("install", payload, label\)/.test(sk));
   check('⑧ negative control: 仍把 pending 当成功提示的写法会被判出来', !/r\.pending[\s\S]{0,40}已安装/.test(sk));
 }
+
+/* ⑨ 下载完成后宿主自己补完安装（关面板/刷新也不会丢）。 */
+{
+  const host = readFileSync(join(ROOT, 'lib', 'routes', 'skins.js'), 'utf8');
+  check('⑨ 202 分支会安排宿主侧收尾', /scheduleFinishInstall\(\{/.test(host));
+  check('⑨ 收尾是等 job done 后自调用安装（复用同一条解压真源）', /\/skins\/install'/.test(host) && /job\.status !== 'done'/.test(host));
+  check('⑨ 有上限（不会无限轮询）', /60 \* 60 \* 1000/.test(host));
+  check('⑨ negative control: 若删掉自调用，判据会红', !/await fetch\('http:\/\/' \+ hostHeader \+ base \+ '\/skins\/install'/.test(host.replace(/await fetch\('http:\/\/' \+ hostHeader \+ base \+ '\/skins\/install'/, '')));
+}
 let failed = 0;
 for (const r of results) {
   if (r.ok) process.stdout.write('  ✓ ' + r.name + '\n');
