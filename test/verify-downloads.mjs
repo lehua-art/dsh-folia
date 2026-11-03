@@ -16,7 +16,7 @@ import { createServer } from 'node:http';
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createDownloadQueue } from '../lib/download-queue.js';
+import { createDownloadQueue, normalizePriority } from '../lib/download-queue.js';
 import { localCopyFor } from '../lib/routes/downloads.js';
 import { readFileSync } from 'node:fs';
 
@@ -256,6 +256,233 @@ try { rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
   check('⑫ 失败后再次入队必须重试并成功（旧实现会永远停在 failed）',
     Boolean(retried) && retried.status === 'done', retried && retried.status);
   try { http.close(); } catch { /* ignore */ }
+}
+
+/* ⑬⑭⑮ 4.23.2：**优先级 + 按 kind 独立并发槽 + 排队位置**。
+   真实故障：壁纸在播（预取把同队列的 3 个槽占满）时点皮肤安装，4.1 MB 的包永远停在
+   「安装中…」。这一组用行为判据钉住三件事：
+   ① 同一 kind 内 high 先于 low 启动，且 queuePos 就是**真实取任务顺序**里的位置；
+   ② 壁纸占满自己的槽时，皮肤仍能立刻启动（这是用户遇到的场景本身）；
+   ③ 旧 jobs.json（没有 priority 字段）不崩、恢复为 normal。 */
+{
+  const order = [];
+  /** 每个请求延迟 250ms：给"排队"留出可观察的窗口，又不至于把用例拖慢。 */
+  const slow = createServer((req, res) => {
+    order.push(String(req.url));
+    setTimeout(() => {
+      res.statusCode = 200;
+      res.setHeader('content-type', 'video/mp4');
+      res.setHeader('accept-ranges', 'bytes');
+      res.setHeader('content-length', String(BODY.length));
+      res.end(BODY);
+    }, 250);
+  });
+  await new Promise((ok) => { slow.listen(0, '127.0.0.1', ok); });
+  const base = 'http://127.0.0.1:' + slow.address().port;
+  const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
+  const waitAll = async (q, ms = 25000) => {
+    const deadline = Date.now() + ms;
+    while (Date.now() < deadline && q.snapshot().some((j) => ['queued', 'running'].includes(j.status))) await sleep(40);
+  };
+
+  /* ⑬ 优先级排序 + queuePos */
+  {
+    const homeP = join(home, 'prio');
+    const q = createDownloadQueue({ home: homeP, log: () => {} });
+    // wallpaper 的槽是 2：前两条先跑起来，后两条必然排队 ⇒ 正好观察"取任务的顺序"。
+    q.add({ url: base + '/media/p-a.mp4', dest: join(homeP, 'a.mp4'), kind: 'wallpaper', priority: 'low' });
+    q.add({ url: base + '/media/p-b.mp4', dest: join(homeP, 'b.mp4'), kind: 'wallpaper', priority: 'low' });
+    q.add({ url: base + '/media/p-c.mp4', dest: join(homeP, 'c.mp4'), kind: 'wallpaper', priority: 'low' });
+    q.add({ url: base + '/media/p-d.mp4', dest: join(homeP, 'd.mp4'), kind: 'wallpaper', priority: 'high' });
+
+    const queued = q.snapshot().filter((j) => j.status === 'queued').sort((x, y) => x.queuePos - y.queuePos);
+    check('⑬ 排队中的任务带 1 基 queuePos 且连续（1、2…）',
+      queued.length === 2 && queued[0].queuePos === 1 && queued[1].queuePos === 2,
+      queued.map((j) => j.queuePos).join(','));
+    check('⑬ queuePos 与优先级一致：high 在 queuePos=1，low 在 2',
+      queued.length === 2 && /p-d\.mp4$/.test(queued[0].url) && /p-c\.mp4$/.test(queued[1].url),
+      queued.map((j) => j.url.split('/').pop()).join(','));
+    check('⑬ 快照带 priority（面板/排障要用）',
+      q.snapshot().every((j) => ['high', 'normal', 'low'].includes(j.priority)));
+
+    await waitAll(q);
+    const iD = order.indexOf('/media/p-d.mp4');
+    const iC = order.indexOf('/media/p-c.mp4');
+    check('⑬ 高优先级先于低优先级启动（上游请求顺序）',
+      iD >= 0 && iC >= 0 && iD < iC, 'd@' + iD + ' c@' + iC);
+    check('⑬ 负对照：先入队的 low 确实排在后面（顺序不是"谁先入队谁先跑"）', iC > iD);
+
+    // queuePos 与 pump 用**同一个**排序函数，否则"显示第 2 位、实际跑第 4 位"。
+    const qSrc = readFileSync(join(ROOT, 'lib', 'download-queue.js'), 'utf8');
+    check('⑬ queuePos 与取任务同一排序源（queuedOrder）',
+      /function queuedOrder\(\)/.test(qSrc) && /queuedOrder\(\)\.find\(/.test(qSrc) && /posById = new Map\(ordered\.map/.test(qSrc));
+    check('⑬ 优先级白名单：非法值回落 normal（不是抛错、不是 unknown）',
+      normalizePriority('urgent') === 'normal' && normalizePriority(undefined) === 'normal' && normalizePriority('high') === 'high');
+  }
+
+  /* ⑭ 按 kind 独立槽：**用户遇到的场景本身** —— 壁纸占满槽，皮肤仍能立刻启动 */
+  {
+    const order2 = [];
+    const srv2 = createServer((req, res) => {
+      order2.push(String(req.url));
+      setTimeout(() => {
+        res.statusCode = 200;
+        res.setHeader('content-type', 'video/mp4');
+        res.setHeader('accept-ranges', 'bytes');
+        res.setHeader('content-length', String(BODY.length));
+        res.end(BODY);
+      }, 300);
+    });
+    await new Promise((ok) => { srv2.listen(0, '127.0.0.1', ok); });
+    const b2 = 'http://127.0.0.1:' + srv2.address().port;
+    const homeK = join(home, 'kinds');
+    const q = createDownloadQueue({ home: homeK, log: () => {} });
+
+    // 4 张壁纸 ⇒ wallpaper 只开 2 个槽，另 2 个排队（这就是"壁纸占住队列"的样子）
+    for (let i = 0; i < 4; i += 1) {
+      q.add({ url: b2 + '/media/w' + i + '.mp4', dest: join(homeK, 'w' + i + '.mp4'), kind: 'wallpaper', priority: 'low' });
+    }
+    await sleep(60);
+    const before = q.snapshot();
+    check('⑭ 壁纸最多占自己那 2 个槽（多出来的在排队）',
+      before.filter((j) => j.kind === 'wallpaper' && j.status === 'running').length === 2
+      && before.filter((j) => j.kind === 'wallpaper' && j.status === 'queued').length === 2,
+      before.filter((j) => j.kind === 'wallpaper').map((j) => j.status).join(','));
+
+    // 用户点「安装皮肤」：必须**立刻**启动，而不是排在 2 个壁纸后面
+    q.add({ url: b2 + '/media/skin.zip', dest: join(homeK, 'skin.zip'), kind: 'skin', priority: 'high' });
+    await sleep(120);
+    const after = q.snapshot();
+    const skin = after.find((j) => j.kind === 'skin');
+    check('⑭ 壁纸占满槽时皮肤仍能立刻启动（不再卡「安装中…」）',
+      Boolean(skin) && (skin.status === 'running' || skin.status === 'done'), skin && skin.status);
+    check('⑭ 负对照：那条皮肤**不是**排队第 1 位（旧行为会先排 2 个壁纸）',
+      Boolean(skin) && !skin.queuePos, skin && ('queuePos=' + skin.queuePos));
+
+    // byKind 统计必须与 jobs 自述一致（否则面板/排障看到的是两套事实）
+    const snap = q.snapshot();
+    const expect = {};
+    for (const j of snap) {
+      const k = String(j.kind || 'default');
+      if (!expect[k]) expect[k] = { running: 0, queued: 0 };
+      if (j.status === 'running') expect[k].running += 1;
+      if (j.status === 'queued') expect[k].queued += 1;
+    }
+    const byKind = snap.byKind || {};
+    const consistent = Object.keys(expect).every((k) => {
+      const got = byKind[k] || {};
+      return got.running === expect[k].running && got.queued === expect[k].queued;
+    }) && Object.keys(byKind).every((k) => Object.prototype.hasOwnProperty.call(expect, k));
+    check('⑭ byKind 统计与 snapshot 逐条一致（同一真相）', consistent,
+      JSON.stringify(byKind) + ' 期望 ' + JSON.stringify(expect));
+    check('⑭ byKind 给出每类的并发上限（skin=2 / wallpaper=2 / pet=1 / boot=1）',
+      byKind.wallpaper && byKind.wallpaper.limit === 2 && byKind.skin && byKind.skin.limit === 2,
+      JSON.stringify({ w: byKind.wallpaper, s: byKind.skin }));
+
+    // 每 kind 的上限：pet=1，3 条桌宠任务里同时最多 1 条在跑
+    const homePet = join(home, 'kinds-pet');
+    const qp = createDownloadQueue({ home: homePet, log: () => {} });
+    for (let i = 0; i < 3; i += 1) {
+      qp.add({ url: b2 + '/media/pet' + i + '.mp4', dest: join(homePet, 'pet' + i + '.mp4'), kind: 'pet', priority: 'low' });
+    }
+    let maxPet = 0;
+    let maxAll = 0;
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline) {
+      const s = qp.snapshot();
+      const petRun = s.filter((j) => j.kind === 'pet' && j.status === 'running').length;
+      const allRun = s.filter((j) => j.status === 'running').length;
+      maxPet = Math.max(maxPet, petRun);
+      maxAll = Math.max(maxAll, allRun);
+      if (!s.some((j) => ['queued', 'running'].includes(j.status))) break;
+      await sleep(20);
+    }
+    check('⑭ pet 类同时最多 1 个在跑（按 kind 的上限生效）', maxPet === 1, 'maxPet=' + maxPet);
+    check('⑭ 全局并发不超过 4（总带宽有天花板）', maxAll <= 4, 'maxAll=' + maxAll);
+    check('⑭ 皮肤确实在壁纸跑着的时候就发了请求（不是等壁纸排完）',
+      order2.indexOf('/media/skin.zip') >= 0 && order2.indexOf('/media/skin.zip') < order2.indexOf('/media/w3.mp4'),
+      order2.join('|'));
+    try { srv2.close(); } catch { /* ignore */ }
+  }
+
+  /* ⑮ 旧 jobs.json（**没有 priority 字段**）必须照旧能用 */
+  {
+    const homeOld = join(home, 'legacy');
+    mkdirSync(join(homeOld, 'lib'), { recursive: true });
+    // 真机上这份文件就是 4.23.1 及更早版本写下的样子：没有 priority / 没有 queuePos。
+    writeFileSync(join(homeOld, 'downloads.json'), JSON.stringify({
+      version: 1,
+      jobs: [
+        { id: 'old-1', url: base + '/media/legacy1.mp4', dest: join(homeOld, 'lib', 'legacy1.mp4'), kind: 'skin', total: 0, status: 'queued', error: null, at: Date.now() - 3000 },
+        { id: 'old-2', url: base + '/media/legacy2.mp4', dest: join(homeOld, 'lib', 'legacy2.mp4'), kind: 'wallpaper', total: 0, status: 'failed', error: 'boom', at: Date.now() - 2000 },
+      ],
+    }, null, 2));
+    let q = null;
+    let crashed = null;
+    try { q = createDownloadQueue({ home: homeOld, log: () => {} }); } catch (e) { crashed = e; }
+    check('⑮ 旧 jobs.json（缺 priority）不崩', !crashed && Boolean(q), crashed && String(crashed.message || crashed));
+    const snap0 = q ? q.snapshot() : [];
+    check('⑮ 旧任务被恢复为 normal（不崩、也不是全员 high）',
+      snap0.length === 2 && snap0.every((j) => j.priority === 'normal'),
+      snap0.map((j) => j.priority).join(','));
+    await waitAll(q, 20000);
+    const snap1 = q.snapshot();
+    check('⑮ 恢复后仍能继续下（旧条目不是死档）',
+      snap1.filter((j) => j.status === 'done').length === 2
+      && existsSync(join(homeOld, 'lib', 'legacy1.mp4')),
+      snap1.map((j) => j.status).join(','));
+    // 负对照：把同一份文件改成"priority 存在但非法" ⇒ 仍须回落 normal，且不崩
+    let q2 = null;
+    let crashed2 = null;
+    const homeBad = join(home, 'legacy-bad');
+    mkdirSync(join(homeBad, 'lib'), { recursive: true });
+    writeFileSync(join(homeBad, 'downloads.json'), JSON.stringify({
+      version: 1,
+      jobs: [{ id: 'bad-1', url: base + '/media/bad1.mp4', dest: join(homeBad, 'lib', 'bad1.mp4'), kind: 'skin', total: 0, status: 'done', priority: 'URGENT', error: null, at: Date.now() }],
+    }, null, 2));
+    try { q2 = createDownloadQueue({ home: homeBad, log: () => {} }); } catch (e) { crashed2 = e; }
+    check('⑮ 负对照：非法 priority 也回落 normal（白名单不是"照抄传入值"）',
+      !crashed2 && q2 && q2.snapshot()[0] && q2.snapshot()[0].priority === 'normal',
+      crashed2 ? String(crashed2.message || crashed2) : (q2 && q2.snapshot()[0] && q2.snapshot()[0].priority));
+    try { slow.close(); } catch { /* ignore */ }
+  }
+}
+
+/* ⑯ 4.23.2 的另外三条体感项：预取、完成文件的长缓存、排队/ETA 文案。
+   判据以**源码事实**为主（行为面在 ⑬⑭ 已覆盖），并各配一条负对照。 */
+{
+  const lf = readFileSync(join(ROOT, 'src', 'local-first.js'), 'utf8');
+  const panel = readFileSync(join(ROOT, 'src', 'panel-tabs-skins.js'), 'utf8');
+  const smedia = readFileSync(join(ROOT, 'lib', 'routes', 'site-media.js'), 'utf8');
+  const serveSrc = readFileSync(join(ROOT, 'lib', 'serve.js'), 'utf8');
+  const dict = readFileSync(join(ROOT, 'src', 'i18n-copy-panel.js'), 'utf8');
+
+  check('⑯ 预取只在悬停 300ms 后触发（不是一进面板就全下）',
+    /lfSchedulePrefetch/.test(lf) && /300\)/.test(lf) && /lfCancelPrefetch/.test(lf));
+  check('⑯ 预取同一时刻最多 1 个，且已入队/已落地的不重复发',
+    /LF_PREFETCH\.busy/.test(lf) && /LF_PREFETCH\.seen/.test(lf) && /downloads\/list/.test(lf));
+  check('⑯ 预取走 low 优先级（不抢用户点击的 high）',
+    /kind: "wallpaper", url: next\.media, priority: "low"/.test(lf));
+  check('⑯ 负对照：把预取的 priority 改成 high 会被判出来',
+    !/kind: "wallpaper", url: next\.media, priority: "high"/.test(lf));
+  check('⑯ 面板卡片确实接了预取触发器',
+    /onMouseEnter: \(\) => \{ try \{ lfSchedulePrefetch/.test(readFileSync(join(ROOT, 'src', 'quick-panel.js'), 'utf8')));
+
+  check('⑯ 已完成的站点文件按不可变载荷发（immutable + 长缓存）',
+    /\{ immutable: true \}/.test(smedia) && /public, max-age=31536000, immutable/.test(serveSrc));
+  check('⑯ 负对照：下载中的渐进读仍然是 no-store（不缓存半截文件）',
+    /serveGrowingFile\(partPath, job, res, headOnly\)/.test(smedia)
+    && /res\.setHeader\('cache-control', 'no-store'\)/.test(smedia));
+
+  check('⑯ 面板有排队位置文案，且 N = queuePos - 1',
+    /排队中：前面还有 \{n\} 个任务/.test(panel) && /pos - 1/.test(panel));
+  check('⑯ 面板有预计剩余时间（最近 3 秒增量估算）',
+    /约剩 \{s\} 秒/.test(panel) && /samples\.push/.test(panel) && /3000/.test(panel));
+  check('⑯ 新增文案都在英文词表里（零漏译不靠"以后再说"）',
+    ['排队中：前面还有 {n} 个任务', '排队中：{name}', '排队中', '正在下载：{name} {p}%（{a}/{b} MB）· 约剩 {s} 秒']
+      .every((k) => dict.includes(JSON.stringify(k))));
+  check('⑯ 负对照：词表里没有的键会被这条判据判红',
+    !['不存在的键-AB'].every((k) => dict.includes(JSON.stringify(k))));
 }
 
 let failed = 0;

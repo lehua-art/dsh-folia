@@ -201,8 +201,24 @@ function SkinsTabPanel() {
       if (resp && resp.ok && r && r.pending) {
         const jobId = r.jobId;
         const label2 = label || "";
-        setNote({ ok: true, text: weT("正在下载：{name} 0%", { name: label2 }) });
+        /**
+         * **排队位置**（4.23.2）：job 还在 `queued` 时，显示"前面还有几个"。
+         * 为什么必须有：这个页签以前的文案是「正在下载 … 0%」——壁纸预取占满槽位时
+         * 它会一动不动地停在 0%，用户唯一能得出的结论是"插件卡死了"。
+         * 现在 `queuePos` 是队列**真实取任务的顺序**里的 1 基位置（见 lib/download-queue.js
+         * 的 queuedOrder），所以 N = queuePos - 1 就是"还有几个排在前面"。
+         */
+        const queueText = (job) => {
+          if (!(job && job.status === "queued")) return "";
+          const pos = Number(job.queuePos) || 0;
+          if (pos <= 0) return label2 ? weT("排队中：{name}", { name: label2 }) : weT("排队中");
+          return weT("排队中：前面还有 {n} 个任务", { n: pos - 1 });
+        };
+        setNote({ ok: true, text: queueText({ status: r.status, queuePos: r.queuePos })
+          || weT("正在下载：{name} 0%", { name: label2 }) });
         const started = Date.now();
+        /** 最近 3 秒的 received 采样：只用来算"约剩 N 秒"，样本不足就不显示。 */
+        const samples = [];
         while (Date.now() - started < 30 * 60 * 1000) {
           await new Promise((resolve) => { setTimeout(resolve, 1200); });
           let jobs = [];
@@ -215,7 +231,28 @@ function SkinsTabPanel() {
           const pct = job && Number(job.percent) ? Number(job.percent) : 0;
           const rec = job && Number(job.received) ? (Number(job.received) / 1048576).toFixed(1) : "0";
           const tot = job && Number(job.total) ? (Number(job.total) / 1048576).toFixed(1) : "?";
-          setNote({ ok: true, text: weT("正在下载：{name} {p}%（{a}/{b} MB）", { name: label2, p: pct, a: rec, b: tot }) });
+          const queuedText = queueText(job);
+          if (queuedText) {
+            setNote({ ok: true, text: queuedText });
+          } else {
+            // 预计剩余：只用**最近 3 秒**的增量（整段平均会被起跑阶段拖低，越下越离谱）。
+            // 样本 < 2 条、或这 3 秒没往前走 ⇒ 只显示百分比（宁可不给，也别给个假数字）。
+            const now = Date.now();
+            const got = job && Number(job.received) ? Number(job.received) : 0;
+            const totalBytes = job && Number(job.total) ? Number(job.total) : 0;
+            samples.push({ at: now, got });
+            while (samples.length > 2 && now - samples[0].at > 3000) samples.shift();
+            const first = samples[0];
+            const span = now - first.at;
+            const speed = span > 500 ? (got - first.got) / (span / 1000) : 0;
+            const left = speed > 1024 && totalBytes > got ? Math.max(1, Math.round((totalBytes - got) / speed)) : 0;
+            setNote({
+              ok: true,
+              text: left > 0
+                ? weT("正在下载：{name} {p}%（{a}/{b} MB）· 约剩 {s} 秒", { name: label2, p: pct, a: rec, b: tot, s: left })
+                : weT("正在下载：{name} {p}%（{a}/{b} MB）", { name: label2, p: pct, a: rec, b: tot }),
+            });
+          }
           if (job && job.status === "failed") {
             setNote({ ok: false, text: weT("下载失败：{name}（{why}）", { name: label2, why: job.error || "unknown" }) });
             return;

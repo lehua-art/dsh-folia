@@ -512,6 +512,14 @@ const WE_I18N_EN_PANEL = {
   "已安装：{name} —— 点「应用」就能切换": "Installed: {name} — press Apply to switch",
   "本页签可以直接切换皮肤：装完点「应用」即可，无需打开设置页。皮肤包落在皮肤中心目录，两边读同一份。":
     "This tab switches skins directly: install, then press Apply — no need to open the settings page. Packs land in the skin centre's folder and both sides read the same files.",
+
+  // ── 下载队列：排队位置与预计剩余（4.23.2）──────────────────────────────
+  "排队中：前面还有 {n} 个任务": "Queued: {n} task(s) ahead",
+  "排队中：{name}": "Queued: {name}",
+  "排队中": "Queued",
+  "正在下载：{name} {p}%（{a}/{b} MB）· 约剩 {s} 秒": "Downloading: {name} {p}% ({a}/{b} MB) · about {s}s left",
+  "正在下载：{name} {p}%（{a}/{b} MB）": "Downloading: {name} {p}% ({a}/{b} MB)",
+  "正在下载：{name} 0%": "Downloading: {name} 0%",
 };
 
 export { WE_I18N_EN_PANEL };

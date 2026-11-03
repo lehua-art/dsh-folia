@@ -289,6 +289,11 @@
       title: w.title,
       onClick: () => applySelection(w.id, { fromManual: true }),
       onKeyDown: cardKeyDown,
+      // 预取：悬停 300ms ⇒ 把**后面第一张**站点条目按 low 优先级拉一份到本地
+      // （见 src/local-first.js 的 lfSchedulePrefetch）。它只占 wallpaper 自己的槽，
+      // 抢不走皮肤/桌宠的并发位；移开就撤掉计时器，不乱下。
+      onMouseEnter: () => { try { lfSchedulePrefetch(w.id, sel.id); } catch { /* 预取是增强 */ } },
+      onMouseLeave: () => { try { lfCancelPrefetch(); } catch { /* ignore */ } },
     },
       React.createElement("span", { className: "we-qp__item-thumb" },
         w.preview
@@ -431,6 +436,9 @@
       title: w.title,
       onClick: () => applySelection(w.id, { fromManual: true }),
       onKeyDown: cardKeyDown,
+      // 卡片档与列表行同一套预取触发器（见 qpRenderRow / src/local-first.js）。
+      onMouseEnter: () => { try { lfSchedulePrefetch(w.id, sel.id); } catch { /* 预取是增强 */ } },
+      onMouseLeave: () => { try { lfCancelPrefetch(); } catch { /* ignore */ } },
     },
       w.preview
         ? React.createElement("img", {

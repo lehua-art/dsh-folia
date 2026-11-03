@@ -43,7 +43,7 @@
 | `verify-contracts.mjs` | `lib/components/fonts/src/fontset-editor.js` `lib/host-boot.js` `lib/index.js` `lib/kernel/host-kernel.js` `lib/media/media-dirs.js` `lib/settings-schema.js` `src/api-client.js` `src/client.js` `src/fontset-store.js` `src/panel-tabs-advanced.js` `src/panel-tabs-appearance.js` `src/panel-tabs-boot.js` `src/panel-tabs-effects.js` `src/panel-tabs-mascot.js` `src/panel-tabs-pets.js` `src/panel-tabs-skins.js` `src/panel-tabs-wallpaper.js` `src/panel-tabs.js` |  |
 | `verify-dead-declarations.mjs` | — |  |
 | `verify-deployment.mjs` | — |  |
-| `verify-downloads.mjs` | `lib/download-queue.js` `lib/routes/boot.js` `lib/routes/downloads.js` `lib/routes/inventory.js` `lib/routes/pets.js` `lib/routes/site-media.js` `lib/routes/skins.js` `lib/site-auth.js` `src/local-first.js` `src/media-prep.js` |  |
+| `verify-downloads.mjs` | `lib/download-queue.js` `lib/routes/boot.js` `lib/routes/downloads.js` `lib/routes/inventory.js` `lib/routes/pets.js` `lib/routes/site-media.js` `lib/routes/skins.js` `lib/serve.js` `lib/site-auth.js` `src/i18n-copy-panel.js` `src/local-first.js` `src/media-prep.js` `src/panel-tabs-skins.js` `src/quick-panel.js` |  |
 | `verify-eol.mjs` | — |  |
 | `verify-extra-glass.mjs` | `lib/settings-schema.js` `src/client.js` `src/effects.js` `src/glass-extra.js` `src/glass-panel.js` `src/quick-panel.js` | ✅ |
 | `verify-features.mjs` | `lib/features.js` `lib/routes/boot.js` `lib/routes/inventory.js` `lib/routes/pets.js` `src/client.js` `src/features.js` `src/pet-layer.js` `src/quick-panel.js` | ✅ |
@@ -234,7 +234,7 @@
 | `lib/routes/upload.js` | 2 | `verify-body-caps` `verify-package-files` |
 | `lib/routes/we-assets.js` | 1 | `verify-scene-live` |
 | `lib/scene-manifest.js` | 2 | `verify-scene-probe` `verify-scene` |
-| `lib/serve.js` | 3 | `verify-avatar-interval-and-rotation` `verify-logging` `verify-scene-live` |
+| `lib/serve.js` | 4 | `verify-avatar-interval-and-rotation` `verify-downloads` `verify-logging` `verify-scene-live` |
 | `lib/settings-schema.js` | 17 | `verify-adapter` `verify-avatar-interval-and-rotation` `verify-client` `verify-component-fonts` `verify-contracts` `verify-extra-glass` `verify-fontset` `verify-glass-compat` `verify-glass-surfaces` `verify-module-layout` `verify-presets` `verify-scene-live` `verify-settings-namespaces` `verify-settings-ownership` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `lib/settings/ownership.js` | 1 | `verify-settings-ownership` |
 | `lib/shim-seed.js` | 1 | `verify-scene-live` |
@@ -278,7 +278,7 @@
 | `src/i18n-copy-font.js` | 2 | `verify-about` `verify-presets` |
 | `src/i18n-copy-glass.js` | 2 | `verify-about` `verify-presets` |
 | `src/i18n-copy-live.js` | 2 | `verify-about` `verify-presets` |
-| `src/i18n-copy-panel.js` | 2 | `verify-about` `verify-presets` |
+| `src/i18n-copy-panel.js` | 3 | `verify-about` `verify-downloads` `verify-presets` |
 | `src/i18n-copy-pet-link.js` | 2 | `verify-about` `verify-presets` |
 | `src/i18n-copy-picker.js` | 2 | `verify-about` `verify-presets` |
 | `src/i18n-copy.js` | 3 | `verify-about` `verify-i18n` `verify-presets` |
@@ -301,7 +301,7 @@
 | `src/panel-tabs-effects.js` | 11 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs-mascot.js` | 11 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs-pets.js` | 12 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-panel-interactions` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
-| `src/panel-tabs-skins.js` | 12 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-panel-defensive` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
+| `src/panel-tabs-skins.js` | 13 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-downloads` `verify-fontset` `verify-glass-surfaces` `verify-panel-defensive` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs-wallpaper.js` | 12 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-avatar-interval-and-rotation` `verify-client` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs.js` | 14 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-api-client` `verify-client` `verify-component-visibility` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-subpackage-toggle-roundtrip` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/persistence.js` | 4 | `verify-adapter` `verify-client` `verify-presets` `verify-settings-namespaces` |
@@ -310,7 +310,7 @@
 | `src/picker-model.js` | 1 | `verify-picker-model` |
 | `src/picker-props-panel.js` | 2 | `verify-client` `verify-fontset` |
 | `src/preset-store.js` | 2 | `verify-client` `verify-presets` |
-| `src/quick-panel.js` | 9 | `e2e-web-media-origin` `verify-client` `verify-extra-glass` `verify-features` `verify-i18n` `verify-panel-defensive` `verify-presets` `verify-scene-live` `verify-system-fonts` |
+| `src/quick-panel.js` | 10 | `e2e-web-media-origin` `verify-client` `verify-downloads` `verify-extra-glass` `verify-features` `verify-i18n` `verify-panel-defensive` `verify-presets` `verify-scene-live` `verify-system-fonts` |
 | `src/section-head.js` | 2 | `verify-fontset` `verify-scene-live` |
 | `src/sidebar-right.js` | 4 | `verify-i18n` `verify-pet-package` `verify-pet-sidebar-rebound` `verify-scene-live` |
 | `src/skin-compat.js` | 1 | `verify-skin-center-bundle` |

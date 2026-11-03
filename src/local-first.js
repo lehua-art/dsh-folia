@@ -33,17 +33,21 @@ function lfSay(text, ok) {
  * ⇒ 永远找不到 ⇒ 静默不入队 ⇒ 代理侧也拿不到可复用的 job ⇒ 壁纸退化为"远端流式 + 被播放器背压"
  *（实测 0.6 MB/s、且缓存永远补不满）。现在按"任何一个对象数组里找 id"兜底，不依赖具体键名。
  */
-async function lfFindItem(id) {
+async function lfPools() {
   try {
     const resp = await apiJson("/inventory");
     const doc = (resp && resp.data && typeof resp.data === 'object') ? resp.data : (resp || {});
-    const pools = [doc.items, doc.wallpapers, doc.list, doc.entries].filter(Array.isArray);
-    for (const pool of pools) {
-      const hit = pool.find((x) => x && x.id === id);
-      if (hit) return hit;
-    }
-    return null;
-  } catch { return null; }
+    return [doc.items, doc.wallpapers, doc.list, doc.entries].filter(Array.isArray);
+  } catch { return []; }
+}
+
+async function lfFindItem(id) {
+  const pools = await lfPools();
+  for (const pool of pools) {
+    const hit = pool.find((x) => x && x.id === id);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 function lfStopPolling(id) {
@@ -103,7 +107,7 @@ function localFirstApply(id, opts) {
     if (LF_STATE.inflight.has(id)) { lfSay(`正在下载到本地：${label}`, true); return; }
     let job = null;
     try {
-      const resp = await apiPostJson("/downloads/add", { items: [{ kind: "wallpaper", url: item.media }] }, { parse: "always" });
+      const resp = await apiPostJson("/downloads/add", { items: [{ kind: "wallpaper", url: item.media, priority: "low" }] }, { parse: "always" });
       const items = (resp && resp.data && Array.isArray(resp.data.items)) ? resp.data.items : [];
       job = items[0] && items[0].job ? items[0].job : null;
     } catch { /* 入队失败：下面回退直连 */ }
@@ -113,3 +117,78 @@ function localFirstApply(id, opts) {
   })();
   return true;
 }
+
+/* ── 预取（hover 300ms 预下"下一张"）───────────────────────────────────────── */
+/**
+ * 为什么预取**必须是最低优先级 + 限量**：它是"替用户提前赌一张"的投机行为。
+ * 一旦它抢到用户真正需要的那条下载（安装皮肤 / 桌宠）的带宽，就会重现
+ * 「看壁纸时点安装，卡片一直「安装中…」」这类故障。所以：
+ *   · kind = wallpaper（自己那 2 个并发槽，见 lib/download-queue.js 的 KIND_LIMITS）
+ *   · priority = low（同 kind 内排在用户点击后面）
+ *   · 同一时刻**最多 1 个**预取在飞；已经入队/已落地的不重复发。
+ */
+const LF_PREFETCH = {
+  timer: null,      // hover 计时器（300ms）
+  sig: "",          // 当前悬停的卡片 id（同一张重复触发不叠计时器）
+  busy: false,      // 是否有预取请求在飞
+  seen: new Set(),  // 已预取过的 id（避免来回 hover 反复打宿主的 downloads/add）
+};
+
+function lfCancelPrefetch() {
+  if (LF_PREFETCH.timer) { try { clearTimeout(LF_PREFETCH.timer); } catch { /* ignore */ } }
+  LF_PREFETCH.timer = null;
+}
+
+/** 悬停某张卡片 ⇒ 300ms 后预取它后面第一张站点条目。`playingId` 是此刻在播的那张。 */
+function lfSchedulePrefetch(id, playingId) {
+  if (!id) return;
+  if (id === playingId) return;                 // 正在播的那张不预取（它本来就已经在本地/在下了）
+  if (LF_PREFETCH.sig === String(id) && LF_PREFETCH.timer) return;
+  lfCancelPrefetch();
+  LF_PREFETCH.sig = String(id);
+  LF_PREFETCH.timer = setTimeout(() => {
+    LF_PREFETCH.timer = null;
+    lfPrefetchNext(String(id), playingId ? String(playingId) : "").catch(() => { /* 预取失败静默 */ });
+  }, 300);
+  try { if (LF_PREFETCH.timer && typeof LF_PREFETCH.timer.unref === "function") LF_PREFETCH.timer.unref(); } catch { /* ignore */ }
+}
+
+/** 预取 `afterId` 之后的下一张站点壁纸（只看后面 6 条，避免翻遍整份清单）。 */
+async function lfPrefetchNext(afterId, playingId) {
+  if (LF_PREFETCH.busy) return;                  // 同一时刻最多 1 个预取
+  LF_PREFETCH.busy = true;
+  try {
+    const pools = await lfPools();
+    let pool = null;
+    let at = -1;
+    for (const p of pools) {
+      const i = p.findIndex((x) => x && String(x.id) === afterId);
+      if (i >= 0) { pool = p; at = i; break; }
+    }
+    if (!pool) return;
+    let next = null;
+    for (let k = at + 1; k < pool.length && k <= at + 6; k += 1) {
+      const cand = pool[k];
+      if (!cand || !cand.mediaProxy || cand.local === true) continue;
+      if (playingId && String(cand.id) === playingId) continue;
+      next = cand;
+      break;
+    }
+    if (!next) return;
+    const nextId = String(next.id);
+    if (LF_PREFETCH.seen.has(nextId)) return;
+    // 已有 job（排队/在跑/已完成）⇒ 宿主侧本来就会去重，这里先问一次列表是为了
+    // **不白占一次"预取名额"**，也让 `seen` 只在真的发出去时才记账。
+    try {
+      const resp = await apiJson("/downloads/list");
+      const doc = (resp && resp.data) || resp || {};
+      const jobs = Array.isArray(doc.jobs) ? doc.jobs : [];
+      if (jobs.some((j) => j && j.url === next.media && j.status !== "failed" && j.status !== "cancelled")) return;
+    } catch { return; }
+    LF_PREFETCH.seen.add(nextId);
+    await apiPostJson("/downloads/add", { items: [{ kind: "wallpaper", url: next.media, priority: "low" }] }, { parse: "always" });
+  } finally {
+    LF_PREFETCH.busy = false;
+  }
+}
+

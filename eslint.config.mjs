@@ -87,6 +87,11 @@ export default [
     ignores: [
       'lib/client.js', 'node_modules/**', '.npm-cache/**', '.test-cache/**', 'assets/**', 'lib/types/**',
       '.integration-notes/**', '.artifacts/**',
+      // `.recon-site-src/**` / `folia-admin/**`：**站点仓库的本地克隆**（见 docs/ISSUE-LIST.md 的
+      // 「站点仓库：本地克隆 folia-admin」）。与上面两条同族 —— 它们不是本仓跟踪的内容（`git status`
+      // 里是未跟踪目录），CI 上也没有；放进扫描面只会让本机棘轮对不上（实测多出 6 条
+      // `no-irregular-whitespace`，扫描面 363 → 528），而"改站点的 JS"不是这个插件的门禁该管的事。
+      '.recon-site-src/**', 'folia-admin/**',
     ],
   },
 
