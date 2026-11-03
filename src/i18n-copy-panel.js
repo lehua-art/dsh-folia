@@ -520,6 +520,16 @@ const WE_I18N_EN_PANEL = {
   "正在下载：{name} {p}%（{a}/{b} MB）· 约剩 {s} 秒": "Downloading: {name} {p}% ({a}/{b} MB) · about {s}s left",
   "正在下载：{name} {p}%（{a}/{b} MB）": "Downloading: {name} {p}% ({a}/{b} MB)",
   "正在下载：{name} 0%": "Downloading: {name} 0%",
+
+  // ── 下载队列：自适应多连接（4.23.3）────────────────────────────────────
+  // 只在 `job.mode = ranged:<n>` 时追加在**同一行末尾**；单流沿用上面原文案，一字不改。
+  "正在下载：{name} {p}%（{a}/{b} MB）· 多连接({n})": "Downloading: {name} {p}% ({a}/{b} MB) · {n} connections",
+  "正在下载：{name} {p}%（{a}/{b} MB）· 约剩 {s} 秒 · 多连接({n})": "Downloading: {name} {p}% ({a}/{b} MB) · about {s}s left · {n} connections",
+
+  // ── 下载状态以队列为真源（4.23.3）：页签切换后卡片仍能显示进度 ────────────
+  "下载中… {p}%": "Downloading… {p}%",
+  "下载中… {p}% · 多连接({n})": "Downloading… {p}% · {n} connections",
+  "正在下载（皮肤包）{p}%（{a}/{b} MB）": "Downloading skin pack: {p}% ({a}/{b} MB)",
 };
 
 export { WE_I18N_EN_PANEL };

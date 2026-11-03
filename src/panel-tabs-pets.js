@@ -30,6 +30,8 @@ function PetsTabPanel() {
   const [busy, setBusy] = React.useState("");
   const [note, setNote] = React.useState(null);
   const [importable, setImportable] = React.useState([]);
+  // 4.23.3：安装进度以 /folia/downloads/list 为真源（kind=pet），切页签回来仍在。
+  const dl = useDownloadJobs();
 
   const load = React.useCallback(async (force) => {
     try {
@@ -55,13 +57,28 @@ function PetsTabPanel() {
   const act = async (kind, payload, label) => {
     // 只有安装/卸载/导入这类**结构性**操作才锁 UI；开关与大小是幂等的。
     const structural = kind === "install" || kind === "remove" || kind === "import";
-    if (structural) setBusy(kind + ":" + (payload.id || ""));
+    // 4.23.3：安装走下载队列（payload.queue）时不锁整页 —— 进度落在卡片上，切页签回来仍在。
+    const lockUi = structural && !(kind === "install" && payload && payload.queue === true);
+    if (lockUi) setBusy(kind + ":" + (payload.id || ""));
     setNote(null);
     try {
       const resp = await apiPostJson("/pets/" + kind, payload || {}, { parse: "always" });
       const r = (resp && resp.data) || null;
       if (resp && resp.ok && r && r.ok) {
-        if (kind === "install") setNote({ ok: true, text: weT("已安装并启用：{name}", { name: label || "" }) });
+        if (kind === "install") {
+          // 宿主回 202 pending（zip 交给队列）：进度看 list，下完宿主会自己再调一次落地。
+          if (r.pending && r.jobId) {
+            dl.refresh();
+            setNote({ ok: true, text: dlBusyLabel({ percent: 0, mode: r.mode }) });
+            const done = await dlAwaitJob(r.jobId);
+            if (done && done.status === "done") setNote({ ok: true, text: weT("已安装并启用：{name}", { name: label || "" }) });
+            else if (done && done.status !== "timeout") setNote({ ok: false, text: weT("操作失败：{code}", { code: done.error || done.status }) });
+            else setNote({ ok: false, text: weT("下载超时：{name}", { name: label || "" }) });
+            await load(true);
+            return;
+          }
+          setNote({ ok: true, text: weT("已安装并启用：{name}", { name: label || "" }) });
+        }
         if (kind === "remove") setNote({ ok: true, text: weT("已卸载：{name}", { name: label || "" }) });
         if (kind === "import") setNote({ ok: true, text: weT("已导入并启用：{name}", { name: label || "" }) });
         if (kind === "config") setNote({ ok: true, text: weT("已保存") });
@@ -240,7 +257,9 @@ function PetsTabPanel() {
   if (available.length) {
     children.push(React.createElement("div", { key: "site", style: PET_STYLE.grid },
       available.map((s) => {
-        const isBusy = busy === "install:" + s.id;
+        // 4.23.3：按 kind=pet + url 找回这条的下载 job（挂载时已在跑的也认得出）。
+        const job = dlJobForCard(dl.jobs, "pet", s.url);
+        const jobBusy = dlJobActive(job);
         return React.createElement("div", { key: "site:" + s.id, style: PET_STYLE.card },
           s.cover
             ? React.createElement("img", {
@@ -252,7 +271,8 @@ function PetsTabPanel() {
           React.createElement("div", { style: PET_STYLE.title }, s.title || s.id),
           React.createElement("div", { style: PET_STYLE.meta }, petFmtBytes(s.bytes)),
           React.createElement("div", { style: PET_STYLE.row },
-            btn(isBusy ? weT("安装中…") : weT("安装"), () => act("install", { id: s.id }, s.title || s.id), Boolean(busy))),
+            btn(jobBusy ? dlBusyLabel(job) : (busy === "install:" + s.id ? weT("安装中…") : weT("安装")),
+              () => act("install", { id: s.id, queue: true }, s.title || s.id), Boolean(busy) || jobBusy)),
         );
       }),
     ));

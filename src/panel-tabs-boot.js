@@ -39,6 +39,9 @@ function BootTabPanel() {
   // 下载没有进度通道（宿主一次性 fetch 完才返回），但等待必须"看得见"：
   // 每秒 +1 的秒表足以让用户知道它没卡死。
   const [tick, setTick] = React.useState(0);
+  // 4.23.3：卡片状态以 /folia/downloads/list 为唯一真源 —— 切页签重新挂载后，
+  // 这里拉回来的 job 会让「下载中… x%」直接出现，而不是回到「下载」。
+  const dl = useDownloadJobs();
 
   const load = React.useCallback(async (force) => {
     try {
@@ -62,14 +65,29 @@ function BootTabPanel() {
     if (busy) return;
     // 只有结构性操作（下载 / 选择 / 删除）才锁 UI；开关与参数是幂等的，锁了反而闪。
     const structural = kind === "download" || kind === "select" || kind === "remove";
-    if (structural) setBusy(payload && payload.id ? payload.id : kind);
+    // 4.23.3：**下载走队列后不再锁整页** —— 进度落在卡片上（dlBusyLabel），锁住反而让人
+    // 以为面板卡了。structural 的判据保持原样，只是在"真的 setBusy 吗"这一步把下载排除。
+    if (structural && kind !== "download") setBusy(payload && payload.id ? payload.id : kind);
     setTick(0);
     setNote(null);
     try {
       const resp = await apiPostJson("/boot/" + kind, payload || {}, { parse: "always" });
       const r = (resp && resp.data) || null;
       if (resp && resp.ok && r && r.ok) {
-        if (kind === "download") setNote({ ok: true, text: weT("已下载：{name}", { name: label }) });
+        if (kind === "download") {
+          // 宿主把下载交给队列并回 202 pending（jobId）：进度靠 list，落地后宿主自己再收尾。
+          if (r.pending && r.jobId) {
+            dl.refresh();
+            setNote({ ok: true, text: dlBusyLabel({ percent: 0, mode: r.mode }) });
+            const done = await dlAwaitJob(r.jobId);
+            if (done && done.status === "done") setNote({ ok: true, text: weT("已下载：{name}", { name: label }) });
+            else if (done && done.status !== "timeout") setNote({ ok: false, text: weT("下载失败：{name}（{why}）", { name: label, why: done.error || done.status }) });
+            else setNote({ ok: false, text: weT("下载超时：{name}", { name: label }) });
+            await load(true);
+            return;
+          }
+          setNote({ ok: true, text: weT("已下载：{name}", { name: label }) });
+        }
         if (kind === "select") setNote({ ok: true, text: weT("已选中「{name}」，下次启动生效", { name: label }) });
         if (kind === "remove") setNote({ ok: true, text: weT("已删除：{name}", { name: label }) });
         if (kind === "toggle") setNote({ ok: true, text: payload.enabled ? weT("开机动画已开启") : weT("开机动画已关闭") });
@@ -196,7 +214,11 @@ function BootTabPanel() {
   if (clips.length) {
     children.push(React.createElement("div", { key: "grid", style: BOOT_STYLE.grid },
       clips.map((c) => {
-        const isBusy = busy === c.id;
+        // 4.23.3：这一条卡片的下载 job（按 kind=boot + url 匹配）。挂载时已有 running 的，
+        // 这里天然就能显示「下载中… x%」——状态不跟着组件挂载/卸载走。
+        const job = dlJobForCard(dl.jobs, "boot", c.url);
+        const jobBusy = dlJobActive(job);
+        const isBusy = busy === c.id || jobBusy;
         const isActive = c.id === activeId;
         const btn = (label, onClick, disabled, primary) => React.createElement("button", {
           type: "button",
@@ -207,7 +229,9 @@ function BootTabPanel() {
         }, label);
         const actions = [];
         if (!c.installed) {
-          actions.push(btn(isBusy ? weT("下载中… {s}s", { s: tick }) : weT("下载"), () => act("download", { id: c.id }, c.title), false, true));
+          const label = jobBusy ? dlBusyLabel(job)
+            : (busy === c.id ? weT("下载中… {s}s", { s: tick }) : weT("下载"));
+          actions.push(btn(label, () => act("download", { id: c.id }, c.title), isBusy, true));
         } else if (!isActive) {
           actions.push(btn(weT("使用"), () => act("select", { id: c.id }, c.title), false, true));
           actions.push(btn(weT("删除"), () => act("remove", { id: c.id }, c.title), isBusy, false));

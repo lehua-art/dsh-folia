@@ -485,6 +485,308 @@ try { rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
     !['不存在的键-AB'].every((k) => dict.includes(JSON.stringify(k))));
 }
 
+/* ⑰⑱⑲⑳ 4.23.3：**自适应多连接 + 可配并发**。
+   两条实测同时成立，所以不能用"永远单流"或"永远多路"：
+     · 本机低 RTT（4.6–4.9 MB/s）：单流最快，3 路 Range 反而 2.13 < 3.28 MB/s；
+     · 用户另一台高 RTT 0.8 s（单流 0.21 MB/s）：12 路 1.28 MB/s，快 6 倍。
+   判据用**真行为**（本地 server 控速）+ **逐字节比对**（重复下载/错位都会被抓住）。 */
+{
+  const MB = 1024 * 1024;
+  const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+  /** 带字节模式的测试体：每个偏移的值不同 ⇒ 写错位置/重复写都会让最终比对失败。 */
+  const pattern = (n) => {
+    const buf = Buffer.allocUnsafe(n);
+    for (let i = 0; i < n; i += 1) buf[i] = i % 251;
+    return buf;
+  };
+  /**
+   * 可控速的 Range 上游：`delayMs` 是"每 chunkSize 字节之间等多久"。
+   * 0.2 MB/s ≈ 64 KB / 320 ms —— 正好落在"高 RTT 单流"的实测区间（0.21 MB/s）。
+   */
+  const serve = (body, opts = {}) => new Promise((resolve) => {
+    const state = { ranges: [], plain: 0 };
+    const chunkSize = opts.chunkSize || 64 * 1024;
+    const delayMs = opts.delayMs || 0;
+    const srv = createServer((req, res) => {
+      const range = String(req.headers.range || '');
+      if (range) state.ranges.push(range); else state.plain += 1;
+      const m = /bytes=(\d+)-(\d*)/.exec(range);
+      const start = m ? Number(m[1]) : 0;
+      const end = m && m[2] ? Number(m[2]) : body.length - 1;
+      res.statusCode = m ? 206 : 200;
+      res.setHeader('content-type', 'video/mp4');
+      res.setHeader('accept-ranges', 'bytes');
+      res.setHeader('content-length', String(end - start + 1));
+      if (m) res.setHeader('content-range', 'bytes ' + start + '-' + end + '/' + body.length);
+      let pos = start;
+      let stopped = false;
+      req.on('close', () => { stopped = true; });
+      const tick = () => {
+        if (stopped) return;
+        if (pos > end) { res.end(); return; }
+        const n = Math.min(chunkSize, end - pos + 1);
+        res.write(body.subarray(pos, pos + n));
+        pos += n;
+        if (delayMs > 0) setTimeout(tick, delayMs); else tick();
+      };
+      tick();
+    });
+    srv.listen(0, '127.0.0.1', () => resolve({
+      srv, state, origin: 'http://127.0.0.1:' + srv.address().port,
+    }));
+  });
+  const waitDone = async (q, ms = 60000) => {
+    const deadline = Date.now() + ms;
+    while (Date.now() < deadline && q.snapshot()[0] && !['done', 'failed', 'cancelled'].includes(q.snapshot()[0].status)) await sleep(40);
+  };
+
+  /* ⑰ 快链路（本地 >2 MB/s）⇒ 全程 single，绝不切换、0 条 Range。 */
+  {
+    const body = pattern(6 * MB);
+    const up = await serve(body);
+    process.env.DSH_FOLIA_RANGED = 'auto';
+    delete process.env.DSH_FOLIA_CHUNKS;
+    const homeFast = join(home, 'adaptive-fast');
+    const q = createDownloadQueue({ home: homeFast, log: () => {} });
+    const dest = join(homeFast, 'fast.bin');
+    const t0 = Date.now();
+    q.add({ url: up.origin + '/media/fast.bin', dest, kind: 'wallpaper' });
+    await waitDone(q, 30000);
+    const ms = Date.now() - t0;
+    const j = q.snapshot()[0];
+    const mbps = (body.length / 1048576) / Math.max(0.001, ms / 1000);
+    check('⑰ 快链路 >2 MB/s（本地实测）', mbps > 2, mbps.toFixed(1) + ' MB/s / ' + ms + 'ms');
+    check('⑰ 快链路全程单流：mode=single 且 autoSwitched=false',
+      j.status === 'done' && j.mode === 'single' && j.autoSwitched === false,
+      j.status + ' / ' + j.mode + ' / ' + j.autoSwitched);
+    check('⑰ 快链路 0 条 Range 请求（没有切换、没有重下）', up.state.ranges.length === 0,
+      'ranges=' + up.state.ranges.length);
+    check('⑰ 快链路文件 size + 内容正确',
+      statSync(dest).size === body.length && Buffer.compare(readFileSync(dest), body) === 0,
+      'size=' + statSync(dest).size);
+    up.srv.close();
+  }
+
+  /* ⑱ 慢链路（≈0.2 MB/s，6 MB）⇒ 3 秒后切 ranged:8，从已下载偏移续传，size/内容正确。 */
+  {
+    const body = pattern(6 * MB);
+    const up = await serve(body, { chunkSize: 64 * 1024, delayMs: 320 });
+    process.env.DSH_FOLIA_RANGED = 'auto';
+    delete process.env.DSH_FOLIA_CHUNKS;
+    const homeSlow = join(home, 'adaptive-slow');
+    const q = createDownloadQueue({ home: homeSlow, log: () => {} });
+    const dest = join(homeSlow, 'slow.bin');
+    const t0 = Date.now();
+    q.add({ url: up.origin + '/media/slow.bin', dest, kind: 'wallpaper' });
+    let switchedAt = 0;
+    let sawSingle = false;
+    while (Date.now() - t0 < 30000) {
+      const j = q.snapshot()[0];
+      if (j.mode === 'single' && j.status === 'running') sawSingle = true;
+      if (/^ranged:\d+$/.test(j.mode)) { switchedAt = Date.now() - t0; break; }
+      if (['done', 'failed', 'cancelled'].includes(j.status)) break;
+      await sleep(40);
+    }
+    await waitDone(q, 60000);
+    const ms = Date.now() - t0;
+    const j = q.snapshot()[0];
+    const parts = up.state.ranges.map((r) => {
+      const m = /bytes=(\d+)-(\d+)/.exec(r);
+      return { start: Number(m[1]), end: Number(m[2]) };
+    }).sort((a, b) => a.start - b.start);
+    const contiguous = parts.length > 0
+      && parts[0].start > 0
+      && parts[parts.length - 1].end === body.length - 1
+      && parts.every((p, i) => i === 0 || p.start === parts[i - 1].end + 1);
+    check('⑱ 慢链路先单流跑起来（不是一上来就多路）', sawSingle === true, 'sawSingle=' + sawSingle);
+    check('⑱ 开始后 3 秒切换（实测切换时刻 2.5–6.5 s）',
+      switchedAt >= 2500 && switchedAt <= 6500, 'switchedAt=' + switchedAt + 'ms');
+    check('⑱ mode 变成 ranged:8 且 autoSwitched=true',
+      j.mode === 'ranged:8' && j.autoSwitched === true, j.mode + ' / ' + j.autoSwitched);
+    check('⑱ 恰好 8 条 Range 请求（= DSH_FOLIA_CHUNKS 默认值）',
+      up.state.ranges.length === 8, 'ranges=' + up.state.ranges.length + ' [' + up.state.ranges.join(' | ') + ']');
+    check('⑱ Range 起点 > 0（从已下载偏移续，不从 0 重下）',
+      parts.length === 8 && parts[0].start > 0, 'firstStart=' + (parts[0] && parts[0].start));
+    check('⑱ 8 段首尾相接、覆盖到文件末尾（无重叠 / 无空洞）', contiguous,
+      parts.map((p) => p.start + '-' + p.end).join(','));
+    check('⑱ 切换后总耗时 < 单流跑完（多连接确实更快）', ms < 20000, 'ms=' + ms);
+    check('⑱ 最终文件 size 正确', statSync(dest).size === body.length, 'size=' + statSync(dest).size + '/' + body.length);
+    check('⑱ 最终文件逐字节正确（没有重复下载 / 写错偏移）',
+      Buffer.compare(readFileSync(dest), body) === 0, 'bytes differ');
+    up.srv.close();
+  }
+
+  /* ⑲ 开关语义：`0` 永不切换；`1` 一开始就多连接。 */
+  {
+    const body = pattern(6 * MB);
+    const up = await serve(body, { chunkSize: 64 * 1024, delayMs: 320 });
+    process.env.DSH_FOLIA_RANGED = '0';
+    const homeOff = join(home, 'adaptive-off');
+    const q = createDownloadQueue({ home: homeOff, log: () => {} });
+    const dest = join(homeOff, 'off.bin');
+    q.add({ url: up.origin + '/media/off.bin', dest, kind: 'wallpaper' });
+    // 4.5 s > 3 s 评估点：若判据失效（误切），这段时间足够看到 ranged。
+    await sleep(4500);
+    const j = q.snapshot()[0];
+    check('⑲ DSH_FOLIA_RANGED=0 ⇒ 评估点之后仍是 single、autoSwitched=false',
+      j.mode === 'single' && j.autoSwitched === false, j.mode + ' / ' + j.autoSwitched);
+    check('⑲ DSH_FOLIA_RANGED=0 ⇒ 0 条 Range 请求（永不切换）', up.state.ranges.length === 0,
+      'ranges=' + up.state.ranges.length);
+    q.cancel(j.id);
+    await sleep(300);
+    up.srv.close();
+
+    const big = pattern(9 * MB);
+    const up2 = await serve(big);
+    process.env.DSH_FOLIA_RANGED = '1';
+    const homeForce = join(home, 'adaptive-force');
+    const q2 = createDownloadQueue({ home: homeForce, log: () => {} });
+    const dest2 = join(homeForce, 'force.bin');
+    const t1 = Date.now();
+    q2.add({ url: up2.origin + '/media/force.bin', dest: dest2, kind: 'wallpaper' });
+    let modeSeen = '';
+    while (Date.now() - t1 < 15000) {
+      const j2 = q2.snapshot()[0];
+      if (/^ranged:\d+$/.test(j2.mode)) { modeSeen = j2.mode; break; }
+      if (['done', 'failed'].includes(j2.status)) break;
+      await sleep(20);
+    }
+    await waitDone(q2, 30000);
+    const j2 = q2.snapshot()[0];
+    check('⑲ DSH_FOLIA_RANGED=1 ⇒ 一开始就是 ranged:8（不先等 3 秒）',
+      modeSeen === 'ranged:8', 'modeSeen=' + modeSeen);
+    check('⑲ 强制模式 autoSwitched=false（不算"自适应切换"）', j2.autoSwitched === false, String(j2.autoSwitched));
+    check('⑲ 强制模式 8 条 Range、size 与内容正确',
+      up2.state.ranges.length === 8 && statSync(dest2).size === big.length && Buffer.compare(readFileSync(dest2), big) === 0,
+      'ranges=' + up2.state.ranges.length + ' size=' + statSync(dest2).size);
+    up2.srv.close();
+
+    /* ⑳ 全局并发：`DSH_FOLIA_CONCURRENCY` 生效并夹在 1..8（默认 6）。 */
+    const tiny = pattern(256 * 1024);
+    const up3 = await serve(tiny, { chunkSize: 256 * 1024, delayMs: 120 });
+    delete process.env.DSH_FOLIA_RANGED;
+    const peakOf = async (label, envVal, jobs, explicit) => {
+      if (envVal == null) delete process.env.DSH_FOLIA_CONCURRENCY;
+      else process.env.DSH_FOLIA_CONCURRENCY = String(envVal);
+      // wallpaper 默认只给 2 个槽；这里放开它，才看得见**全局**并发到底是多少。
+      process.env.DSH_FOLIA_QUEUE_WALLPAPER = '10';
+      const h = join(home, 'conc-' + label);
+      const q = createDownloadQueue(explicit ? { home: h, concurrency: explicit, log: () => {} } : { home: h, log: () => {} });
+      for (let i = 0; i < jobs; i += 1) {
+        q.add({ url: up3.origin + '/media/' + label + i + '.bin', dest: join(h, 'c' + i + '.bin'), kind: 'wallpaper' });
+      }
+      let peak = 0;
+      const deadline = Date.now() + 8000;
+      while (Date.now() < deadline) {
+        const snap = q.snapshot();
+        const runningNow = snap.filter((x) => x.status === 'running').length;
+        if (runningNow > peak) peak = runningNow;
+        if (!snap.some((x) => x.status === 'queued' || x.status === 'running')) break;
+        await sleep(10);
+      }
+      return peak;
+    };
+    check('⑳ DSH_FOLIA_CONCURRENCY=1 ⇒ 同时最多 1 个', (await peakOf('one', '1', 4)) === 1);
+    check('⑳ DSH_FOLIA_CONCURRENCY=3 ⇒ 同时最多 3 个', (await peakOf('three', '3', 6)) === 3);
+    check('⑳ DSH_FOLIA_CONCURRENCY=99 ⇒ 夹到 8（不是 99）', (await peakOf('over', '99', 10)) === 8);
+    check('⑳ DSH_FOLIA_CONCURRENCY=0 ⇒ 夹到 1（不是 0 = 队列停摆）', (await peakOf('zero', '0', 4)) === 1);
+    check('⑳ 非法值 ⇒ 默认 6', (await peakOf('junk', 'abc', 8)) === 6);
+    check('⑳ 显式 opts.concurrency=99 同样夹到 8', (await peakOf('opts', null, 10, 99)) === 8);
+    delete process.env.DSH_FOLIA_CONCURRENCY;
+    delete process.env.DSH_FOLIA_QUEUE_WALLPAPER;
+    up3.srv.close();
+
+    /* 面板 / 接口可见：`/downloads/list` 的 mode 字段 + 面板文案「多连接(n)」。 */
+    const panelSrc = readFileSync(join(ROOT, 'src', 'panel-tabs-skins.js'), 'utf8');
+    const dictSrc = readFileSync(join(ROOT, 'src', 'i18n-copy-panel.js'), 'utf8');
+    const routesSrc = readFileSync(join(ROOT, 'lib', 'routes', 'downloads.js'), 'utf8');
+    check('⑳ 队列快照带 mode / autoSwitched（接口字段不靠调用方补）',
+      q2.snapshot()[0] && typeof q2.snapshot()[0].mode === 'string' && q2.snapshot()[0].autoSwitched === false);
+    check('⑳ /downloads/list 透传 snapshot（mode 随 job 一起出去）',
+      /downloadQueue\.snapshot\(\)/.test(routesSrc) && /jobs, byKind/.test(routesSrc));
+    check('⑳ 面板运行中显示「多连接(n)」（单流时仍是原文案）',
+      /多连接\(\{n\}\)/.test(panelSrc) && /job\.mode/.test(panelSrc));
+    check('⑳ 多连接文案在英文词表里（零漏译）',
+      dictSrc.includes(JSON.stringify('正在下载：{name} {p}%（{a}/{b} MB）· 多连接({n})'))
+      && dictSrc.includes(JSON.stringify('正在下载：{name} {p}%（{a}/{b} MB）· 约剩 {s} 秒 · 多连接({n})')));
+    check('⑳ 负对照：词表里没有这条键时判据会红',
+      !dictSrc.includes(JSON.stringify('正在下载：{name} {p}% · 不存在的多连接键')));
+  }
+}
+
+/* ㉑㉒ 4.23.3：**切页签后下载状态不丢**（以 /folia/downloads/list 为唯一真源）。
+   真实故障：开机动画页点「下载」→ 切到壁纸/皮肤页签 → 再切回来，进度消失、按钮回到「下载」，
+   用户以为没在下（其实队列里还在跑）。根因是状态只存在组件 local state，重挂载即归零。
+   判据两层：① 把 src 里的**纯函数**抠出来真跑（匹配 / 文案 / 是否继续轮询）；
+             ② 三个页签与宿主路由必须真的接上这套（文本判据 + 负对照）。 */
+{
+  const src = readFileSync(join(ROOT, 'src', 'local-first.js'), 'utf8');
+  const a = src.indexOf('const DL_POLL_MS = 1500;');
+  const b = src.indexOf('function useDownloadJobs(');
+  const slice = (a >= 0 && b > a) ? src.slice(a, b) : '';
+  const shim = (key, vars) => String(key).replace(/\{(\w+)\}/g, (m, name) => (vars && Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : m));
+  const mod = (() => {
+    try {
+      // 这段是"常量 + 纯函数"，喂一个 weT 就能原样跑 —— 判的就是**真的会跑的那段代码**。
+      return new Function('weT', slice + '\nreturn { DL_POLL_MS, dlJobActive, dlHasActive, dlJobForCard, dlBusyLabel };')(shim);
+    } catch { return null; }
+  })();
+  check('㉑ 能取到下载状态层的纯函数（匹配 / 轮询判据 / 文案都在同一段）', Boolean(mod), mod ? 'ok' : 'slice=' + slice.length);
+
+  if (mod) {
+    const running = { id: 'j1', kind: 'boot', url: 'https://x/a.mp4', status: 'running', percent: 42, mode: 'ranged:8' };
+    const done = { id: 'j0', kind: 'boot', url: 'https://x/a.mp4', status: 'done', percent: 100, mode: 'single' };
+    check('㉑ 挂载时 list 里已有 running job ⇒ 卡片按 (kind,url) 找到它（不回到「下载」）',
+      mod.dlJobForCard([done, running], 'boot', 'https://x/a.mp4') === running);
+    check('㉑ 负对照：kind 不同 / url 不同 / url 为空都匹配不到',
+      mod.dlJobForCard([running], 'pet', 'https://x/a.mp4') === null
+      && mod.dlJobForCard([running], 'boot', 'https://x/b.mp4') === null
+      && mod.dlJobForCard([running], 'boot', '') === null);
+    check('㉑ 轮询判据：有 queued|running 才继续，全部结束就停',
+      mod.dlHasActive([running]) === true && mod.dlHasActive([{ status: 'queued' }]) === true
+      && mod.dlHasActive([done]) === false && mod.dlHasActive([]) === false);
+    check('㉑ 轮询间隔 = 1.5s（需求原文）', mod.DL_POLL_MS === 1500, 'ms=' + mod.DL_POLL_MS);
+    check('㉑ 按钮文案 `下载中… x%`；多连接时就地补 ` · 多连接(8)`',
+      mod.dlBusyLabel({ status: 'running', percent: 42, mode: 'single' }) === '下载中… 42%'
+      && mod.dlBusyLabel(running) === '下载中… 42% · 多连接(8)',
+      mod.dlBusyLabel(running));
+    check('㉑ 负对照：没有 mode 时不会凭空出现「多连接」', !mod.dlBusyLabel({ percent: 7 }).includes('多连接'));
+  }
+
+  // ② 三个页签 + 宿主路由都真的接上这套（少一处，那个页签就还是"切回来就丢"）。
+  check('㉒ useDownloadJobs 卸载即清定时器（切页签不泄漏）',
+    /clearInterval\(timer\)/.test(src) && /return \(\) => \{ alive = false; stop\(\); \}/.test(src));
+  check('㉒ 轮询由 dlHasActive 决定（全部结束即停表，不空转）',
+    /if \(!dlHasActive\(list\)\) stop\(\);/.test(src));
+
+  const bootTab = readFileSync(join(ROOT, 'src', 'panel-tabs-boot.js'), 'utf8');
+  const petsTab = readFileSync(join(ROOT, 'src', 'panel-tabs-pets.js'), 'utf8');
+  const skinsTab = readFileSync(join(ROOT, 'src', 'panel-tabs-skins.js'), 'utf8');
+  const bootRoute = readFileSync(join(ROOT, 'lib', 'routes', 'boot.js'), 'utf8');
+  const petsRoute = readFileSync(join(ROOT, 'lib', 'routes', 'pets.js'), 'utf8');
+  const dict = readFileSync(join(ROOT, 'src', 'i18n-copy-panel.js'), 'utf8');
+
+  check('㉒ 开机动画页：卡片按 list 匹配 job 并显示进度',
+    /dlJobForCard\(dl\.jobs, "boot", c\.url\)/.test(bootTab) && /dlBusyLabel\(job\)/.test(bootTab));
+  check('㉒ 桌宠页：安装卡片按 list 匹配 job 并显示进度',
+    /dlJobForCard\(dl\.jobs, "pet", s\.url\)/.test(petsTab) && /dlBusyLabel\(job\)/.test(petsTab));
+  check('㉒ 助手皮肤页：卡片按 list 匹配 job，并在挂载时恢复「正在下载皮肤包」',
+    /dlJobForCard\(dl\.jobs, "skin", s\.url\)/.test(skinsTab)
+    && /正在下载（皮肤包）/.test(skinsTab) && /kind === "skin"/.test(skinsTab));
+  check('㉒ 三个页签都订阅同一个真源（useDownloadJobs）',
+    [bootTab, petsTab, skinsTab].every((t) => /useDownloadJobs\(\)/.test(t)));
+  check('㉒ 宿主侧：开机动画下载入队 kind=boot 并回 202 pending',
+    /getDownloadQueue\(log\)/.test(bootRoute) && /kind: 'boot'/.test(bootRoute) && /pending: true/.test(bootRoute));
+  check('㉒ 宿主侧：桌宠安装入队 kind=pet（queue:true）并回 202 pending',
+    /kind: 'pet'/.test(petsRoute) && /pending: true/.test(petsRoute) && /body\.queue === true/.test(petsRoute));
+  check('㉒ 负对照：三个页签里任意一个没订阅真源就会被判出来',
+    [bootTab, petsTab, skinsTab].filter((t) => /useDownloadJobs\(\)/.test(t)).length === 3
+    && !/useDownloadJobs\(\)/.test(bootTab.replace('useDownloadJobs()', '')));
+  check('㉒ 新增文案都在英文词表里（下载中… / 皮肤包）',
+    dict.includes(JSON.stringify('下载中… {p}%')) && dict.includes(JSON.stringify('下载中… {p}% · 多连接({n})'))
+    && dict.includes(JSON.stringify('正在下载（皮肤包）{p}%（{a}/{b} MB）')));
+}
+
 let failed = 0;
 for (const r of results) {
   if (r.ok) process.stdout.write('  ✓ ' + r.name + '\n');

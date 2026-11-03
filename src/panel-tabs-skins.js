@@ -52,6 +52,8 @@ function SkinsTabPanel() {
   // 用一个 ref 跟住最新值，操作进行中就不打扰用户。
   const busyRef = React.useRef("");
   const [note, setNote] = React.useState(null);
+  // 4.23.3：安装/下载进度以 /folia/downloads/list 为真源（kind=skin），切页签回来仍在。
+  const dl = useDownloadJobs();
 
   // ⚠️ 这两面旗必须**在函数体最前面**算出来：下面「刷新」按钮的文案就要用它。
   // 曾把它们写在列表渲染处（更靠后）⇒ 首次渲染读到 TDZ 里的 const
@@ -123,6 +125,35 @@ function SkinsTabPanel() {
       try { window.removeEventListener("focus", refreshQuietly); } catch { /* ignore */ }
       if (timer !== null) { try { window.clearInterval(timer); } catch { /* ignore */ } }
     };
+  }, [load]);
+
+  // 4.23.3：切走再回来不丢「正在下载皮肤包」——以 /downloads/list 为真源恢复提示。
+  // 宿主侧的 scheduleFinishInstall 会在下载完成后自己再装一次，所以这里只需要"看得见"：
+  // 挂载时若已有 kind=skin 的 queued|running job，就显示进度并在结束后重拉清单。
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      let active;
+      try {
+        const list = await apiJson("/downloads/list");
+        const doc = (list && list.data) || list || {};
+        const jobs = Array.isArray(doc.jobs) ? doc.jobs : [];
+        active = jobs.find((j) => j && j.kind === "skin" && (j.status === "queued" || j.status === "running")) || null;
+      } catch { active = null; }
+      if (!alive || !active) return;
+      setNote({
+        ok: true,
+        text: weT("正在下载（皮肤包）{p}%（{a}/{b} MB）", {
+          p: Number(active.percent) || 0,
+          a: ((Number(active.received) || 0) / 1048576).toFixed(1),
+          b: ((Number(active.total) || 0) / 1048576).toFixed(1),
+        }),
+      });
+      await dlAwaitJob(active.id);
+      if (!alive) return;
+      await load(true);
+    })();
+    return () => { alive = false; };
   }, [load]);
 
   const act = async (kind, payload, label) => {
@@ -246,12 +277,22 @@ function SkinsTabPanel() {
             const span = now - first.at;
             const speed = span > 500 ? (got - first.got) / (span / 1000) : 0;
             const left = speed > 1024 && totalBytes > got ? Math.max(1, Math.round((totalBytes - got) / speed)) : 0;
-            setNote({
-              ok: true,
-              text: left > 0
+            // 4.23.3：多连接时在**同一行末尾**补一句「· 多连接(8)」——不新增行、不改前面已定的
+            // 百分比/ETA 文案（4.23.2 的判据逐字钉着它们）。单流仍走原文案，一个字符都不变。
+            const modeStr = job && typeof job.mode === "string" ? job.mode : "single";
+            const mRanged = /^ranged:(\d+)$/.exec(modeStr);
+            const conns = mRanged ? Number(mRanged[1]) : 0;
+            let statusText;
+            if (conns > 1) {
+              statusText = left > 0
+                ? weT("正在下载：{name} {p}%（{a}/{b} MB）· 约剩 {s} 秒 · 多连接({n})", { name: label2, p: pct, a: rec, b: tot, s: left, n: conns })
+                : weT("正在下载：{name} {p}%（{a}/{b} MB）· 多连接({n})", { name: label2, p: pct, a: rec, b: tot, n: conns });
+            } else {
+              statusText = left > 0
                 ? weT("正在下载：{name} {p}%（{a}/{b} MB）· 约剩 {s} 秒", { name: label2, p: pct, a: rec, b: tot, s: left })
-                : weT("正在下载：{name} {p}%（{a}/{b} MB）", { name: label2, p: pct, a: rec, b: tot }),
-            });
+                : weT("正在下载：{name} {p}%（{a}/{b} MB）", { name: label2, p: pct, a: rec, b: tot });
+            }
+            setNote({ ok: true, text: statusText });
           }
           if (job && job.status === "failed") {
             setNote({ ok: false, text: weT("下载失败：{name}（{why}）", { name: label2, why: job.error || "unknown" }) });
@@ -561,6 +602,9 @@ function SkinsTabPanel() {
       ? [React.createElement("span", { key: "none", className: "we-picker__hint" }, weT("站点上还没有皮肤。"))]
       : site.map((s) => {
         const busyThis = busy === "install:" + s.id;
+        // 4.23.3：这条站点皮肤对应的队列 job（kind=skin + url）；挂载时已在跑的直接显示进度。
+        const job = dlJobForCard(dl.jobs, "skin", s.url);
+        const jobBusy = dlJobActive(job);
         // 站点条目的 slug 与本机皮肤 id **不一定相同**（站点 slug 由标题生成/为避撞名会加 skin- 前缀），
         // 而皮肤中心只认 skin.json 里的原始 id ⇒ 写之前必须换成**本机那个 id**，
         // 否则它的 activePostHandler 会回 404 skin-not-found（实测报错 skin-center-404）。
@@ -592,10 +636,10 @@ function SkinsTabPanel() {
               ]
               : React.createElement("button", {
                 className: "we-picker__btn", type: "button",
-                disabled: busyIsStructural || busy === "install:" + s.id,
+                disabled: busyIsStructural || busy === "install:" + s.id || jobBusy,
                 title: skinCenter === "absent" ? weT("先装皮肤中心，否则皮肤装好也没法启用") : undefined,
                 onClick: () => act("install", { id: s.id, url: s.url }, s.title),
-              }, busyThis ? weT("安装中…") : weT("安装")),
+              }, jobBusy ? dlBusyLabel(job) : (busyThis ? weT("安装中…") : weT("安装"))),
           ),
         );
       }),

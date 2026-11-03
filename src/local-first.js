@@ -192,3 +192,119 @@ async function lfPrefetchNext(afterId, playingId) {
   }
 }
 
+/* ── 下载状态：以 `/folia/downloads/list` 为唯一真源（4.23.3）─────────────────
+ *
+ * 真实故障（用户实测）：「开机动画」页点某条下载 → 切到壁纸/皮肤页签 → 再切回来，
+ * 进度消失、按钮回到「下载」，用户以为没在下 —— 其实宿主队列里还在跑。
+ * 根因：卡片的"下载中"只存在组件本地 state，页签切换 = 重新挂载 = state 归零。
+ *
+ * 现在的口径（三个页签共用，boot / pet / skin）：
+ *   ① 挂载/刷新时先拉一次 list，按 (kind, url) 匹配到卡片；
+ *   ② 只要还有 queued|running 就每 1.5s 拉一次，直到全部结束；
+ *   ③ 全部结束（或组件卸载/切走）立刻停表，不空转、不泄漏。
+ * 卡片文案统一 `下载中… x%`；多连接时就地补 ` · 多连接(n)`，不新增行、不挤既有文案。
+ */
+const DL_POLL_MS = 1500;
+
+/** job 还没结束吗（queued / running）—— 轮询与卡片状态都用它。 */
+function dlJobActive(job) {
+  return Boolean(job) && (job.status === "queued" || job.status === "running");
+}
+
+/** list 里还有没结束的 job 吗 ⇒ 决定要不要继续每 1.5s 拉一次（全结束 ⇒ 停表）。 */
+function dlHasActive(jobs) {
+  return (jobs || []).some((j) => dlJobActive(j));
+}
+
+/**
+ * 卡片 ↔ job：按 (kind, url) 匹配（url 归一：去首尾空白）。
+ * 同一 URL 历史里可能有多条（失败重下），优先"未结束的"，否则取最后一条。
+ */
+function dlJobForCard(jobs, kind, url) {
+  const k = String(kind || "").trim().toLowerCase();
+  const u = String(url || "").trim();
+  if (!u) return null;
+  let best = null;
+  for (const j of (jobs || [])) {
+    if (!j || String(j.url || "").trim() !== u) continue;
+    if (k && String(j.kind || "").trim().toLowerCase() !== k) continue;
+    if (!best || (dlJobActive(j) && !dlJobActive(best))) best = j;
+  }
+  return best;
+}
+
+/** 下载中按钮文案：`下载中… x%`（多连接时补 ` · 多连接(n)`，同一行、不加行高）。 */
+function dlBusyLabel(job) {
+  const pct = Math.max(0, Math.min(100, Math.round(Number(job && job.percent) || 0)));
+  const m = /^ranged:(\d+)$/.exec(String((job && job.mode) || ""));
+  const n = m ? Number(m[1]) : 0;
+  if (n > 1) return weT("下载中… {p}% · 多连接({n})", { p: pct, n });
+  return weT("下载中… {p}%", { p: pct });
+}
+
+/** 入队（幂等：同一 URL 宿主只有一个 job）。返回 job 快照；链路不可用返回 null。 */
+async function dlEnqueue(kind, url, priority) {
+  try {
+    const resp = await apiPostJson("/downloads/add", { items: [{ kind, url, priority: priority || "high" }] }, { parse: "always" });
+    const items = (resp && resp.data && Array.isArray(resp.data.items)) ? resp.data.items : [];
+    return (items[0] && items[0].job) || null;
+  } catch { return null; }
+}
+
+/**
+ * 等一个 job 结束（done / failed / cancelled / timeout）。
+ * 只读 list，所以**页面切走也不影响**：换成别的页签时这个等待仍在跑，回来时状态照样正确。
+ */
+function dlAwaitJob(jobId, timeoutMs) {
+  const limit = Number(timeoutMs) || 30 * 60 * 1000;
+  const started = Date.now();
+  return new Promise((resolve) => {
+    const tick = async () => {
+      if (Date.now() - started > limit) { resolve({ status: "timeout" }); return; }
+      let job = null;
+      try {
+        const resp = await apiJson("/downloads/list");
+        const doc = (resp && resp.data) || resp || {};
+        const jobs = Array.isArray(doc.jobs) ? doc.jobs : [];
+        job = jobs.find((j) => j && j.id === jobId) || null;
+      } catch { /* 拉不到就再等一拍 */ }
+      if (job && (job.status === "done" || job.status === "failed" || job.status === "cancelled")) { resolve(job); return; }
+      setTimeout(tick, DL_POLL_MS);
+    };
+    tick();
+  });
+}
+
+/**
+ * React：订阅下载队列（三个页签共用）。
+ * 挂载先拉一次；有未结束 job 才每 1.5s 拉；**卸载即清定时器**（切页签不泄漏）。
+ * `refresh()` 用于"刚点了下载"——立刻重新起表，不必等下个 1.5s。
+ */
+function useDownloadJobs() {
+  const [jobs, setJobs] = React.useState([]);
+  const [nonce, setNonce] = React.useState(0);
+  React.useEffect(() => {
+    let alive = true;
+    let timer = null;
+    const stop = () => {
+      if (timer) { try { clearInterval(timer); } catch { /* ignore */ } timer = null; }
+    };
+    const pull = async () => {
+      let list;
+      try {
+        const resp = await apiJson("/downloads/list");
+        const doc = (resp && resp.data) || resp || {};
+        list = Array.isArray(doc.jobs) ? doc.jobs : [];
+      } catch { list = []; }
+      if (!alive) return;
+      setJobs(list);
+      if (!dlHasActive(list)) stop();      // 全部结束 ⇒ 停表
+    };
+    pull();
+    timer = setInterval(pull, DL_POLL_MS);
+    try { if (timer && typeof timer.unref === "function") timer.unref(); } catch { /* ignore */ }
+    return () => { alive = false; stop(); };
+  }, [nonce]);
+  return { jobs, refresh: () => setNonce((n) => n + 1) };
+}
+
