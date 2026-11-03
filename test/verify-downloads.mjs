@@ -30,6 +30,8 @@ mkdirSync(home, { recursive: true });
 /* ── 假上游：支持 Range 的 256 KB 文件；`/fail` 恒 404 ───────────────────── */
 const BODY = Buffer.alloc(256 * 1024, 5);
 const seenRanges = [];
+/** ⑫ 用：切换上游行为（先 500 再恢复），验证"失败后重试"。 */
+const FAIL_MODE = { on: false };
 const upstream = createServer((req, res) => {
   if (String(req.url).startsWith('/fail')) { res.statusCode = 404; res.end('nope'); return; }
   const range = String(req.headers.range || '');
@@ -193,6 +195,69 @@ try { rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
   check('⑩ 查找用"多个对象数组池"兜底，不依赖单一键名', /\[doc\.items, doc\.wallpapers, doc\.list, doc\.entries\]/.test(lf));
   check('⑩ negative control: 只认 data.items 的旧写法会被判出来', !/resp\.data\.items\) \? resp\.data\.items\s*\n\s*: \(Array\.isArray\(resp && resp\.items\)/.test(lf));
 }
+
+/* ⑪ 站点凭据注入层（为"接口只给插件用"预留）：四个取数点都必须走统一头。 */
+{
+  const sa = readFileSync(join(ROOT, 'lib', 'site-auth.js'), 'utf8');
+  check('⑪ 存在 site-auth 模块且支持环境变量与文件两种来源', /DSH_FOLIA_SITE_KEY/.test(sa) && /site-key\.txt/.test(sa));
+  check('⑪ 有 key 时带 Bearer，没有则不带（向后兼容公开站点）',
+    /\? \{ \.\.\.headers, authorization: 'Bearer ' \+ key \} : headers/.test(sa));
+  const users = ['lib/routes/inventory.js','lib/routes/skins.js','lib/routes/boot.js','lib/routes/pets.js'];
+  const missing = users.filter((f) => !/siteRequestHeaders\(\)/.test(readFileSync(join(ROOT, f), 'utf8')));
+  check('⑪ 四个站点取数点都用了统一头（少一个就会漏带凭据）', missing.length === 0, missing.join(','));
+  // 负对照：把一个文件的**全部**调用替换成普通 headers，同一判据必须只差 1 个
+  const mutated = readFileSync(join(ROOT, 'lib/routes/pets.js'), 'utf8')
+    .split('siteRequestHeaders()').join('plainHeaders');
+  const mutatedHits = users
+    .filter((f) => (f === 'lib/routes/pets.js' ? mutated : readFileSync(join(ROOT, f), 'utf8')).includes('siteRequestHeaders()'))
+    .length;
+  check('⑪ negative control: 把某个取数点的调用换掉后判据会红',
+    mutatedHits === users.length - 1 && !mutated.includes('siteRequestHeaders()'),
+    'mutatedHits=' + mutatedHits + ' / 期望 ' + (users.length - 1));
+}
+
+/* ⑫ 「失败过一次之后还能不能重试」—— 这是"别人机器明明能通却怎么点都下不来"的根因。
+   用户要求：修好以后**任何人都不会**再遇到。所以用行为判据钉住，不靠代码看起来对。 */
+{
+  const http = createServer((req, res) => {
+    if (FAIL_MODE.on) { res.statusCode = 500; res.end('boom'); return; }
+    const range = String(req.headers.range || '');
+    const m = /bytes=(\d+)-/.exec(range);
+    const start = m ? Number(m[1]) : 0;
+    res.statusCode = m ? 206 : 200;
+    res.setHeader('content-type', 'video/mp4');
+    res.setHeader('accept-ranges', 'bytes');
+    res.setHeader('content-length', String(BODY.length - start));
+    res.end(BODY.subarray(start));
+  });
+  await new Promise((ok) => { http.listen(0, '127.0.0.1', ok); });
+  const url = 'http://127.0.0.1:' + http.address().port + '/media/retry.mp4';
+  const dest = join(home, 'retry', 'retry.mp4');
+  const q = createDownloadQueue({ home: join(home, 'retry'), log: () => {} });
+
+  FAIL_MODE.on = true;
+  q.add({ url, dest, kind: 'wallpaper' });
+  for (let i = 0; i < 80; i += 1) {
+    const j = q.snapshot()[0];
+    if (j && j.status === 'failed') break;
+    await new Promise((r) => { setTimeout(r, 50); });
+  }
+  const failed = q.snapshot()[0];
+  check('⑫ 上游 500 ⇒ job 变 failed（第一拍）', Boolean(failed) && failed.status === 'failed', failed && failed.status);
+
+  FAIL_MODE.on = false;
+  q.add({ url, dest, kind: 'wallpaper' });   // 同一个 URL 再来一次 = 「用户再点一次安装」
+  for (let i = 0; i < 120; i += 1) {
+    const j = q.snapshot()[0];
+    if (j && j.status === 'done') break;
+    await new Promise((r) => { setTimeout(r, 50); });
+  }
+  const retried = q.snapshot()[0];
+  check('⑫ 失败后再次入队必须重试并成功（旧实现会永远停在 failed）',
+    Boolean(retried) && retried.status === 'done', retried && retried.status);
+  try { http.close(); } catch { /* ignore */ }
+}
+
 let failed = 0;
 for (const r of results) {
   if (r.ok) process.stdout.write('  ✓ ' + r.name + '\n');

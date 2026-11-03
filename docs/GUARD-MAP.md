@@ -5,7 +5,7 @@
 > 口径：只统计守卫**代码**里真正碰到的模块（先剥注释），并区分"直接读源文件"与"隔着产物 `lib/client.js`"。
 > 写法：字面量路径 / `join(...)` 拼接 / 唯一 basename / 产物配方 / **前缀族读法** `scopeFiles|scopeText(<前缀>)` / **经共享族助手读**（`import { panelText } from './tools/src-scope.mjs'` + 真调用；族口径封在那个库里，见 DEV-GUIDE §4.6「同时是守卫的库」）/ **真源定位读**（`locate('符号')` / `locateFile('文件名')`，`test/tools/source-locator.mjs`：符号唯一声明在哪就是读了哪个模块）。
 
-模块面 191 个 · 守卫 120 个
+模块面 192 个 · 守卫 120 个
 
 ## 守卫 → 模块
 
@@ -43,7 +43,7 @@
 | `verify-contracts.mjs` | `lib/components/fonts/src/fontset-editor.js` `lib/host-boot.js` `lib/index.js` `lib/kernel/host-kernel.js` `lib/media/media-dirs.js` `lib/settings-schema.js` `src/api-client.js` `src/client.js` `src/fontset-store.js` `src/panel-tabs-advanced.js` `src/panel-tabs-appearance.js` `src/panel-tabs-boot.js` `src/panel-tabs-effects.js` `src/panel-tabs-mascot.js` `src/panel-tabs-pets.js` `src/panel-tabs-skins.js` `src/panel-tabs-wallpaper.js` `src/panel-tabs.js` |  |
 | `verify-dead-declarations.mjs` | — |  |
 | `verify-deployment.mjs` | — |  |
-| `verify-downloads.mjs` | `lib/download-queue.js` `lib/routes/downloads.js` `lib/routes/site-media.js` `lib/routes/skins.js` `src/local-first.js` `src/media-prep.js` |  |
+| `verify-downloads.mjs` | `lib/download-queue.js` `lib/routes/boot.js` `lib/routes/downloads.js` `lib/routes/inventory.js` `lib/routes/pets.js` `lib/routes/site-media.js` `lib/routes/skins.js` `lib/site-auth.js` `src/local-first.js` `src/media-prep.js` |  |
 | `verify-eol.mjs` | — |  |
 | `verify-extra-glass.mjs` | `lib/settings-schema.js` `src/client.js` `src/effects.js` `src/glass-extra.js` `src/glass-panel.js` `src/quick-panel.js` | ✅ |
 | `verify-features.mjs` | `lib/features.js` `lib/routes/boot.js` `lib/routes/inventory.js` `lib/routes/pets.js` `src/client.js` `src/features.js` `src/pet-layer.js` `src/quick-panel.js` | ✅ |
@@ -210,18 +210,18 @@
 | `lib/occlusion/x11.js` | 1 | `verify-occlusion-hub` |
 | `lib/pkg-read.js` | 4 | `verify-package-files` `verify-package-publish` `verify-scene-probe` `verify-scene` |
 | `lib/route-registry.js` | 1 | `verify-route-registry` |
-| `lib/routes/boot.js` | 1 | `verify-features` |
+| `lib/routes/boot.js` | 2 | `verify-downloads` `verify-features` |
 | `lib/routes/cache-dir.js` | 1 | `verify-cache-dir` |
 | `lib/routes/diag.js` | 2 | `verify-logging` `verify-scene-live` |
 | `lib/routes/downloads.js` | 1 | `verify-downloads` |
-| `lib/routes/inventory.js` | 4 | `verify-avatar-interval-and-rotation` `verify-component-visibility` `verify-features` `verify-route-index` |
+| `lib/routes/inventory.js` | 5 | `verify-avatar-interval-and-rotation` `verify-component-visibility` `verify-downloads` `verify-features` `verify-route-index` |
 | `lib/routes/kernel.js` | 1 | `verify-panel-defensive` |
 | `lib/routes/live-frame.js` | 1 | `verify-scene` |
 | `lib/routes/media-bytes.js` | 4 | `verify-avatar-interval-and-rotation` `verify-route-index` `verify-scene-live` `verify-scene` |
 | `lib/routes/media-derived.js` | 1 | `verify-transcode-state` |
 | `lib/routes/modules.js` | 0 | **（无）** |
 | `lib/routes/occlusion.js` | 1 | `verify-occlusion-hub` |
-| `lib/routes/pets.js` | 1 | `verify-features` |
+| `lib/routes/pets.js` | 2 | `verify-downloads` `verify-features` |
 | `lib/routes/presets.js` | 1 | `verify-presets` |
 | `lib/routes/props.js` | 1 | `verify-scene` |
 | `lib/routes/scene-frame.js` | 2 | `verify-scene-frame-master` `verify-scene` |
@@ -238,6 +238,7 @@
 | `lib/settings-schema.js` | 17 | `verify-adapter` `verify-avatar-interval-and-rotation` `verify-client` `verify-component-fonts` `verify-contracts` `verify-extra-glass` `verify-fontset` `verify-glass-compat` `verify-glass-surfaces` `verify-module-layout` `verify-presets` `verify-scene-live` `verify-settings-namespaces` `verify-settings-ownership` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `lib/settings/ownership.js` | 1 | `verify-settings-ownership` |
 | `lib/shim-seed.js` | 1 | `verify-scene-live` |
+| `lib/site-auth.js` | 1 | `verify-downloads` |
 | `lib/startup-sweep.js` | 1 | `verify-scene-live` |
 | `lib/steam-discovery.js` | 2 | `verify-steam-discovery` `verify-we-install-probe` |
 | `lib/subpackage-boot.js` | 13 | `verify-bundle-rows` `verify-inject-contracts` `verify-json-response` `verify-pet-hotplug-host` `verify-pet-hotplug-integration` `verify-pet-official` `verify-pet-package` `verify-release-set` `verify-settings-schema-exports` `verify-subpackage-boot` `verify-subpackage-manifests` `verify-subpackage-purity` `verify-subpackage-toggle-roundtrip` |

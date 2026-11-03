@@ -265,6 +265,18 @@ function SkinsTabPanel() {
           'not-installed': weT("这个皮肤不在本机（先安装）"),
           'skin-center-missing': weT("装皮肤中心后才能切换皮肤（见下面的安装命令）"),
           'bad-id': weT("皮肤 id 不合法"),
+          // 网络/上游类错误必须说人话：以前这里落到兜底的 "failed"，用户完全不知道发生了什么。
+          // 实测踩过：`error:"fetch failed"` 时界面显示「操作失败：failed」，看起来像插件坏了。
+          'fetch failed': weT("连不上站点（网络中断或 DNS/TLS 失败），已自动重试一次；再点一次「安装」即可续传"),
+          'network': weT("连不上站点（网络层失败），请重试"),
+          'timeout': weT("站点响应超时，请重试"),
+          'download-failed': weT("下载失败（站点未返回文件），请稍后重试"),
+          'download-timeout': weT("下载超时（已下部分会保留，再点「安装」可续传）"),
+          'http-404': weT("站点上没有这个文件（可能正在补传/已被删除）"),
+          'http-403': weT("站点拒绝访问这个文件（权限或签名问题）"),
+          'http-500': weT("站点服务器错误（HTTP 500），不是本地问题，请稍后重试"),
+          'http-502': weT("站点网关错误（HTTP 502），请稍后重试"),
+          'http-503': weT("站点暂时不可用（HTTP 503），请稍后重试"),
         };
         setNote({ ok: false, text: map[code] || weT("操作失败：{code}", { code }) });
       }
