@@ -158,6 +158,10 @@ const VERIFY_STEPS = [
   step('test/verify-inject-contracts.mjs'),   // ← 还原（旧链位：route-families 之后、cache-dir 之前）
   step('test/verify-cache-dir.mjs'),
   step('test/verify-cache-prune.mjs'),
+  // 4.23.7：面板内「缓存管理」—— 五层用量 + 分目标清理。判据按"能删错什么"组织：
+  // 各 target 只删自己、诱饵不动、`..`/绝对路径 400（整单拒绝）、符号链接不跟随、
+  // 被占用的文件进 failed 且不拖垮整层、`skins` 必须显式点名、面板两段式确认。
+  step('test/verify-cache-manager.mjs'),
   step('test/verify-we-install-probe.mjs'),
   step('test/verify-wallpaper-scan.mjs'),
   step('test/verify-inventory-index.mjs'),
@@ -291,6 +295,12 @@ const VERIFY_STEPS = [
   step('test/verify-site-media.mjs'),
   // ㉒ 站点资源本地化队列：并发上限 / 幂等 / 续传 / 原子 / 可失败（点击即下载的那条链路）。
   step('test/verify-downloads.mjs'),
+  // ㉗ 4.23.7：**多连接 Range 的静默损坏**（P0）回归 + 下载后内容哈希。
+  //    事故现场原样：全量响应 17,509,106（旧版）/ Range 回源 17,414,581（新版）⇒ 旧实现拼出
+  //    "size 对、尾部 94,525 个 0"的坏 zip 且报 done。判据：不产出 ranged done、错误必须落在
+  //    range-version-mismatch / range-short / range-etag-mismatch 上、回落单流后 sha256 正确、
+  //    哈希不符只自动单流重下一次；另有"把旧实现贴回来必须红"的源码级 + 行为级负对照。
+  step('test/verify-ranged-integrity.mjs'),
   // ㉕ 4.23.6：**下载/安装状态机的流程级回归** —— 14 行覆盖表（本地 × 队列 × 已装 × 时长
   //    ⇒ 展示状态 + 是否可点）+ 4 条端到端（真站点替身 + 真路由 + 真队列 + 真 zip，含
   //    "宿主重启 job 表被清空"与"站点 500"两条故障注入）。对应 docs/INSTALL-FLOW.md 的防复发清单。

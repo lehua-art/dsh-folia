@@ -168,6 +168,10 @@ function lfAddItem(item, url, priority) {
     screenHeight: lfScreenHeight(),
   };
   if (Array.isArray(it.variants) && it.variants.length) entry.variants = it.variants;
+  // 4.23.7：站点清单给的 sha256（部分条目为空）随条目带给队列 —— 下载完成后按它验内容。
+  // 空串不发（宿主侧同样只认 64 位十六进制），免得把"没给"写成"给了个空的"。
+  const sha = String(it.sha256 || "").trim().toLowerCase();
+  if (/^[0-9a-f]{64}$/.test(sha)) entry.sha256 = sha;
   if (lfPreferOriginal(it.id)) entry.quality = "original";
   return entry;
 }

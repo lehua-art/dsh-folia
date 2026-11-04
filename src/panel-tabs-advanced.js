@@ -242,8 +242,108 @@
         sel.cacheDirNote),
       sel.cacheDirError && React.createElement("div", { className: "we-picker__error" },
         sel.cacheDirError),
+      // 4.23.7：「缓存管理」—— 同一节里**接在缓存位置之后**（搬动/新增节都会改
+      // 「系统」页签的节序列，那是 `verify-scene-live` 的细锚；这条是"同一节的又一组行"）。
+      renderCacheManagerBlock(ctx),
       ),
     ),
+    );
+  }
+
+  /**
+   * 「缓存管理」这一组行（4.23.7）：五层用量 + 五个清理按钮 + 释放量提示。
+   *
+   * 为什么放在**同一个节**里（不新开 `we-picker__section`）：
+   *   「系统」页签的节序列与控件标签序列是 `test/verify-scene-live.mjs` 的硬锚
+   *   （它是纯搬动唯一会破坏的东西）。缓存位置与缓存管理回答的是同一个问题
+   *   （"这些可再生的文件占了我多少地方"），合成一节既准确又不改那条锚。
+   *
+   * 为什么按钮是**显式五个**而不是"一个清全部的开关 + 勾选"：
+   *   `skins`（已装皮肤）清掉等于把皮肤中心的皮肤**全部卸载**，是不可撤销的破坏性动作；
+   *   它必须是**用户单独指到**的那一个按钮（二次确认），不能被"一键清理"顺手带走。
+   *   `electron`（Electron 自己的 Cache/GPUCache）被占用是常态 ⇒ 只能尽力删并提示重启。
+   */
+  function renderCacheManagerBlock(ctx) {
+    const { sel, onClearCache, onClearCacheSkins, onRefreshCacheUsage, armedConfirm, onDisarmConfirm } = ctx;
+    const usage = sel && sel.cacheUsage;
+    const items = (usage && Array.isArray(usage.items)) ? usage.items : [];
+    const rowOf = (t) => items.find((x) => x && x.target === t) || null;
+    const busy = Boolean(sel && sel.cacheBusy);
+    const clearing = Boolean(sel && sel.cacheBusy === "clear");
+    const fmt = (n) => (typeof fmtCacheBytes === "function" ? fmtCacheBytes(n) : String(n));
+    const clear = (targets) => { try { onClearCache(targets); } catch { /* 处理器缺失不影响渲染 */ } };
+    const btn = (key, label, targets, title) => React.createElement("button", {
+      key, type: "button", className: "we-picker__btn",
+      disabled: busy || !items.length,
+      title: title || label,
+      onClick: () => clear(targets),
+    }, label);
+    const line = (t, label, extra) => {
+      const row = rowOf(t);
+      const bytes = row ? Number(row.bytes) || 0 : 0;
+      const files = row ? Number(row.files) || 0 : 0;
+      const within = !row || row.within !== false;
+      return React.createElement("div", { className: "we-picker__row", key: "cache-usage-" + t },
+        React.createElement("span", { className: "we-picker__hint we-picker__label" }, label),
+        React.createElement("span", { className: "we-picker__uploads-path" },
+          within ? fmt(bytes) + " · " + files + " " + weT("个文件") : weT("不在可清理目录内")),
+        extra ? React.createElement("span", { className: "we-picker__hint" }, extra) : null,
+      );
+    };
+    const pendingSkins = String(armedConfirm || "") === "cache:skins";
+    return React.createElement(React.Fragment, null,
+      // ⚠️ 这一行**故意不用** `we-picker__section-label`：那会把「缓存管理」算成第八个"节"，
+      // 改掉 `verify-scene-live` 的节序列锚（见上面"为什么放在同一个节里"）。
+      React.createElement("div", { className: "we-picker__row", key: "cache-mgr-head" },
+        React.createElement("span", { className: "we-picker__ctl" }, weT("缓存管理")),
+        React.createElement("button", {
+          className: "we-picker__btn", type: "button",
+          disabled: busy, title: weT("重新统计各层用量（只读，不改盘）"),
+          onClick: () => { try { onRefreshCacheUsage(); } catch { /* ignore */ } },
+        }, weT("刷新")),
+      ),
+      React.createElement("div", { className: "we-picker__hint", key: "cache-mgr-total" },
+        usage
+          ? weT("合计 {size}（{n} 个文件）· 缓存都可再生，随时可删", {
+            size: fmt((usage.total && usage.total.bytes) || 0),
+            n: (usage.total && usage.total.files) || 0,
+          })
+          : weT("正在统计缓存用量…")),
+      line("library", weT("媒体库（壁纸/开机动画/桌宠）")),
+      line("site-media", weT("站点媒体缓存")),
+      line("skins-zip", weT("皮肤包")),
+      line("skins", weT("已装皮肤")),
+      line("electron", weT("Electron 缓存"), weT("需重启 DSH")),
+      React.createElement("div", { className: "we-picker__row", key: "cache-mgr-actions" },
+        btn("clear-library", weT("清空媒体"), ["library"], weT("删除已下载的壁纸 / 开机动画 / 桌宠（可重新下载）")),
+        btn("clear-site-media", weT("清空站点媒体"), ["site-media"]),
+        btn("clear-skins-zip", weT("清空皮肤包"), ["skins-zip"]),
+        // 破坏性：清掉 = 皮肤中心那边的皮肤全部卸载。两段式（上膛 → 确认）。
+        pendingSkins
+          ? React.createElement(React.Fragment, null,
+            React.createElement("button", {
+              key: "clear-skins-confirm", type: "button", className: "we-picker__btn",
+              disabled: clearing, title: weT("确认卸载全部已装皮肤（不可撤销）"),
+              onClick: () => { try { onClearCacheSkins(); } catch { /* ignore */ } },
+            }, weT("确认清空已装皮肤")),
+            React.createElement("button", {
+              key: "clear-skins-cancel", type: "button", className: "we-picker__btn",
+              onClick: () => { try { onDisarmConfirm(); } catch { /* ignore */ } },
+            }, weT("取消")))
+          : React.createElement("button", {
+            key: "clear-skins", type: "button", className: "we-picker__btn",
+            disabled: busy || !items.length,
+            title: weT("清空已装皮肤（等于把皮肤中心的皮肤全部卸载，需二次确认）"),
+            onClick: () => { try { onClearCacheSkins(); } catch { /* ignore */ } },
+          }, weT("清空已装皮肤…")),
+        btn("clear-electron", weT("清空 Electron 缓存"), ["electron"], weT("清的是 Electron 自己的 Cache / GPUCache；占用中的文件请重启 DSH 后彻底生效")),
+        btn("clear-all-but-skins", weT("一键清理（不含皮肤）"),
+          ["library", "site-media", "skins-zip", "electron"], weT("清掉除「已装皮肤」以外的全部缓存")),
+      ),
+      sel && sel.cacheNote
+        && React.createElement("div", { className: "we-picker__hint", key: "cache-mgr-note" }, sel.cacheNote),
+      sel && sel.cacheError
+        && React.createElement("div", { className: "we-picker__error", key: "cache-mgr-err" }, sel.cacheError),
     );
   }
 

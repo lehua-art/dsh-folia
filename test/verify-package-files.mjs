@@ -384,8 +384,10 @@ async function main() {
     // 4.23.4 抬到 **107/120**：1080p 变体选档（`test/verify-variants.mjs`）挂一硬档
     // 4.23.6 抬到 **109/122**：状态机流程级回归（`test/verify-install-flow.mjs`）与
     // 整条链路回归（`test/verify-download-chain.mjs`）各挂一硬档
+    // 4.23.7 抬到 **111/124**：多连接静默损坏回归（`test/verify-ranged-integrity.mjs`）与
+    // 缓存管理（`test/verify-cache-manager.mjs`）各挂一硬档
     // （按本文件既有纪律：地板 = 实测步数，抬本身即证据；下面的负对照保证"删一步即红"）。
-    const CHAIN_FLOOR = { verify: 109, docs: 6, smoke: 6, all: 122 };
+    const CHAIN_FLOOR = { verify: 111, docs: 6, smoke: 6, all: 124 };
     /** 地板表与 GROUPS 的对齐体检：键名必须与**组名**逐一对齐（纯函数 ⇒ 负对照可直接喂）。 */
     const floorGaps = (groups, floors) => groups.map(([, g]) => g).filter((g) => !Number.isInteger(floors[g]));
     const problems = floorGaps(GROUPS, CHAIN_FLOOR).map((g) => '地板表缺组 ' + g

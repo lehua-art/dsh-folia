@@ -1,5 +1,91 @@
 # 变更记录（Changelog）
 
+### v4.23.7（2026-11-04）
+
+> 主题：**多连接下载的静默损坏（P0）** —— 拼出来的文件长度对、内容错，job 还报 `done`。
+> 修法是三层校验（长度 / Content-Range+ETag / 内容哈希）+ 任何一层不过就回落单流；
+> 另把「缓存管理」（五层用量 + 分目标清理）做进设置页。
+
+#### 1. 真实故障（已复现，站点上同一条 URL 有两个对象）
+
+「助手皮肤」里 **鲸鱼娘 · 雨夜** 的 zip：全量 GET 回旧版 **17,509,106**，Range 回源回新版
+**17,414,581**。8 路多连接把两个版本**混着拼**进同一个 `.part`：
+
+```
+落盘 17,509,106（= 站点声明的长度）· 内容 = 旧版 + 新版 + 尾部 94,525 个 0x00 · job = done
+```
+
+`17,509,106 - 17,414,581 = 94,525` —— 尾巴那截 0 就是"新版比旧版短的那一段"。
+装出来的 zip 打不开，而**面板上一切正常**：这就是"静默损坏"。
+
+#### 2. 根因（三行代码，两条判据都恒真）
+
+`lib/download-queue.js` 的 `fetchRanged`：
+
+1. **`:387` `return end - start + 1`** —— 每片的"实收字节"写成了**请求长度** ⇒ 收尾
+   `written !== span` **恒不成立**；
+2. **`:369-373` 只判 `status === 206`** —— 不核对 `Content-Range` 的 `start/end/total` ⇒
+   双版本对象的字节被当成同一份；
+3. **`:354-357` `truncateSync(part, total)`** —— `base === 0` 时先把文件预填成 `total` 个
+   `0x00` ⇒ 收尾 `onDisk !== total` **也恒不成立**；
+4. **`:378-385` 无逐片字节计数** —— 短读（body 少于请求）被静默吞掉。
+
+#### 3. 修法 A：`fetchRanged` 的三层即时校验
+
+- **逐片实收**：`got += buf.length`，收尾必须 `got === 期望长度`，否则 `range-short`；
+  收尾再核 `Σ got === span` 与 `statSync(part).size === total`。
+- **`Content-Range`**：`start`/`end` 必须等于请求、`/total` 必须等于全量响应给的总量，否则
+  `range-version-mismatch`；**ETag** 与全量响应那次不一致 ⇒ `range-etag-mismatch`。
+- **不再预填**：`base === 0` 只建空文件（写多少涨多少）⇒ 落盘长度重新成为独立证据。
+  选择"按实际长度定长"而不是"维护已收区间"的理由写在代码注释与
+  [`DOWNLOAD-INTEGRITY.md`](DOWNLOAD-INTEGRITY.md) §2。
+- **任何 throw 都走既有回落**：`finishRanged` 截回 `from` → `resumeSingle` 单流续传；单流也
+  失败才判 `failed`（带明确 reason）。另修一处 Windows 实测坑：失败时必须先 `destroy()`
+  那条分片的写入流，否则还开着的 fd 会让"截回 + 续传"直接 `EPERM: open …part`。
+
+#### 4. 修法 B：下载后的内容哈希（兜底，防其它未知原因）
+
+- 站点清单里的 `sha256`（皮肤包 / 壁纸 / 开机动画 / 桌宠，**部分为空**）随条目进队列；
+  落地前流式比对，**只有已知才比**。
+- 不一致 ⇒ 删掉 `.part` 与目标文件、`failed(hash-mismatch)`、并**自动以单流重下一次（仅一次）**；
+  仍不一致 ⇒ `failed` 且文案「传输内容与站点不一致」，不再自动重试。
+- 顺带修"上次留下的坏文件"：HEAD 命中大小+ETag 时若清单给了 sha256 **也验一次**，对不上就重下。
+- 皮肤安装的哈希优先取请求体，其次按 URL 去站点清单里对一条；开机动画 / 桌宠 / 壁纸各自把自己
+  清单里的字段传进来。
+
+#### 5. 修法 D：缓存管理面板（上轮未完成的部分，本版一起做完）
+
+- 新接口：`GET /folia/cache/usage`（五层用量 + 合计，**只读**）、
+  `POST /folia/cache/clear { targets: [...] }`（`library` / `site-media` / `skins-zip` /
+  `skins` / `electron`）。
+- 安全：请求体里**只有目标名**；`..` / 绝对路径 / 盘符 / UNC ⇒ **整单 400**；算出来的目录必须
+  落在 `DSH_HOME` 或 `%APPDATA%\dsh-desktop` 之内；**不跟随符号链接**；被占用的文件进 `failed`
+  且不影响其它；`skins` 必须显式点名（清掉 = 皮肤中心的皮肤全部卸载）。
+- 清完把 `downloads.json` 里对应 kind 的 `done` 记录摘掉（否则留下"done 但文件已没了"）。
+- 面板：「系统」页签的缓存位置下面这一段 —— 五层用量 + 五个按钮（清空媒体 / 清空站点媒体 /
+  清空皮肤包 / 清空已装皮肤（二次确认）/ 清空 Electron（需重启）/ 一键清理不含皮肤）+ toast 报
+  释放量；进页签才拉一次（不跟轮询）。
+
+#### 6. 判据
+
+- 新增 `test/verify-ranged-integrity.mjs`（**33 条**，进硬档）：双版本对象 / 短读 / 正常 Range /
+  ETag 不一致 / 哈希不符自动重下一次 + 只重试一次，外加**"旧实现必须红"**的源码级变异
+  （6 处逐一贴回旧写法都必须报红）+ 行为级（旧算法真跑一次，产出"长度对、尾部 94,525 个 0"，
+  本测试 ① 的断言对它判红）。见 [`DOWNLOAD-INTEGRITY.md`](DOWNLOAD-INTEGRITY.md) §4.1。
+- 新增 `test/verify-cache-manager.mjs`（**67 条**，进硬档）：各 target 只删自己、诱饵目录不动、
+  路径穿越 400（整单拒绝：一个坏名字一个都不执行）、符号链接不跟随、**操作系统级**被占用文件
+  进 failed 且不中断（Windows 用 `FileShare.None` 真占用，POSIX 用父目录去写位）、`skins` 只有
+  点名才清、面板五个按钮各自只发自己的 targets、两段式确认、toast 释放量。
+- 守卫链 `verify` 109 → **111** 步（`CHAIN_FLOOR` 111/124 与 `test/fixtures/verify-chain.json`
+  同步重冻结）。
+- `docs/ROUTE-INDEX.md` 按 `host-route-index --write` 重新生成（新增 `cache` 族两行）。
+
+#### 7. 升级提示
+
+`package.json` 4.23.6 → 4.23.7。宿主半边（`lib/download-queue.js`、`lib/routes/cache.js`、
+`downloads/skins/boot/pets` 的入队点）与客户端半边（`src/panel-tabs-advanced.js`、
+`src/client.js`、`src/local-first.js`、词表）都有改动 ⇒ **要重启 `dsh web`**。
+
 ### v4.23.6（2026-11-04）
 
 > 主题：**「下载完成了但装不上」不再永久卡住** —— 落地上界（90 秒）+ 挂载自愈 + "任务丢了"判定；

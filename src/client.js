@@ -395,6 +395,13 @@ const selection = {
   // path 原样回传问下一级，客户端**不做任何路径拼接**（分隔符/盘符大小写都是宿主的口径）；
   // display 是地址栏草稿（可手输，Enter 跳转），选中即把它填进 cacheDirDraft 走既有保存链。
   cacheDirBrowse: null,
+  // 「缓存管理」（4.23.7，transient）：最近一次 `GET /folia/cache/usage` 的载荷（只读统计）、
+  // 在途标记（""|"usage"|"clear"）、以及一次清理的结果/错误各一句。
+  // **不落盘**：用量是随时会变的读数，重启后重新统计即可（落盘只会让人看到过期数字）。
+  cacheUsage: null,
+  cacheBusy: "",
+  cacheNote: "",
+  cacheError: "",
   // WE 官方资源路径编辑器（transient）：开态 + 草稿路径 + 上次错误。
   // 生效状态（目录/可用性）由 inventory 携带（host 是唯一真相）。
   editingWeAssetsDir: false,
@@ -1553,6 +1560,100 @@ async function changeCacheDir(dir, migrate) {
   }
   setTransient("cacheDirBusy", false);
   emit();
+}
+
+/* ── 「缓存管理」（4.23.7）：五层用量 + 分目标清理 ────────────────────────────────
+ * 宿主侧是 `lib/routes/cache.js`（GET /cache/usage / POST /cache/clear）。客户端**只**做两件事：
+ * 把用量画出来、把用户点的**目标名**发过去。路径一个字节都不从这里走 —— 安全边界在宿主
+ * （白名单 + 允许根 + 拒绝符号链接），这里传的是 `"library"` 这种名字。
+ *
+ * `skins`（已装皮肤）清了等于把皮肤中心的皮肤**全部卸载** ⇒ 两段式：先 armConfirm("cache:skins")
+ * 上膛，面板画出「确认 / 取消」；确认那一步才真的发请求。`electron` 被占用是常态 ⇒
+ * 部分失败也要把"释放了多少 + 有几个被占用"如实说出来，并提示重启。
+ */
+const CACHE_USAGE_URL = "/folia/cache/usage";
+const CACHE_CLEAR_URL = "/folia/cache/clear";
+
+/** 字节 → 人类可读（面板行与 toast 共用一份口径；0 ⇒ `0 B`）。 */
+function fmtCacheBytes(n) {
+  const v = Math.max(0, Number(n) || 0);
+  if (v < 1024) return v + " B";
+  const units = ["KB", "MB", "GB", "TB"];
+  let x = v / 1024;
+  let i = 0;
+  while (x >= 1024 && i < units.length - 1) { x /= 1024; i += 1; }
+  return (x >= 10 ? x.toFixed(1) : x.toFixed(2)) + " " + units[i];
+}
+
+/** 清理目标 → 中文名（按钮 / toast 共用；顺序与宿主白名单一致，别在这里发明第六个目标）。 */
+function cacheTargetLabel(t) {
+  if (t === "library") return weT("媒体库");
+  if (t === "site-media") return weT("站点媒体");
+  if (t === "skins-zip") return weT("皮肤包");
+  if (t === "skins") return weT("已装皮肤");
+  if (t === "electron") return weT("Electron 缓存");
+  return String(t || "");
+}
+
+/** 拉一次用量（只读：宿主不建目录、不改盘，所以进页签拉一次是安全的）。 */
+async function loadCacheUsage() {
+  setTransient("cacheBusy", "usage");
+  try {
+    const res = await apiJson(CACHE_USAGE_URL);
+    const doc = (res && res.data) || res || null;
+    if (doc && Array.isArray(doc.items)) {
+      setTransient("cacheUsage", doc);
+      setTransient("cacheError", "");
+    }
+  } catch (err) {
+    setTransient("cacheError", weT("读取缓存用量失败：{error}", {
+      error: String((err && err.message) || err || ""),
+    }));
+  }
+  setTransient("cacheBusy", "");
+  emit();
+}
+
+/**
+ * 清理若干目标。**只有目标名**会离开客户端（见上面那段安全边界）。
+ * 结果一律落成一句人话：释放了多少、几个文件、有没有被占用的（占用 ⇒ 提示重启）。
+ */
+async function clearCacheTargets(targets) {
+  const list = (Array.isArray(targets) ? targets : []).filter((t) => typeof t === "string" && t);
+  if (!list.length) return;
+  const label = list.map(cacheTargetLabel).join(" + ");
+  setTransient("cacheBusy", "clear");
+  setTransient("cacheError", "");
+  setTransient("cacheNote", "");
+  emit();
+  try {
+    const res = await apiPostJson(CACHE_CLEAR_URL, { targets: list }, { parse: "always" });
+    if (!res.ok) throw new Error(hostFailureReason(res));
+    const d = (res && res.data) || {};
+    const bytes = Number((d.released && d.released.bytes) || 0);
+    const files = Number((d.released && d.released.files) || 0);
+    const failed = Array.isArray(d.failed) ? d.failed.length : 0;
+    const size = fmtCacheBytes(bytes);
+    setTransient("cacheNote", failed
+      ? weT("已清理 {name}：释放 {size}（{n} 个文件）；{failed} 个文件被占用，重启 DSH 后彻底生效", {
+        name: label, size, n: files, failed,
+      })
+      : weT("已清理 {name}：释放 {size}（{n} 个文件）", { name: label, size, n: files }));
+    await loadCacheUsage();
+  } catch (err) {
+    setTransient("cacheError", weT("清理失败：{error}", {
+      error: String((err && err.message) || err || ""),
+    }));
+  }
+  setTransient("cacheBusy", "");
+  emit();
+}
+
+/** 「清空已装皮肤」：两段式（第一下只上膛，第二下才发请求）。 */
+function onCacheClearSkins() {
+  if (armedIdOf("cache") !== "skins") { armConfirm("cache:skins"); return; }
+  disarmConfirm();
+  clearCacheTargets(["skins"]);
 }
 
 const WE_ASSETS_DIR_URL = "/folia/we-assets-dir";
@@ -4331,6 +4432,10 @@ function WallpaperPicker() {
   // 停在「关于」页刷新页面这条路径不走 switchTab（activeTab 直接从 localStorage 读出来），
   // 用一次订阅式 effect 补上；TTL 同日历口径，重复触发是空操作。
   React.useEffect(() => { if (activeTab === "about") loadStarCount(false); }, [activeTab]);
+  // 4.23.7「缓存管理」：进「系统」页签时拉一次用量（宿主那条路由**只读**，不建目录不改盘）。
+  // 只在切到这个页签时拉 —— 不跟着轮询走，免得为一份"几分钟都不变"的读数每分钟多发请求；
+  // 用户在面板里按「刷新」或清完一轮时会各自再拉一次（`loadCacheUsage` / `clearCacheTargets`）。
+  React.useEffect(() => { if (activeTab === "system") loadCacheUsage(); }, [activeTab]);
 
   // 页签安全（ADR-0013 D3①）：可见页签表变了（组件行状态随 inventory 轮询回到本地）而当前
   // 页签不在表里 ⇒ 回落到第一个可见页签，自愈、不用用户自己点走。表为空（今天不可能，空表
@@ -4591,6 +4696,9 @@ function WallpaperPicker() {
         onAdapterTarget, onEdgeCompatChange, onLayoutChange, onPauseOnBattery, onPauseOnBlur, onPauseOnHidden, onToggleLiveDiag, sel,
         onStartEditCacheDir, onCancelEditCacheDir, onCacheDirDraft,
         onCacheDirBrowseInput, onCacheDirBrowseGo, onCacheDirBrowseEnter, onCacheDirBrowseUp, onPickCacheDir, onCloseCacheDirBrowse,
+        // 4.23.7「缓存管理」：用量 / 刷新 / 五目标清理（`skins` 走两段式确认，令牌 "cache:skins"）。
+        onClearCache: clearCacheTargets, onClearCacheSkins: onCacheClearSkins,
+        onRefreshCacheUsage: loadCacheUsage, armedConfirm: sel.armedConfirm, onDisarmConfirm: disarmConfirm,
       }),
     );
     return renderWallpaperTab({
