@@ -428,10 +428,10 @@ function applySelection(id, opts) {
   }
   // 4.23.18：**当前在播 = 最高优先级**（含启动恢复 / 轮播 / revalidate 这类非点击路径）。
   // 点击路径已由 localFirstApply 入队 high；这里补"在播那张若已有 job，保持 high 直到 done"。
-  // ⚠️ 只在**选中项真的变了**时提权：同 id 的 revalidate（inventory 重拉 / 上传后刷新）
-  // 不该再打一次 `/inventory` 去查条目 —— 那会让"上传成功恰好一次重拉"变成两次
-  // （test/verify-picker-upload.mjs 的判据实测抓到了这一点）。
-  if (id && !(opts && opts.fromManual) && selection.id !== id
+  // 同 id 的 revalidate 也走 —— 启动时 `revalidateSelection` 可能先把 selection.id 设好再调
+  // `applySelection`，只认"id 变了"会漏掉这张。内置 5s 节流；条目从**内存 inventory**取，
+  // 不再为提权多发 `/inventory`（test/verify-picker-upload 的"恰好一次重拉"依赖这一点）。
+  if (id && !(opts && opts.fromManual)
       && typeof localFirstApply === "function") {
     // 从**已在内存里的 inventory** 拿条目，别为提权再发一次 `/inventory`（上传成功那条链
     // 自己已经重拉过一次；再查一次就是"恰好一次"判据变红的原因）。

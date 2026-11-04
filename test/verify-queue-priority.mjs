@@ -218,6 +218,14 @@ try {
     check('C7 负对照：把点击入队改回 low ⇒ C6 立即红',
       !clickHighOf(lfSrc.replace('items: [lfAddItem(item, item.media, "high")]',
         'items: [lfAddItem(item, item.media, "low")]')));
+    // C8/C9：**当前在播**（启动恢复 / 轮播 / revalidate）的提权也走同一个 high 入队；
+    // 且条目来自内存 inventory，不为提权多发 /inventory。
+    const mpSrc = readFileSync(join(ROOT, 'src', 'media-prep.js'), 'utf8');
+    check('C8 applySelection 的非点击路径会提权当前在播（silent + 内存条目）',
+      /localFirstApply\(id, \{ silent: true, item: hit \|\| undefined \}\)/.test(mpSrc));
+    check('C9 负对照：删掉这行提权调用会被判出来（C8 的牙）',
+      !/localFirstApply\(id, \{ silent: true, item: hit \|\| undefined \}\)/
+        .test(mpSrc.replace('localFirstApply(id, { silent: true, item: hit || undefined })', '')));
     up.close();
   }
 
