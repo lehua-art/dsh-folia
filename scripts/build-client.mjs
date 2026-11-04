@@ -435,6 +435,13 @@ const INLINE_MODULES = [
     markers: ['function localFirstApply(', 'function setLocalFirstNote(', 'function lfPoll('],
   },
   {
+    // 标签筛选的纯函数族（4.23.9）：facets → 下拉分组 / OR 参数 / 持久化。
+    // 纯函数、零依赖 ⇒ test/verify-filters-dynamic.mjs 直接 import 本文件断言。
+    file: 'src/tag-facets.js',
+    why: '标签筛选纯函数族：facets → 分组选项 / OR 查询串 / 选中持久化',
+    markers: ["const TAG_HIDDEN_NAMES = ", "function tagOptionsFromFacets(", "function tagQueryOf(",
+      "function tagPickedFromSelectEvent(", "const TAG_FILTER_KEY = "],
+  },  {
     // **已缓存壁纸的切换手感**（4.23.8）：常驻双元素池（恒 2 个 <video>，永不再新建）
     // + 预热到首帧 + 点击反馈 + switchLatencyMs 度量。
     // 排在 `src/media-prep.js` **之前**：`buildVideoMedia` 与卡片点击都要按名字调它。

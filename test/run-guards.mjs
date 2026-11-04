@@ -122,6 +122,9 @@ const VERIFY_STEPS = [
   // 4.23.8：已缓存壁纸的切换手感 —— 缓存族归一化 / 双元素池（元素身份）/
   // 切换状态机 / 点击反馈 / switchLatencyMs 与 clickFeedbackMs 度量。
   step('test/verify-switch-smooth.mjs'),
+  // 4.23.9：面板「标签」下拉改为**动态**（站点 facets → 分组多选 OR），判据含
+  // 「任何请求不得出现 category≠wallpaper」的负对照（护住壁纸库的承重闸门）。
+  step('test/verify-filters-dynamic.mjs'),
   step('test/verify-scene.mjs'),
   step('test/verify-scene-frame-master.mjs'),
   step('test/verify-scene-live.mjs'),

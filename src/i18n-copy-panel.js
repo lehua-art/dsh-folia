@@ -436,6 +436,10 @@ const WE_I18N_EN_PANEL = {
   // 「已缓存」是**族级**结论（原画或 1080p 任一档已落地），所以英文不做 "downloaded"
   // 那种"确指这一条"的措辞 —— 那一层语义由 `local`（精确）承担，只在排障里用。
   "已缓存": "Cached",
+  // ── 4.23.9 标签筛选（facets 动态下拉）──
+  "标签": "Tags",
+  "子标签": "Subtags",
+  "按站点标签过滤（多选为「或」：命中任一即可）": "Filter by site tag (multi-select is OR: any match)",
   "已在本地缓存（原画或 1080p 任一档已落地），点它不必等网络":
     "Cached locally (original or 1080p variant is already on disk) — no network wait",
   "正在切换，请稍候": "Switching, please wait",

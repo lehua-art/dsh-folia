@@ -853,13 +853,24 @@ function hostFailureReason(res) {
   return (data && data.error) || weT("宿主返回 {status}", { status: res.status });
 }
 let inventorySeq = 0;
-async function loadInventory() {
+async function loadInventory(opts) {
+  const o = opts || {};
   const seq = ++inventorySeq;
   setTransient("loading", true);
   emit();
+  // 标签筛选（4.23.9）：只有**非空**才拼进查询串 —— 「全部」就是不传 tag。
+  // ⚠️ 这里**永远不传 `category`**：壁纸库恒只拉壁纸（宿主侧承重闸门）。
+  //    以后谁想"顺手按分类取货"，判据在 test/verify-filters-dynamic.mjs 的负对照里。
+  const qs = [];
+  const tag = String(o.tag || "").trim();
+  const subtag = String(o.subtag || "").trim();
+  if (tag) qs.push("tag=" + encodeURIComponent(tag));
+  if (subtag) qs.push("subtag=" + encodeURIComponent(subtag));
+  if (o.refresh) qs.push("refresh=1");
+  const invUrl = qs.length ? INVENTORY_URL + "?" + qs.join("&") : INVENTORY_URL;
   let next;
   try {
-    const res = await apiJson(INVENTORY_URL);
+    const res = await apiJson(invUrl);
     // 两种失败（宿主不可达 / 非 2xx）由 hostFailureReason 统一翻译，面板那一行据此显示。
     if (!res.ok) throw new Error(hostFailureReason(res));
     const data = res.data || {};
@@ -879,6 +890,9 @@ async function loadInventory() {
       // `weComponentVisible` 一处（字段缺席 / 形状不对 ⇒ 按可用渲染）。失败分支（下面的
       // catch）**有意不带这个键**：宿主不可达时可见面照常渲染，不许静默消失（D3③）。
       components: data.components,
+      // 站点聚合的 facets（4.23.9）：面板「标签」下拉的唯一数据源（分类/标签计数）。
+      // 缺失 ⇒ null，消费方回落"只有全部"，**不许**渲染成空下拉。
+      facets: data.facets || null,
       error: null,
     };
   } catch (err) {
@@ -4006,7 +4020,15 @@ const onFontResetAll = () => {
 };
 
 // ── 壁纸库 / 库视图处理器 ────────────────────────────────────────────────────
-const onRefresh = () => loadInventory();
+/*
+ * ── 标签筛选（4.23.9）──────────────────────────────────────────────────────
+ * 数据源**只有**清单响应里的 `facets`（站点聚合的计数），不另拉接口。
+ * 语义：多选 **OR**（`tag=a,b`）；空 = 不传 tag（即「全部」）。
+ * 兜底：facets 缺失/为空/形状不对 ⇒ 只剩「全部」，面板不空、不报错。
+ */
+// 标签筛选的实现住在 `src/tag-facets.js`（纯函数族，可被守卫直接 import 断言）：
+// `tagOptionsFromFacets` / `tagQueryOf` / `tagPickedFromSelectEvent` / `readTagFilter` / `writeTagFilter`。
+// 这里只留**装配**：选项现算、已选从持久化读、变化时重新请求清单。const onRefresh = () => loadInventory({ tag: tagQueryOf(readTagFilter()) });
 // Filter changes: persist + re-validate so wallpapers outside the selected
 // categories drop out of the grid/rotation immediately.
 const onRatingFilterChange = (e) => {
@@ -4022,6 +4044,18 @@ const onTypeFilterChange = (e) => {
 const onSourceFilterChange = (e) => {
   setSetting("sourceFilter", e.target.value);
   revalidateSelection();
+};
+/**
+ * 标签多选变化（4.23.9）：持久化 → 用**新的 tag** 重新请求清单。
+ *
+ * 「全部」由"什么都不选"表达：不传 tag，但宿主侧 `category=wallpaper` 恒定不变。
+ * 与分级/类型/来源不同，这一档**不是本地过滤** —— 标签是站点的聚合维度，
+ * 只有让服务端筛，计数才对得上（本地筛会把"共 N 条"算错）。
+ */
+const onTagFilterChange = (e) => {
+  const picked = tagPickedFromSelectEvent(e);
+  writeTagFilter(picked);
+  loadInventory({ tag: tagQueryOf(picked) });
 };
 // Card style: classic (CD-rack) vs fixed (overlap-proof).
 const onLayoutChange = (value) => {
@@ -4746,6 +4780,11 @@ function WallpaperPicker() {
         gridRef: pickerGridRef, vwin: pickerVwin,
         armedConfirm: sel.armedConfirm, onArmConfirm: armConfirm, onDisarmConfirm: disarmConfirm,
         onClear, onRatingFilterChange, onTypeFilterChange, onSourceFilterChange,
+        // 标签筛选（4.23.9）：选项由 facets 现算（缺失 ⇒ [] ⇒ 只剩「全部」）；
+        // 已选从持久化读，切页签时由 picker 侧重置。
+        tagOptions: tagOptionsFromFacets(sel.inventory && sel.inventory.facets),
+        tagPicked: readTagFilter(),
+        onTagFilterChange,
         onShowNormalView, onShowHiddenView,
         onToggleBatchMode, onArmBatchHide, onBatchHide, onBatchCancel, onSearchInput, onPickCard,
       }) : React.createElement(React.Fragment, null,

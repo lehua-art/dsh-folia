@@ -1,5 +1,68 @@
 # 变更记录（Changelog）
 
+### v4.23.9（2026-11-04）
+
+> 主题：**面板「标签」筛选改为动态** —— 选项不再写死，而是来自清单响应里站点聚合的
+> `data.facets`（带计数、按 标签/子标签 分组、多选为「或」）。
+>
+> ⚠️ **一条承重闸门没动**：壁纸库**恒只拉壁纸**（`category=wallpaper`）。
+> 「全部」= 不传 `tag`，**不是**不传 `category` —— 后者会让开机动画/皮肤/桌宠被当成壁纸
+> 拉进壁纸库（`FOLIA_NON_WALLPAPER_CATEGORIES` 那条兜底也挡不住）。判据是一条**负对照**：
+> 任何请求都不许出现 `category≠wallpaper`，见 `test/verify-filters-dynamic.mjs` B2/B7。
+
+#### 1. 宿主透传（前提）
+
+- `lib/routes/inventory.js`：新增 `siteScope()` —— **唯一**拼站点查询串的地方，
+  `category=wallpaper` 钉死在那里，`tag` / `subtag` 在其后追加（`limit` 仍 100）。
+- `GET /folia/inventory` 接受 `?tag=a,b` / `?subtag=x`；**没有** `category` 参数（故意）。
+- 站点第一页的 `data.facets` 被捕获，随响应以 `facets` 字段下发（缺失就不写该字段）。
+- **带标签筛选时不读也不写缓存**：缓存装的是"全部壁纸"，混用会把 A 标签的结果当成 B 标签的
+  结果，或让下一次"全部"拿到被筛过的列表。`facets` 随缓存保留，命中缓存时下拉仍有选项。
+
+#### 2. 客户端请求与状态
+
+- `loadInventory(opts)` 接受 `{ tag, subtag, refresh }`，只有非空才拼进查询串；
+  `facets` 收进 inventory store（`facets: data.facets || null`）。
+- 标签选择 **持久化**（`localStorage` 键 `dsh-folia.tagFilter`），刷新保持；
+  清空也写盘（否则刷新会把旧的选回来）。
+
+#### 3. 纯函数族 `src/tag-facets.js`（新内联模块）
+
+把"facets → 选项"抽成纯函数，`test/verify-filters-dynamic.mjs` 直接 import 断言：
+
+| 函数 | 契约 |
+|---|---|
+| `tagOptionsFromFacets(facets)` | → `[{ group:'tags'|'subtags', items:[{value,label,count}] }]`；空组不出现；异常/缺失 ⇒ `[]` |
+| `tagQueryOf(picked)` | → `tag=a,b`（OR，逗号分隔）；空 ⇒ `''`（不传） |
+| `tagPickedFromSelectEvent(ev)` | `selectedOptions` → 已选数组，剔除占位 `all` |
+| `readTagFilter` / `writeTagFilter` | 持久化读写；坏 JSON / 无 storage ⇒ 空且不抛 |
+
+**隐藏与分类同名的标签**（`壁纸` / `皮肤` / `wallpaper` / `skin-pack` …）：选了列表不会变短，
+只会让用户以为"筛选坏了"，所以直接不出。
+
+#### 4. 面板
+
+`src/picker-modal.js` 的筛选行末尾新增「标签」多选下拉（`<select multiple>` + `<optgroup>`
+分组：「标签」/「子标签」，每项带站点计数）。**只加标签维度，不加分类下拉** ——
+分类由页签隐含。`facets` 缺失/为空/形状不对 ⇒ 这一整段不出（面板不空、不报错）。
+
+#### 5. 判据
+
+- 新增 `test/verify-filters-dynamic.mjs`（**24 条**，硬档）：
+  纯函数 16 条（分组 / 计数 / 隐藏同名 / 兜底 / OR 序列化 / 事件解析 / 持久化与坏 JSON）
+  + 源码事实 8 条（category 钉死、透传、facets 下发、不污染缓存、客户端不拼 category，
+  以及两条**负对照**）。
+- 守卫链 `npm run verify` **113 步**（`CHAIN_FLOOR` 113/126、fixture 同步重冻）。
+- 新增 [`KNOWN-ISSUES.md`](KNOWN-ISSUES.md)：登记 `verify-client` 的关于页 anchor 竞态、
+  i18n 41 条漏译/242 孤儿（**只影响英文环境，回落原文**）、4K 解码硬件边界、
+  `lib/client.js` 是构建产物。
+
+#### 6. 升级提示
+
+`package.json` 4.23.8 → 4.23.9。宿主半（`lib/routes/inventory.js`）与客户端半
+（`src/client.js`、`src/picker-modal.js`、`src/tag-facets.js`、`src/i18n-copy-panel.js`）
+都有改动 ⇒ **要重启 `dsh web`**。无新增路由。
+
 ### v4.23.8（2026-11-04）
 
 > 主题：**已缓存壁纸的切换卡顿** —— 用户实测「点已下载好的壁纸会卡一下才播，而 Wallpaper Engine

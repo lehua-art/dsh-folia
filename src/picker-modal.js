@@ -363,7 +363,7 @@
   }
 
   function renderPickerFilterRow(ctx) {
-    const { sel, basePlayable, ratingCounts, typeCounts, sourceCounts, onSearchInput, onRatingFilterChange, onTypeFilterChange, onSourceFilterChange } = ctx;
+    const { sel, basePlayable, ratingCounts, typeCounts, sourceCounts, onSearchInput, onRatingFilterChange, onTypeFilterChange, onSourceFilterChange, tagOptions, tagPicked, onTagFilterChange } = ctx;
     return React.createElement("div", { className: "we-picker__row we-picker__filter-row" },
       // 标题搜索：几百上千张壁纸时最快的定位方式。输入即过滤，与分级/类型过滤叠加。
       React.createElement("input", {
@@ -415,7 +415,44 @@
       React.createElement("option", { value: "image" }, weT("图片（{n}）", { n: typeCounts.image || 0 })),
       React.createElement("option", { value: "scene" }, weT("场景（{n}）", { n: typeCounts.scene || 0 })),
       ),
+      renderTagSelect({ tagOptions, tagPicked, onTagFilterChange }),
     );
+  }
+
+  /**
+   * 「标签」多选下拉（4.23.9）。单独成函数只为把 `createElement` 的括号层级压平 ——
+   * 五层嵌套的三元表达式在真实构建里直接报 `missing ) after argument list`（实测踩过）。
+   *
+   * 语义：多选 = **OR**（`tag=a,b`）；什么都不选 =「全部」= 不传 tag（category 仍恒为 wallpaper）。
+   * 兜底：`options` 为空（facets 缺失/为空/形状不对）⇒ 返回 null，这一整段不出，
+   * 面板不空也不报错 —— 用户看到的还是原来那三个下拉。
+   */
+  function renderTagSelect(ctx) {
+    const { tagOptions, tagPicked, onTagFilterChange } = ctx || {};
+    const groups = Array.isArray(tagOptions) ? tagOptions : [];
+    if (!groups.length) return null;
+    const opts = [];
+    for (const g of groups) {
+      const label = (g && g.group === "subtags") ? weT("子标签") : weT("标签");
+      const items = (g && Array.isArray(g.items)) ? g.items : [];
+      if (!items.length) continue;
+      opts.push(React.createElement("optgroup", { key: String((g && g.group) || "tags"), label },
+        items.map((it) => React.createElement("option", { key: it.value, value: it.value },
+          it.label + " (" + it.count + ")"))));
+    }
+    if (!opts.length) return null;
+    return React.createElement(React.Fragment, null,
+      React.createElement("span", { className: "we-picker__hint we-picker__label" }, weT("标签")),
+      React.createElement("select", {
+        className: "we-picker__playlist-select we-picker__tag-select",
+        multiple: true,
+        size: 3,
+        // `undefined` 与 `[]` 都表示"全部"；multiple 的 value 必须是数组。
+        value: Array.isArray(tagPicked) ? tagPicked : [],
+        onChange: onTagFilterChange,
+        "aria-label": weT("标签"),
+        title: weT("按站点标签过滤（多选为「或」：命中任一即可）"),
+      }, opts));
   }
 
   export {

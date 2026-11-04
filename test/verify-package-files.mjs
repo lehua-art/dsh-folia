@@ -389,7 +389,7 @@ async function main() {
     // 4.23.8 抬到 **112/125**：已缓存壁纸的切换手感（`test/verify-switch-smooth.mjs`，
     // 缓存族归一化 / 双元素池 / 切换状态机 / 点击反馈 / switchLatencyMs 度量）挂一硬档，
     //（按本文件既有纪律：地板 = 实测步数，抬本身即证据；下面的负对照保证"删一步即红"）。
-    const CHAIN_FLOOR = { verify: 112, docs: 6, smoke: 6, all: 125 };
+    const CHAIN_FLOOR = { verify: 113, docs: 6, smoke: 6, all: 126 };
     /** 地板表与 GROUPS 的对齐体检：键名必须与**组名**逐一对齐（纯函数 ⇒ 负对照可直接喂）。 */
     const floorGaps = (groups, floors) => groups.map(([, g]) => g).filter((g) => !Number.isInteger(floors[g]));
     const problems = floorGaps(GROUPS, CHAIN_FLOOR).map((g) => '地板表缺组 ' + g
