@@ -70,7 +70,7 @@ const WE_SWITCH_POOL_SIZE = 2;
 const WE_SWITCH_PRESS_MS = 1200;
 // 状态机硬上限：真正的"永远等不到"必须收口，否则连点会被永久挡住。
 // 取值远大于缓冲阈值，让缓冲提示有充分的展示窗口。
-const WE_SWITCH_HARD_MS = 60000;
+const WE_SWITCH_HARD_MS = 15000;
 
 // ── 池与状态 ──────────────────────────────────────────────────────────────────
 const weSwitchPool = [];          // [{ id, el }] 长度恒 ≤ WE_SWITCH_POOL_SIZE
@@ -373,17 +373,20 @@ function weSwitchIs1080p(url) {
  *   · 记 `clickFeedbackMs` = 到"第一处视觉变化"的耗时（同步 ⇒ 实测 < 1ms）。
  */
 function weSwitchBegin(el) {
-  const t0 = weSwitchNow();
-  if (el && el.classList && typeof el.classList.add === "function") {
-    try { el.classList.add("we-qp__item--pressed"); } catch { /* ignore */ }
+  // 复用 ptrdown 那一枪的视觉反馈（如果有）：同一次点击只该量一段"点击 → 第一处视觉变化"。
+  const pressed = weSwitchConsumePress();
+  const t0 = (pressed && pressed.at) || weSwitchNow();
+  const target = el || (pressed && pressed.el) || null;
+  if (target && target.classList && typeof target.classList.add === "function") {
+    try { target.classList.add("we-qp__item--pressed"); } catch { /* ignore */ }
   }
-  if (el && typeof el.setAttribute === "function") {
-    try { el.setAttribute("aria-busy", "true"); } catch { /* ignore */ }
+  if (target && typeof target.setAttribute === "function") {
+    try { target.setAttribute("aria-busy", "true"); } catch { /* ignore */ }
   }
-  const feedbackMs = Math.max(0, weSwitchNow() - t0);
+  const feedbackMs = (pressed && pressed.ms) || 0;
   const ctx = {
-    startedAt: t0, feedbackMs, state: "priming",
-    cardEl: el || null, pendingEl: null, bufferTimer: 0, pressTimer: 0, hardTimer: 0,
+    startedAt: t0, feedbackMs: (pressed && pressed.ms) || 0, state: "priming",
+    cardEl: target, pendingEl: null, bufferTimer: 0, pressTimer: 0, hardTimer: 0,
     slug: "-", cacheFamilyHit: false, is1080p: false, settled: false,
   };
   weSwitchCtx = ctx;
@@ -603,6 +606,50 @@ function weSwitchFlushPick() {
   return p.id;
 }
 
+/**
+ * **纯视觉**的按下反馈（4.23.9 起 onClick 才建切换上下文）。
+ *
+ * 为什么要把"视觉"与"状态机"分开：4.23.8 把两者都塞进 `weSwitchBegin`，于是
+ * **只要按下去就已经"有一个切换在飞"** ⇒ 紧接着的 `onClick` 被连点防护判成"切换中"
+ * 而直接 return ⇒ `applySelection` 从来没被调用 ⇒ 点一下**什么都不会发生**（P0）。
+ * 现在 ptrdown 只负责"看得见的变化"，`weSwitchBegin()` 挪到 onClick，
+ * 与 `applySelection` 同生共死。
+ *
+ * 仍然同步：第一处视觉变化 < 1ms（`clickFeedbackMs` 就量这一段）。
+ */
+function weSwitchPressFeedback(el) {
+  const t0 = weSwitchNow();
+  if (el && el.classList && typeof el.classList.add === "function") {
+    try { el.classList.add("we-qp__item--pressed"); } catch { /* ignore */ }
+  }
+  if (el && typeof el.setAttribute === "function") {
+    try { el.setAttribute("aria-busy", "true"); } catch { /* ignore */ }
+  }
+  const ms = Math.max(0, weSwitchNow() - t0);
+  weSwitchLastPress = { at: t0, ms, el: el || null };
+  return ms;
+}
+let weSwitchLastPress = null;
+
+/** 上一次按下的视觉反馈（`weSwitchBegin` 用它把 pressed 与上下文绑到同一个元素上）。 */
+function weSwitchConsumePress() {
+  const p = weSwitchLastPress;
+  weSwitchLastPress = null;
+  return p;
+}
+
+/**
+ * 结算当前切换（成功）。给**非视频**壁纸用：它们没有 `weSwitchPlayed()` 这条腿
+ *（那条腿挂在 `<video>` 上），不结算的话"切换在飞"会一直为真 ⇒ 后续点击全被连点防护挡住。
+ * 幂等；没有上下文时是 no-op。
+ */
+function weSwitchSettle() {
+  const ctx = weSwitchCtx;
+  if (!ctx || ctx.settled) return null;
+  weSwitchSetState(ctx, "playing");
+  weSwitchFinish(ctx, true, "");
+  return ctx;
+}
 export {
   WE_SWITCH_FADE_MS, WE_SWITCH_BUFFER_HINT_MS, WE_SWITCH_STATS_MAX,
   WE_SWITCH_JANK_FPS, WE_SWITCH_POOL_SIZE,
@@ -611,5 +658,6 @@ export {
   weSwitchStatsSnapshot, weSwitchStatSummary, weSwitchSubscribe,
   weSwitchJankState, weSwitchSlugOf, weSwitchIs1080p, weSwitchNewPlayer,
   weSwitchQueuePick, weSwitchFlushPick, weSwitchIsVisible,
+  weSwitchPressFeedback, weSwitchConsumePress, weSwitchSettle,
   weSwitchClickPlayer, weSwitchDetachedPlayer,
 };

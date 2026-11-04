@@ -1,4 +1,4 @@
-﻿// Verify the **cached-wallpaper switch path** (4.23.8) —
+// Verify the **cached-wallpaper switch path** (4.23.8) —
 // 「点已下载好的壁纸会卡一下才播」的五条成因与逐条修法的判据。
 //
 // 为什么这个守卫是"两段式"的（先纯函数 / 先模块，再结构）：
@@ -252,6 +252,33 @@ async function sectionSwitch() {
   check('C12 统计给出 clickFeedbackMs 的均值与最大值（需求 I）',
     Number.isFinite(summary.clickFeedbackMs.avg) && Number.isFinite(summary.clickFeedbackMs.max));
 
+  // ── P0 回归（4.23.9）：**按下不能等于"切换已开始"** ────────────────────────
+  // 实测故障：ptrdown 就建了切换上下文 ⇒ onClick 被连点防护判成"切换中"而 return
+  // ⇒ `applySelection` 从来没被调用 ⇒ 点未缓存壁纸**毫无反应**。
+  vs.weSwitchSettle();                       // 先收拾干净
+  const pfCard = dom.card();
+  vs.weSwitchPressFeedback(pfCard);
+  check('P1 仅"按下"不得产生在飞切换（否则 onClick 会被连点防护吞掉）',
+    vs.weSwitchBusy() === false, 'busy=' + vs.weSwitchBusy());
+  check('P2 按下仍然有可见反馈（pressed + aria-busy）',
+    pfCard._classes.has('we-qp__item--pressed') && pfCard.getAttribute('aria-busy') === 'true');
+
+  // 非视频壁纸没有 weSwitchPlayed 那条腿 ⇒ 必须能靠 weSwitchSettle 收口，
+  // 否则"切换在飞"恒真、之后的点击全部被挡。
+  vs.weSwitchBegin(pfCard);
+  check('P3 begin 后确实在飞（这一步是连点防护该拦的唯一情形）', vs.weSwitchBusy() === true);
+  vs.weSwitchSettle();
+  check('P4 非视频路径能结算（settle 后不再挡点击）', vs.weSwitchBusy() === false);
+  check('P5 结算后卡片复位（pressed/aria-busy 摘掉）',
+    !pfCard._classes.has('we-qp__item--pressed') && pfCard.getAttribute('aria-busy') === null);
+
+  // 「每次点击最终必达 playing | buffering | failed」—— 不许有"既不入队也不切层"的静默态。
+  const terminals = [];
+  const c1 = vs.weSwitchBegin(dom.card()); vs.weSwitchSettle(); terminals.push(c1.state);
+  const c2 = vs.weSwitchBegin(dom.card()); vs.weSwitchFail('decode'); terminals.push(c2.state);
+  check('P6 每次切换都收敛到终态（playing / failed；buffering 是中间态）',
+    terminals.every((s) => s === 'playing' || s === 'failed' || s === 'buffering'),
+    terminals.join(','));
   // 池容量在全部用例之后仍然是 2 —— 没有泄漏出新解码器（H11）。
   check('C13 全部用例跑完仍只有 2 个池元素（H11：无解码器泄漏）',
     dom.created.length === 2, 'created=' + dom.created.length);
@@ -299,6 +326,29 @@ function sectionStructure() {
   check('D4 src/video-switch.js 已登记进 INLINE_MODULES',
     build.includes("file: 'src/video-switch.js'"));
 
+  // D6 结构判据（P0 回归）：卡片点击**不许**因为"ptrdown 已按下"就跳过 applySelection。
+  //    真实故障形态是 `weSwitchQueuePick(w.id, …)` 在 onClick 里提前 return。
+  const qpCode = quickPanel
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+  check('D6 onClick 里不再用 weSwitchQueuePick 提前 return（P0：那会吞掉每一次点击）',
+    !/weSwitchQueuePick\(w\.id/.test(qpCode));
+  check('D7 onClick 的连点判据是 weSwitchBusy()，且之后一定会调 applySelection', (() => {
+    // 两个卡片渲染器（列表行 + 卡片档）都该是同一套顺序：busy → begin → apply。
+    const sites = [];
+    let at = qpCode.indexOf('onClick: (ev) => {');
+    while (at >= 0) { sites.push(at); at = qpCode.indexOf('onClick: (ev) => {', at + 1); }
+    if (!sites.length) return false;
+    return sites.some((start) => {
+      const body = qpCode.slice(start, start + 1200);
+      const busyAt = body.indexOf('weSwitchBusy()');
+      const beginAt2 = body.indexOf('weSwitchBegin(ev');
+      const applyAt2 = body.indexOf('applySelection(w.id');
+      return busyAt >= 0 && beginAt2 > busyAt && applyAt2 > beginAt2;
+    });
+  })(), 'sites=' + (qpCode.match(/onClick: \(ev\) => \{/g) || []).length);
+  check('D8 按下只做视觉（onPointerDown 用 weSwitchPressFeedback，不建上下文）',
+    (qpCode.match(/onPointerDown: \(ev\) => \{[\s\S]{0,120}weSwitchPressFeedback\(ev/g) || []).length >= 2);
   // D5 宿主侧度量端点存在。
   const diag = read('../lib/routes/diag.js');
   check('D5 /folia/diag/switch-stats 端点已注册（D9）',

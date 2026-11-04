@@ -1,5 +1,58 @@
 # 变更记录（Changelog）
 
+### v4.23.11（2026-11-04）
+
+> 主题：**P0 热修** —— 4.23.8 起「点未下载过的壁纸毫无反应」（用户实测）。
+> 本版修正根因，并把「每次点击必须有事发生」做成硬判据。
+> 同时包含 4.23.10 的 `onRefresh` 修复（若你已装 4.23.9，请直接装本版）。
+
+#### 1. 根因：把「按下」当成了「切换已开始」
+
+4.23.8 为了做点击反馈，在 `onPointerDown` 里调 `weSwitchBegin()` —— 后者**立刻创建"在飞切换"上下文**。
+紧接而来的 `onClick` 走连点防护：
+
+```js
+if (weSwitchQueuePick(w.id, () => applySelection(w.id, …))) { toast(…); return; }
+```
+
+`weSwitchQueuePick()` 的判据是 `weSwitchBusy()`，而此刻 busy **必然为真**（ptrdown 刚建了上下文）
+⇒ **`applySelection` 从来没被调用**。而队列里的那次点击只能由 `weSwitchFinish()` 触发，
+它又要等一次切换完成 —— **死锁**。表现就是用户看到的：点一下什么都不发生（不切换、不提示、不下载）。
+
+**次因**：非视频壁纸（图片/场景/网页）没有 `weSwitchPlayed()` 那条腿（它挂在 `<video>` 首帧上），
+即便切换真的开始了，上下文也**永远不会结算** ⇒ busy 恒真 ⇒ 之后每一次点击都被挡。
+
+#### 2. 修法
+
+| 位置 | 改动 |
+|---|---|
+| `src/video-switch.js` | 新增 `weSwitchPressFeedback()`：**纯视觉**（pressed + `aria-busy` + 量 `clickFeedbackMs`），**不建上下文**；`weSwitchBegin()` 改为在 `onClick` 里、与 `applySelection` 同生共死；新增 `weSwitchSettle()`；硬上限 60s → **15s**（与既有 "停滞上限" 同一口径） |
+| `src/quick-panel.js:298/470` | `onPointerDown` 只做视觉；`onClick(ev)` 的判据换成 `weSwitchBusy()`（**真的有切换在飞**），不再用 `weSwitchQueuePick` 提前 return |
+| `src/media-prep.js` | `applySelection()` 末尾：**非视频**壁纸立即 `weSwitchSettle()` 收口（视频档仍由首帧结算 + 15s 兜底） |
+
+**连点语义**（G7 允许的第二种实现，规则写清）：切换**真的在飞**时再点别的卡 ⇒
+**忽略这一次**并 toast「正在切换，请稍候」。不再排队 —— 排队需要"上一个必然能结算"这个前提，
+而上面那个死锁正是把前提当成了结论。
+
+#### 3. 新增判据（能抓住这次的形态）
+
+`test/verify-switch-smooth.mjs` 38 → **47 条**，新增 9 条：
+
+- **P1** 仅"按下"不得产生在飞切换（`busy=false`）—— 这就是这次的根因形态
+- **P2** 按下仍有可见反馈（pressed + `aria-busy`）
+- **P3/P4** begin 后在飞、`settle` 后不再挡点击（非视频收口）
+- **P5** 结算后卡片复位
+- **P6** 每次切换都收敛到终态（`playing` / `failed`；`buffering` 是中间态）——
+  「不许既不入队也不切层地静默返回」
+- **D6** `onClick` 里不再用 `weSwitchQueuePick(w.id, …)` 提前 return
+- **D7** `onClick` 顺序必须是 `weSwitchBusy()` → `weSwitchBegin(ev…)` → `applySelection(w.id…)`（两个卡片渲染器都查）
+- **D8** `onPointerDown` 只做视觉（`weSwitchPressFeedback`，两个渲染器都查）
+
+#### 4. 判据与门禁
+
+- `verify-switch-smooth` **47/47**；`verify-static` 绿；`verify-guard-map` 绿（197 模块 / 127 守卫）。
+- 守卫链步数不变（**113/126**）—— 本版只加断言、不加步骤。
+
 ### v4.23.10（2026-11-04）
 
 > 主题：**修复 4.23.9 的一处致命编辑事故** —— 请以本版为准，不要用 4.23.9。

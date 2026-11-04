@@ -291,19 +291,20 @@
       // 变化必须在 50ms 内出现，否则用户会以为"没点上"。`weSwitchBegin` 顺带记下
       // clickFeedbackMs（点击 → 第一处视觉变化），收尾时摘下 pressed 与 aria-busy。
       onPointerDown: (ev) => {
-        try { weSwitchBegin(ev && ev.currentTarget); } catch { /* 反馈是增强 */ }
+        try { weSwitchPressFeedback(ev && ev.currentTarget); } catch { /* 反馈是增强 */ }
         // 视频壁纸的提交前预热也借这一枪（按下到抬手是白捡的窗口）。
         try { warmVideoForPointer(ev, true); } catch { /* 预热是增强 */ }
       },
-      onClick: () => {
-        // 连点防护（G7）：切换进行中再点别的卡 ⇒ **只保留最后一个**，并当面说明。
-        // 为什么不静默忽略：用户最后点的就是他真正想看的，全丢掉等于让他再点一次。
-        try {
-          if (weSwitchQueuePick(w.id, () => applySelection(w.id, { fromManual: true }))) {
-            try { lfSay(weT("正在切换，请稍候"), true); } catch { /* ignore */ }
-            return;
-          }
-        } catch { /* 队列是增强 */ }
+      onClick: (ev) => {
+        // 连点防护（G7）：**只有"切换真的在飞"时**才忽略这一次并当面说明。
+        // ⚠️ P0 教训：判据必须是 `weSwitchBusy()`（有一个已启动、未结算的切换），
+        //    **不能**用"ptrdown 刚按下"当判据 —— 那会让每一次正常点击都被吞掉。
+        if (weSwitchBusy()) {
+          try { lfSay(weT("正在切换，请稍候"), true); } catch { /* ignore */ }
+          return;
+        }
+        // 状态机与 applySelection 同生共死：先建上下文（拿 pressed/计时），再真正落地。
+        try { weSwitchBegin(ev && ev.currentTarget); } catch { /* 反馈是增强 */ }
         applySelection(w.id, { fromManual: true });
       },
       onKeyDown: cardKeyDown,
@@ -463,16 +464,15 @@
       title: w.title,
       // 与列表行**同一套**点击反馈 / 连点防护（需求 G6：不许另写一套）。
       onPointerDown: (ev) => {
-        try { weSwitchBegin(ev && ev.currentTarget); } catch { /* 反馈是增强 */ }
+        try { weSwitchPressFeedback(ev && ev.currentTarget); } catch { /* 反馈是增强 */ }
         try { warmVideoForPointer(ev, true); } catch { /* 预热是增强 */ }
       },
-      onClick: () => {
-        try {
-          if (weSwitchQueuePick(w.id, () => applySelection(w.id, { fromManual: true }))) {
-            try { lfSay(weT("正在切换，请稍候"), true); } catch { /* ignore */ }
-            return;
-          }
-        } catch { /* 队列是增强 */ }
+      onClick: (ev) => {
+        if (weSwitchBusy()) {
+          try { lfSay(weT("正在切换，请稍候"), true); } catch { /* ignore */ }
+          return;
+        }
+        try { weSwitchBegin(ev && ev.currentTarget); } catch { /* 反馈是增强 */ }
         applySelection(w.id, { fromManual: true });
       },
       onKeyDown: cardKeyDown,
