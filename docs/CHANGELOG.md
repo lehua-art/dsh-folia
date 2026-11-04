@@ -83,7 +83,7 @@ idle → submitting（正在提交…，按钮立刻置灰）→ queued（排队
 
 #### 4. 判据
 
-- `test/verify-downloads.mjs` **+30 条**（㉓）：假数据逐格驱动 `dlCardState`
+- `test/verify-downloads.mjs` **+33 条**（㉓，115 → 148 条执行）：假数据逐格驱动 `dlCardState`
   （idle / submitting 且按钮禁用 / 已等待秒数 / 提交超时 / 别人的提交不影响本卡 /
   queued 显示「前面还有 2 个」/ running 的 x% + a/b MB + 约剩 N 秒 + 多连接 /
   无样本不编 ETA / installing / done / 五类失败原因互不相同 / 未登记码不裸 failed /
