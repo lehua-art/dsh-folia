@@ -1,5 +1,129 @@
 # 变更记录（Changelog）
 
+### v4.23.6（2026-11-04）
+
+> 主题：**「下载完成了但装不上」不再永久卡住** —— 落地上界（90 秒）+ 挂载自愈 + "任务丢了"判定；
+> 并给出第一张**状态机覆盖表**（14 行）+ 端到端故障注入，防止这一类问题再复发。
+
+#### 1. 真实故障（已确诊，两台机器都复现）
+
+「助手皮肤」里 **鲸鱼娘 · 雨夜**（站点 slug `rainy-night`）点「安装」之后：
+
+- `/folia/downloads/list` 里 job 的 `status` 已经是 **done**，**17,509,106 B 全部下完**；
+- 缓存 zip 完好、能解压、里面确实有 `skin.json`；
+- 但 `skins/rainy-night` **不存在**，而卡片永远停在「**解压/落位中…**」：
+  按钮 `disabled`、`retry=false`、**没有任何超时**。既没有进度，也没有可点的按钮。
+
+另一台机器（Lenovo）上是同一族故障的**另一种形态**：`/folia/downloads/list` 里
+**根本没有那条 job**（连 url 里的 sha 都搜不到），可卡片照样永远「解压/落位中…」——
+它在等一个**不存在的 jobId**。
+
+#### 2. 根因（三条，都能在源码里指出位置）
+
+1. **收尾依赖宿主进程内存**：`lib/routes/skins.js` 的 `scheduleFinishInstall()` 只是
+   `setTimeout` 轮询队列，进程一重启就没了；而 `jobs.json` 里 `status=done` 是**落了盘**的
+   ⇒ 重启之后**没有任何人**会再推进"落地"这一步。
+2. **卡片把这一格映射成"永久进行中"**：`src/local-first.js` 的 `dlCardState()` ③
+   （旧 `:487-489`）把「done 但未落地」无条件映射成 `installing`（`disabled`、`retry=false`、无超时）。
+3. **轮询不认"查不到"**：拿到 202 里的 jobId 之后，客户端只在"查到了但还在跑"时有分支；
+   查不到就静默继续，一路转到 30 分钟上界 —— 而 `scheduleFinishInstall` 那边同样只在内存里等。
+
+#### 3. 修法（自愈 + 上界 + 真源核对）
+
+- **落地上界（默认 90 秒）**：`installing` 这一格现在有上界，超过即 `failed`，文案
+  「下载已完成但安装未落地，点「重试」」，`retry=true`。窗口由 `DSH_FOLIA_INSTALL_STALL_MS`
+  覆盖（夹取 **5 秒..30 分钟**，非法/缺省回落 90 秒）。浏览器里没有 `process.env` ⇒
+  **宿主解析、随 `/folia/downloads/list` 的 `installStallMs` 下发**，客户端只用这个数字。
+  另外给这一格配了**秒表**：`useDownloadJobs` 在没有 queued|running 时会停表，
+  停表状态下 90 秒的超时永远不会触发（那等于没修），所以 `useDlCards` 自带一条
+  只在"本页有停滞卡片"时才走一格的 1 秒表。
+- **挂载自愈**（三个模块同一套 `dlHealStuck()`）：面板挂载时若「job 已 done + 本机未落地」，
+  自动补打一次收尾接口 —— 皮肤 `/folia/skins/install`、开机动画 `/folia/boot/download`、
+  桌宠 `/folia/pets/install`。三者都**幂等**且**走本地缓存**（不重新下载）：目标已存在直接
+  `exists:true`，否则读 `cache/*-zip/` 解压。成功 → `cards.markOk()`；失败 → `cards.fail()`
+  把**原因写在卡片上**（红字 +「重试」），提示行同一句人话 —— 绝不静默。
+  防抖按 `kind:id` **每次会话只自动尝试一次**（切页签重新挂载不会重打；用户手动点「重试」不受限）。
+- **「任务丢了」判定**：`dlAwaitJob()` 与皮肤页签自己的轮询都改为「**连续 5 次**
+  （5 × 1.5s ≈ **7.5 秒**）在 `/downloads/list` 里查不到该 jobId」⇒ 判 `lost`
+  （失败码 `job-lost`，文案「下载任务已丢失，点「重试」」）。只数"成功拿到列表但没有这条 job"：
+  列表请求自己失败**不算**（网络抖动不等于任务丢失）；查到一次就清零。
+- **判失败之前先核 `installed`**：`/skins/list`、`/boot/list`、`/pets/list` 的"已装"是唯一真源 ——
+  超时或 `lost` 时先查一次，装好了就直接当成功（`done`），不让"我们等的那条 job 没了"误报失败。
+- **残留卡片回落 `idle`**：本地没有对应 job 的卡片（队列被重置 / job 被清理）调 `cards.settle()`
+  清掉残留的"进行中"痕迹 ⇒ 回落 `idle`、**可点「安装」**。
+- **顺序修正**：本卡片的**明确失败**（提交失败 / 自动补装失败）现在排在「done 但未落地」之前 ——
+  否则补装失败会被盖回 `installing`，失败又变静默（这正是用户抱怨的那一点）。
+- **可观测性**：皮肤/开机动画/桌宠的安装**成功与失败**日志从 `info` 提到 **`warn`**
+  （默认终端只出 `error`+`warn`，写成 info 等于没留痕），每行带 **`id` / 耗时 / 结果 / 错误码**
+  （皮肤侧统一走 `logInstallResult()`；宿主的自调用失败也不再是空 catch）。
+- 桌宠 `/pets/install` **已装则直接回 `exists:true`**（自愈可以无脑重试，不会白费流量）。
+
+#### 3.5 「装了两遍 / 第二遍装完仍停在解压落位」的附加修复
+
+同一台机器上还报了两个症状，根因与上面同源（两条安装路径互不认识 + id 比错名字）：
+
+- **装了两遍**（进度条满了之后又装了一遍）：同一次点击有两条路径会 POST 同一条接口 ——
+  客户端 202 轮询到 `done` 后自己打一次；宿主 `scheduleFinishInstall()` 下完自调用一次。
+  现在：宿主侧在「zip 已就绪 → 写盘完成」这段加**短期栅栏** `installGateTry(id)`
+  （内存 Map，TTL **2 分钟**，`INSTALL_GATE_TTL_MS`），命中回
+  `{ok:true,pending:true,deduped:true}` ⇒ **不重复解压**；落位失败立刻释放（否则「重试」被自己挡住）；
+  成功标记 done（卸载后马上重装不会被挡）。栅栏**不覆盖下载阶段**（那属于队列，同 URL 幂等），
+  否则宿主自己的收尾自调用会被挡死 —— 那又会变成"永远装不上"。
+  客户端半边：发请求**之前**先查 `/skins/list`，已装好就 `markOk` + 刷新，**根本不发请求**。
+- **装好了却判成没装**：站点 catalog id、`skin.json` 里的 id、磁盘目录名**三者不总相同**
+  （撞名时上传工具加 `skin-` 前缀，清单 id 还可能被规范化）⇒ 第二遍装完仍停在「解压/落位中…」。
+  现在统一走 `skinInstalledMatch()`：**目录名 / `skin.json.id` / catalog id 任一命中即已安装**
+  （含 `skin-` 前缀归一）。
+- 任何 `200/2xx` 的 install 响应（含 `exists:true`）⇒ **立刻** `cards.markOk()` 变「已安装」，
+  不经过 `installing`，并且紧跟一次 `load(true)` 刷新清单；`deduped:true` 既不当失败也不假装完成
+  （保持有上界的当前格 + 刷新，若那边已装好就 `markOk`）；`4xx/5xx` 一律 `failed` + 原因 +「重试」。
+
+#### 4. 判据（这一版的重点：流程级，不是单点）
+
+- 新增 `test/verify-install-flow.mjs`（**35 条**）：**状态机覆盖表 20 行**（本地状态 × 队列状态 ×
+  是否已装 × 时长 ⇒ 展示状态 + 是否可点）+ **4 条端到端**（真站点替身 + 真宿主路由 + 真下载队列 +
+  真 zip）：E1 点击→200→installed；E2 **202+jobId**→排队→下载→done→自动安装→installed
+  （并验证第二次安装**没有重新下载**）；E3 **宿主重启**（job 表清空）→ 7.5 秒后 failed 可重试；
+  E4 站点 500 → failed + 原因 + 可重试。A15–A20 专门钉住这一轮的两个新症状：
+  栅栏去重（同一次点击只解压 1 次，TTL 语义含过期与被挡住的重试）、`exists:true` 即完成、
+  `deduped` 不假失败、成功后刷新清单（计数断言）、三合一 installed 归一、4xx/5xx 可重试。
+- `test/verify-downloads.mjs` **148 → 202 条**（新增 ㉔ 自愈/超时 37 条、㉕ 任务丢失 17 条），
+  既有 ①–㉓ 的断言**一条未改**。
+- 新增 `test/verify-download-chain.mjs`（**34 条 / 6 个场景**）：**整条链路**（清单 → 选档 → 下载 →
+  落位 → 安装 → 启用）端到端，逐段断言 + 计时 —— 快链路选原画 / 0 条 Range / <2s；慢链路 3 秒切
+  `ranged:8` 且吞吐 ≥2.5× 单流、1080p 变体字节 <30%；清单陈旧优雅回落；缓存命中 **0 次网络请求** +
+  缓存头分档；落位安装幂等（只解压 1 次）；故障注入（队列清空 / 500 / 磁盘写失败）不卡死。
+  数字与分段策略写在 [`DOWNLOAD-CHAIN-REPORT.md`](DOWNLOAD-CHAIN-REPORT.md)。
+- 新增 `scripts/bench-chain.mjs`（**不进**门禁，只出数字）：原画 vs 1080p、单流 vs 8 路多连接、
+  library 命中；三次取中位数。本机实测：多连接/单流 **9.91×**、1080p 体积 **25%**、
+  library 命中 **1 ms（0 请求）**。
+- 守卫链 `verify` 107 → **109** 步（`CHAIN_FLOOR` 与 `test/fixtures/verify-chain.json` 同步重冻结）。
+- 防复发清单落到新文档 [`INSTALL-FLOW.md`](INSTALL-FLOW.md)：所有状态、迁移条件、两条超时、
+  失败文案表、自愈与去重口径、用例编号（A1–A20 / E1–E4）。改状态机必须同时改它 —— 判据 C1–C4 会拦。
+
+#### 5. 站点数据对齐
+
+站点 D1 里 `rainy-night` 的 `bytes` 原本写 17,414,581，而**实际文件**（R2 上的
+`wallpapers/wp_6b5017aa03bacabe67ec2f08/fd2b903f496c.zip`，HEAD 实测）是 **17,509,106** ——
+与下载队列下到的字节数一致。已用一条 `UPDATE` 只改 `bytes`（不动 `storage_key` / `sha256`），
+`rows_written=1`，回读为 17,509,106。
+
+#### 6. 升级提示
+
+`package.json` 4.23.5 → 4.23.6。宿主半边（`lib/routes/skins.js`、`lib/routes/boot.js`、
+`lib/routes/pets.js`、`lib/routes/downloads.js`）与客户端半边（`src/local-first.js`、
+三个页签）都有改动 ⇒ **要重启 `dsh web`**。想改落地上界就用 `DSH_FOLIA_INSTALL_STALL_MS`
+（单位毫秒，夹取 5 秒..30 分钟）；改完重启宿主生效（客户端拿的是宿主下发的值）。
+
+#### 7. 发布门槛（4.23.6 起，缺一不发）
+
+1. **状态机覆盖表 20 行**全绿（`test/verify-install-flow.mjs`：A1–A20）；
+2. **链路级 6 个场景**全绿（`test/verify-download-chain.mjs`）；
+3. 基准里的三条硬数字：快链路**单流无 Range**、慢链路**吞吐 ≥2.5×**、第二次 **library 命中 0 请求**
+   （`scripts/bench-chain.mjs` 只出数字，这三个判据在链路测试里断言）；
+4. `verify` 链（109 步）+ 全量审计 + 静态棘轮全绿；
+5. 站点侧数据与文件对账（本次：`rainy-night` 的 `bytes` 17,414,581 → 17,509,106）。
+
 ### v4.23.5（2026-11-04）
 
 > 主题：**大文件不再双份占盘**——已完成载荷的浏览器缓存按时长分档（小文件一年，大文件 1 小时）。

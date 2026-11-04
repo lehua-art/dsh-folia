@@ -320,6 +320,146 @@ function dlJobForCard(jobs, kind, url) {
   return best;
 }
 
+/* ── 挂载自愈：把「下载已完成但没落地」补装一次（4.23.6）──────────────────────
+ *
+ * 真实故障（用户实测，已确诊）：「助手皮肤」的鲸鱼娘·雨夜，17,509,106 B 全部下完、
+ * 缓存 zip 完好、能解压、里面有 skin.json —— 但 `skins/rainy-night` 不存在，卡片停在
+ * 「解压/落位中…」。原因在宿主：收尾那一步（`scheduleFinishInstall()`）只是进程内存里的
+ * `setTimeout`，DSH 重启就没了，而 `jobs.json` 里 `status=done` 是落了盘的 ⇒ 没人再推进落地。
+ *
+ * 解药有两条，缺一不可：
+ *   ① **挂载即自愈**（这里）：看到「job 完成 + 本机未落地」就自己补打一次安装请求。
+ *      三个模块的收尾接口本来都是**幂等**的（走本地缓存，不再下载）：
+ *        · 皮肤 `/folia/skins/install` —— 目标目录已有 skin.json 时直接回 `exists:true`；
+ *          否则读 `cache/skins-zip/<sha256(url)>.zip` 解压落位（队列里那条 job 已 done ⇒ 不会重下）。
+ *        · 开机动画 `/folia/boot/download` —— 本地文件已存在时只做"验头 + 写 meta"的收尾。
+ *        · 桌宠 `/folia/pets/install` —— 本地目录已装好直接回 `exists:true`；否则读
+ *          `cache/pets-zip/<id>.zip` 解压（同样不重新下载）。
+ *   ② **超时兜底**（`dlCardState` ③）：自愈没成（或没机会跑）时，90 秒后卡片自己变 failed +「重试」。
+ *
+ * 防抖：同一 id **每次会话只自动尝试一次**（`LF_HEAL_TRIED`，页面级、跨页签挂载持续）。
+ * 为什么要按 id 而不是按卡片实例：切页签 = 重新挂载，按实例记账等于"每切一次就重试一次"，
+ * 而宿主那边是幂等的、失败原因也不会变 ⇒ 那是空转，还会把用户的手动「重试」状态冲掉。
+ * 在页面级记一次账，用户真要重试时仍可以点卡片上的「重试」—— 那走的是**用户意图**，
+ * 不受这里的自动防抖限制。
+ */
+
+/** 会话级防抖表：`<kind>:<id>` → 已自动尝试过。 */
+const LF_HEAL_TRIED = new Set();
+
+/** 这个 `kind:id` 还要不要自动补装？返回 true 时**同时记账**（所以调用方不必再防重）。 */
+function dlHealOnce(key) {
+  const k = String(key == null ? "" : key).trim();
+  if (!k) return false;
+  if (LF_HEAL_TRIED.has(k)) return false;
+  LF_HEAL_TRIED.add(k);
+  return true;
+}
+
+/**
+ * 从"卡片列表 + 队列快照"里挑出**该自愈**的那些条目。
+ *
+ * @param {object[]} jobs   `/downloads/list` 的 jobs
+ * @param {string} kind     `skin` / `boot` / `pet`
+ * @param {object[]} items  该页签的卡片（至少要有 `id` 与 `url`）
+ * @param {(it:object)=>boolean} doneOf  本机是否已经落地（已落地的不需要自愈）
+ * @returns {object[]} 待自愈的条目（保持原顺序）
+ */
+function dlHealTargets(jobs, kind, items, doneOf) {
+  const out = [];
+  const isDone = typeof doneOf === "function" ? doneOf : () => false;
+  for (const it of (Array.isArray(items) ? items : [])) {
+    if (!it || !it.id) continue;
+    try { if (isDone(it)) continue; } catch { continue; }
+    const job = dlJobForCard(jobs, kind, it.url);
+    if (!job || job.status !== "done") continue;
+    out.push(it);
+  }
+  return out;
+}
+
+/**
+ * 挂载自愈**执行体**：对 `dlHealTargets()` 挑出来的条目各补打一次收尾请求。
+ *
+ * 约定（四个回调都由页签提供，本函数不认识组件、也不认识 React）：
+ *   · `path` / `body(it)`   打哪个宿主接口、带什么体（三个模块各一条，都是幂等的）；
+ *   · `onTry(it)`           发出前（用来写"正在自动补装…"的提示与卡片 submitting）；
+ *   · `onOk(it)`            宿主明确回 2xx（页签据此 `cards.markOk()` + 重拉清单）；
+ *   · `onFail(it, code)`    失败（页签据此 `cards.fail()` **把原因写在卡片上**，不许静默）。
+ *
+ * 绝不抛：任何一个模块/一张卡片失败都不该让别的卡片或整页挂掉。
+ *
+ * @returns {Promise<object[]>} 本次真的发过请求的条目
+ */
+async function dlHealStuck(opts) {
+  const o = opts || {};
+  const kind = String(o.kind || "");
+  const tried = [];
+  const targets = (() => {
+    try { return dlHealTargets(o.jobs, kind, o.items, o.doneOf); } catch { return []; }
+  })();
+  for (const it of targets) {
+    if (!dlHealOnce(kind + ":" + it.id)) continue;
+    tried.push(it);
+    try { if (typeof o.onTry === "function") o.onTry(it); } catch { /* 提示失败不影响补装 */ }
+    /** 空串 = 成功；非空 = 宿主给的错误码（或兜底码）。 */
+    let code;
+    try {
+      const resp = await apiPostJson(String(o.path || ""), typeof o.body === "function" ? o.body(it) : (o.body || {}), { parse: "always" });
+      const data = (resp && resp.data) || null;
+      // 宿主回 `{ ok:false, error }` 时把**它的**错误码带出去（比 `http-500` 有信息量）。
+      if (resp && resp.ok && data && data.ok === false) code = String(data.error || "failed");
+      else if (!(resp && resp.ok)) code = String((data && data.error) || ("http-" + ((resp && resp.status) || 0)));
+      else code = "";
+    } catch (e) {
+      code = /timeout|超时/i.test(String((e && e.message) || "")) ? "submit-timeout" : "network";
+    }
+    try {
+      if (code) { if (typeof o.onFail === "function") o.onFail(it, code); }
+      else if (typeof o.onOk === "function") o.onOk(it);
+    } catch { /* 回调失败不影响下一张卡片 */ }
+  }
+  return tried;
+}
+
+/* ── 「job 不存在了」的判定（4.23.6，另一台机器的实测故障）────────────────────
+ *
+ * 真实故障（Lenovo 实测）：卡片「鲸鱼娘·雨夜」永远显示「解压/落位中…」，但
+ *   · `/folia/skins/list` 的 `installed` 里没有 rainy-night；
+ *   · `/folia/downloads/list` 里**根本没有那条 job**（连 url 里的 sha 都搜不到）。
+ * ⇒ 前端在等一个**不存在的 jobId**：`POST /skins/install` 当年回的 202 jobId，在宿主重启 /
+ *   队列被重置 / job 被清理之后就查不到了。旧实现只在"列表里找不到这条 job"时**静默继续转圈**，
+ *   一路转到 30 分钟上界才报超时 —— 用户看到的就是永久 installing。
+ *
+ * 判据（三件事一起做，缺一条就会留下一种"永久转圈"）：
+ *   ① `DL_JOB_MISS_LIMIT` 次**连续**查不到 ⇒ 判 `lost`（不再无限轮询）；
+ *   ② 判 `lost` / 超时之前，先回列表核一次 `installed` —— 也许它其实早就装好了（列表是唯一真源）；
+ *   ③ 本地没有对应 job 的卡片，把残留的"进行中"痕迹清掉 ⇒ **回落 idle、可点安装**。
+ */
+const DL_JOB_MISS_LIMIT = 5;
+
+/**
+ * 「本地没有对应 job」的卡片：找不到 job = 那些"本地还显示在进行中、但队列里已经没人推进"
+ * 的残留（宿主重启后队列被重置、job 被清理）。
+ *
+ * @param {object[]} jobs   `/downloads/list` 的 jobs
+ * @param {string} kind     `skin` / `boot` / `pet`
+ * @param {object[]} items  该页签的卡片（要有 `id` 与 `url`）
+ * @param {(it:object)=>boolean} doneOf 本机是否已落地（已落地的不算残留）
+ * @returns {object[]} 残留条目（页签据此调 `cards.settle(id)` 回落 idle）
+ */
+function dlStaleCards(jobs, kind, items, doneOf) {
+  const out = [];
+  const isDone = typeof doneOf === "function" ? doneOf : () => false;
+  for (const it of (Array.isArray(items) ? items : [])) {
+    if (!it || !it.id) continue;
+    try { if (isDone(it)) continue; } catch { continue; }
+    if (dlJobForCard(jobs, kind, it.url)) continue;   // 有 job ⇒ 不是残留
+    out.push(it);
+  }
+  return out;
+}
+
 /** 下载中按钮文案：`下载中… x%`（多连接时补 ` · 多连接(n)`，同一行、不加行高）。 */
 function dlBusyLabel(job) {
   const pct = Math.max(0, Math.min(100, Math.round(Number(job && job.percent) || 0)));
@@ -357,6 +497,80 @@ const DL_PHASES = {
  *  必须**大于**宿主侧 install 自己那条 120 秒的等待上界，否则会在请求还在飞的时候误判失败。 */
 const DL_SUBMIT_TIMEOUT_MS = 150000;
 
+/* ── 「下完但没落地」的宽容窗口（4.23.6）──────────────────────────────────────
+ *
+ * 真实故障（用户实测，已确诊）：`/folia/downloads/list` 里 job.status 已经是 `done`
+ * （17,509,106 B 全下完、缓存 zip 完好、能解压、里面确实有 skin.json），但 `skins/rainy-night`
+ * **不存在**；而卡片在这一格上被映射成「解压/落位中…」（disabled、retry=false、**没有超时**）
+ * ⇒ 界面永久卡住，用户既没有进度、也没有可点的按钮。
+ *
+ * 为什么它会永远卡住：当初的"收尾"（`lib/routes/skins.js` 的 `scheduleFinishInstall()`）只是
+ * 宿主进程内存里的一个 `setTimeout`。DSH 一重启，那条定时器就消失了，而 jobs.json 里的
+ * `status=done` 是落过盘的 ⇒ 重启之后**没有任何人**会再去推进"落地"这一步。
+ *
+ * 所以这一格必须**有上界**：超过窗口就判 failed +「重试」（把决定权交回用户），
+ * 并且在面板挂载时先做一次自愈（`dlHealStuck()`，幂等、走缓存、不重新下载）。
+ *
+ * 窗口默认 90 秒，`DSH_FOLIA_INSTALL_STALL_MS` 可覆盖（夹取 5s..30min，非法/缺省回落默认）。
+ * 浏览器里没有 `process.env` ⇒ 真源在宿主：`/folia/downloads/list` 把同一个环境变量解析成
+ * 数字随列表一起下发，客户端只是收一个 `installStallMs`（见 `useDownloadJobs`）。
+ */
+const DL_INSTALL_STALL_MS = 90000;
+const DL_INSTALL_STALL_MIN_MS = 5000;
+const DL_INSTALL_STALL_MAX_MS = 30 * 60 * 1000;
+
+/** 解析「下完但没落地」的宽容窗口。默认 90 秒；`globalThis.__weEnv` 里可注入覆盖（一律夹取）。
+ *
+ *  ⚠️ 客户端**不许**出现 `process.*`（`scripts/build-client.mjs` 的浏览器安全判据会红）。
+ *  所以这里只读宿主注入的全局袋；真正解析环境变量的是宿主 `lib/routes/downloads.js` 的
+ *  `installStallMs()` —— 它随 `/folia/downloads/list` 把数字下发下来（见 useDownloadJobs）。 */
+function dlInstallStallMs() {
+  const raw = (() => {
+    try {
+      // 用 JSDoc 断言拿全局袋：`globalThis.__weEnv` 是宿主注入的非标准字段，
+      // 直接点会报 TS2339（而静态棘轮只许变好）。
+      const g = /** @type {any} */ (globalThis);
+      const env = g && g.__weEnv;
+      if (env && env.DSH_FOLIA_INSTALL_STALL_MS != null) return env.DSH_FOLIA_INSTALL_STALL_MS;
+    } catch { /* 读不到全局不是错误：回落默认 */ }
+    return null;
+  })();
+  const n = Math.round(Number(raw));
+  if (!Number.isFinite(n) || n <= 0) return DL_INSTALL_STALL_MS;
+  return Math.min(DL_INSTALL_STALL_MAX_MS, Math.max(DL_INSTALL_STALL_MIN_MS, n));
+}
+
+/**
+ * 「本机已装」判定（4.23.6 的归一口径）：**目录名 / skin.json 里的 id / 站点 catalog 的 id**
+ * 三者任意一个对上就算已安装。
+ *
+ * 为什么必须三个都比：站点 slug 与本机目录名不总相同（撞名时上传工具会加 `skin-` 前缀；
+ * 包里 skin.json 的 id 又可能被规范化过）。实测「雨夜」就是这样 ——
+ * `installed` 里没有 `rainy-night` 这个名字，但皮肤其实已经躺在 `skins/<别的 id>/` 里，
+ * 于是客户端一直判"没装"，安装成功的响应也被当成没完成（第二次装完仍停在「解压/落位中…」）。
+ *
+ * @param {object[]} list `/skins/list` 的 `installed`
+ * @param {string} rawId 站点 slug / 目录名 / 皮肤 id（任意一种）
+ */
+function skinInstalledMatch(list, rawId) {
+  const want = String(rawId == null ? "" : rawId).trim();
+  if (!want) return false;
+  const norm = (v) => {
+    const s = String(v == null ? "" : v).trim().toLowerCase();
+    return s.startsWith("skin-") ? s.slice(5) : s;
+  };
+  const wantNorm = norm(want);
+  for (const s of (Array.isArray(list) ? list : [])) {
+    if (!s || typeof s !== "object") continue;
+    for (const k of ["id", "dirId", "dir"]) {
+      const v = s[k];
+      if (v == null || v === "") continue;
+      if (String(v).trim() === want || norm(v) === wantNorm) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * 失败原因 → 人说得出的一句话（四模块共用一张表）。
  *
@@ -384,6 +598,15 @@ function dlFailReason(code) {
     'network': weT("连不上站点（网络层失败），请重试"),
     'timeout': weT("站点响应超时，请重试"),
     'submit-timeout': weT("超时：请求 150 秒没有返回，点「重试」再发一次"),
+    // 4.23.6：包已经**下完**了，但"落地"（解压 / 规范化清单 / 写目录）没有发生、也没人再推进它。
+    // 这就是用户遇到的死锁形态（job=done、skins/<id> 不存在、卡片永远「解压/落位中…」）。
+    // 文案必须同时说清三件事：① 下载本身是成功的（别让人以为白下了）；② 失败的是落地；
+    // ③ 下一步动作就是点「重试」（走本地缓存，不会重下 17 MB）。
+    'install-stalled': weT("下载已完成但安装未落地，点「重试」"),
+    // 4.23.6：宿主曾经回过一个 jobId（202 pending），但它**从列表里消失了** —— 宿主重启、
+    // 队列被重置、job 被清理都会这样。旧实现把它当成"继续等"，于是永久转圈到 30 分钟上界。
+    // 现在连续 5 次查不到就判这个码，并且**先回列表核一次 installed**（也许早装好了）。
+    'job-lost': weT("下载任务已丢失，点「重试」"),
     'download-failed': weT("下载失败（站点未返回文件），请稍后重试"),
     'download-timeout': weT("下载超时（已下部分会保留，再点「安装」可续传）"),
     'http-404': weT("站点上没有这个文件（404，可能正在补传/已被删除）"),
@@ -440,6 +663,8 @@ function dlProgressDetail(job, etaSec) {
  * @param {{idle?:string, done?:string, failed?:string}} [inp.labels] 各模块自己的词
  * @param {number} [inp.nowMs]
  * @param {number} [inp.submitTimeoutMs]
+ * @param {number} [inp.installStallMs]   「done 但未落地」的宽容窗口（缺省：`dlInstallStallMs()`）
+ * @param {number} [inp.installingSince]  本卡片第一次被观察到「done 但未落地」的时刻（ms，0 = 无样本）
  * @returns {{phase:string,label:string,detail:string,disabled:boolean,retry:boolean,reason:string}}
  *   `label` 是按钮文案、`detail` 是卡片上的明细行；`disabled` / `retry` 直接驱动按钮。
  */
@@ -483,15 +708,34 @@ function dlCardState(inp) {
     return make(DL_PHASES.SUBMITTING, weT("正在提交…"),
       waited >= 3 ? weT("已等待 {s} 秒", { s: waited }) : "", true, false, "");
   }
+  // ②b 本卡片有一次**明确的失败**（提交失败 / 自动补装失败）⇒ 立刻给原因 +「重试」。
+  //
+  //     ⚠️ 4.23.6：这一格必须排在 ③（done 但没落地）**之前**。否则"挂载自愈打了一次安装、
+  //     宿主回了 `no-skin-json` / `extract-failed`"会被 ③ 盖住 —— 卡片继续显示「解压/落位中…」，
+  //     失败原因只出现在提示行（还会被下一次刷新冲掉）。用户要求"失败要显示原因（不要静默）"，
+  //     而"我们刚试过、宿主明确回了错"比"队列说 done"更具体，所以它优先。
+  //     它不盖正常路径：`begin()`（用户点下去）会清掉这条失败，`markOk()` 让卡片直接变 done。
+  if (o.err && o.err.code) return fail(o.err.code);
   // ③ 包下完了、还没落地：宿主正在解压 / 规范化清单 / 写目录。
+  //
+  // ⚠️ 4.23.6：这一格**必须有上界**（老实现无条件映射成 installing：disabled、retry=false、
+  //    无超时 ⇒ 永久卡住）。口径：
+  //      · `installingSince` = 本卡片**第一次被观察到"done 但未落地"**的时刻（useDlCards 记的），
+  //        或宿主给的时间锚；缺省 0 = 还没有观察样本 ⇒ 仍显示 installing（不无端判失败）。
+  //      · 超过 `installStallMs`（默认 90 秒，见 dlInstallStallMs）⇒ failed +「重试」。
+  //    为什么用"观察起点"而不是 job 的完成时间：jobs.json 里只有 `at`（入队时间），没有完成时间；
+  //    而重开面板这一动作本身就说明"上一轮收尾没了"——秒表从这一刻起算足够，也不会把一个
+  //    真在解压的大家伙（3 秒内）误判成失败。
   if (job && job.status === 'done' && !o.done) {
+    const stallMs = Number(o.installStallMs) || dlInstallStallMs();
+    const since = Number(o.installingSince) || 0;
+    if (since > 0 && now - since >= stallMs) return fail('install-stalled');
     return make(DL_PHASES.INSTALLING, weT("解压/落位中…"), "", true, false, "");
   }
   // ④ 已经装好（或已下载）：按钮不再可点。
   if (o.done) return make(DL_PHASES.DONE, labels.done || weT("已安装"), "", true, false, "");
-  // ⑤ 失败：队列 job 失败，或本卡片最近一次提交失败。两者都给「重试」+ 具体原因。
+  // ⑤ 失败：队列里那条 job 自己失败了（`o.err` 已在 ②b 处理，不再重复）。
   if (job && (job.status === 'failed' || job.status === 'cancelled')) return fail(job.error || job.status);
-  if (o.err && o.err.code) return fail(o.err.code);
   // ⑥ 什么也没发生。
   return make(DL_PHASES.IDLE, labels.idle || weT("下载"), "", false, false, "");
 }
@@ -506,23 +750,39 @@ async function dlEnqueue(kind, url, priority) {
 }
 
 /**
- * 等一个 job 结束（done / failed / cancelled / timeout）。
+ * 等一个 job 结束（done / failed / cancelled / timeout / **lost**）。
  * 只读 list，所以**页面切走也不影响**：换成别的页签时这个等待仍在跑，回来时状态照样正确。
+ *
+ * `lost`（4.23.6）= **列表里连续 `DL_JOB_MISS_LIMIT` 次都查不到这条 jobId**。这必须当成失败，
+ * 不能当成"再等等"：宿主重启 / 队列被重置 / job 被清理之后，那条 jobId 再也不会回来，
+ * 旧实现会一路静默转圈到 30 分钟上界（用户看到的就是"卡片永远在解压/落位中…"）。
+ * 计数只在**成功拿到列表**时累加：`/downloads/list` 自己请求失败不算"查不到"（那不是证据）。
  */
 function dlAwaitJob(jobId, timeoutMs) {
   const limit = Number(timeoutMs) || 30 * 60 * 1000;
   const started = Date.now();
   return new Promise((resolve) => {
+    let misses = 0;
     const tick = async () => {
       if (Date.now() - started > limit) { resolve({ status: "timeout" }); return; }
       let job = null;
+      let listed = false;
       try {
         const resp = await apiJson("/downloads/list");
         const doc = (resp && resp.data) || resp || {};
         const jobs = Array.isArray(doc.jobs) ? doc.jobs : [];
         job = jobs.find((j) => j && j.id === jobId) || null;
-      } catch { /* 拉不到就再等一拍 */ }
+        listed = true;
+      } catch { /* 拉不到就再等一拍（不算"查不到"） */ }
       if (job && (job.status === "done" || job.status === "failed" || job.status === "cancelled")) { resolve(job); return; }
+      if (listed) {
+        if (!job) {
+          misses += 1;
+          if (misses >= DL_JOB_MISS_LIMIT) { resolve({ status: "lost", jobId }); return; }
+        } else {
+          misses = 0;   // 查到了（哪怕还在跑）⇒ 连续计数清零
+        }
+      }
       setTimeout(tick, DL_POLL_MS);
     };
     tick();
@@ -536,6 +796,9 @@ function dlAwaitJob(jobId, timeoutMs) {
  */
 function useDownloadJobs() {
   const [jobs, setJobs] = React.useState([]);
+  // 4.23.6：「done 但没落地」的宽容窗口由**宿主**解析（浏览器里没有 process.env），
+  // 随列表一起下发；拿不到就用 dlInstallStallMs() 的本地默认（同一个 90 秒）。
+  const [installStallMs, setInstallStallMs] = React.useState(0);
   const [nonce, setNonce] = React.useState(0);
   React.useEffect(() => {
     let alive = true;
@@ -545,13 +808,16 @@ function useDownloadJobs() {
     };
     const pull = async () => {
       let list;
+      let stall = 0;
       try {
         const resp = await apiJson("/downloads/list");
         const doc = (resp && resp.data) || resp || {};
         list = Array.isArray(doc.jobs) ? doc.jobs : [];
+        stall = Number(doc.installStallMs) || 0;
       } catch { list = []; }
       if (!alive) return;
       setJobs(list);
+      if (stall > 0) setInstallStallMs(stall);
       if (!dlHasActive(list)) stop();      // 全部结束 ⇒ 停表
     };
     pull();
@@ -559,7 +825,7 @@ function useDownloadJobs() {
     try { if (timer && typeof timer.unref === "function") timer.unref(); } catch { /* ignore */ }
     return () => { alive = false; stop(); };
   }, [nonce]);
-  return { jobs, refresh: () => setNonce((n) => n + 1) };
+  return { jobs, installStallMs, refresh: () => setNonce((n) => n + 1) };
 }
 
 /**
@@ -582,6 +848,15 @@ function useDlCards(dl) {
   const [eta, setEta] = React.useState({});
   const [nowMs, setNowMs] = React.useState(() => Date.now());
   const samplesRef = React.useRef(new Map());
+  /**
+   * 4.23.6：「done 但没落地」的**观察锚**。`id → { sig, at, expired }`
+   *   · `sig`      这张卡片当前匹配到的那条 job 的标识（换 job = 重新起表）；
+   *   · `at`       第一次被观察到"下完没落地"的时刻（超时就是 now - at）；
+   *   · `expired`  已经判过超时（ticker 据此停表，不空转；卡片仍停在 failed +「重试」）。
+   * 为什么必须记在**组件里**而不是读宿主的完成时间：jobs.json 只存 `at`（入队时刻），
+   * 没有完成时刻；而"面板重新挂载"本身就是上一轮收尾没了的信号。
+   */
+  const stallRef = React.useRef(new Map());
   const refreshRef = React.useRef(null);
   refreshRef.current = dl && typeof dl.refresh === "function" ? dl.refresh : null;
 
@@ -592,6 +867,23 @@ function useDlCards(dl) {
     try { if (t && typeof t.unref === "function") t.unref(); } catch { /* ignore */ }
     return () => { try { clearInterval(t); } catch { /* ignore */ } };
   }, [sub]);
+
+  // ①b 「下完但没落地」的秒表（4.23.6）：超时判 failed 需要**时间在走**。
+  //
+  //    ⚠️ 不能指望 `useDownloadJobs` 的 1.5s 表：它在列表里没有 queued|running 时会**停表**，
+  //    而"done 但没落地"正好落在这个停表窗口里 —— 没有重渲染，90 秒的超时永远不会触发
+  //    （那是"永久卡在解压/落位中…"的另一种写法，等价于没修）。
+  //    这条秒表只在**本页确实有停滞卡片**时才 setState；没有停滞卡片时它什么也不做
+  //    （不重渲染、不耗电），所以可以常驻。
+  React.useEffect(() => {
+    const t = setInterval(() => {
+      let live = false;
+      for (const e of stallRef.current.values()) { if (e && !e.expired) { live = true; break; } }
+      if (live) setNowMs(Date.now());
+    }, 1000);
+    try { if (t && typeof t.unref === "function") t.unref(); } catch { /* ignore */ }
+    return () => { try { clearInterval(t); } catch { /* ignore */ } };
+  }, []);
 
   // ② 提交期间自己把队列列表拉起来（见上面"停表窗口"的说明），避免卡在「正在提交…」。
   React.useEffect(() => {
@@ -628,6 +920,25 @@ function useDlCards(dl) {
   }, [dl && dl.jobs]);
 
   const key = (id) => String(id == null ? "" : id);
+
+  /**
+   * 这张卡片当前处在「done 但未落地」吗？在 ⇒ 返回**观察锚**（同一 job 期间稳定、跨渲染不变）。
+   * 不在了（落地了 / job 换了 / 还没下完）⇒ 清掉锚并返回 0（状态机据此不启用超时）。
+   */
+  const stallOf = (id, job, done) => {
+    const k = key(id);
+    const sig = job && job.id ? String(job.id) : "";
+    const pending = Boolean(job) && job.status === "done" && !done && Boolean(sig);
+    if (!pending) {
+      if (stallRef.current.has(k)) stallRef.current.delete(k);
+      return 0;
+    }
+    const cur = stallRef.current.get(k);
+    if (cur && cur.sig === sig) return cur.at;
+    stallRef.current.set(k, { sig, at: Date.now(), expired: false });
+    return stallRef.current.get(k).at;
+  };
+
   const api = {
     jobs,
     /** 立刻重拉一次队列（"刚点了"用；不必等下个 1.5s）。 */
@@ -635,6 +946,8 @@ function useDlCards(dl) {
     /** 点击瞬间：这张卡片进入 submitting（立刻置灰 +「正在提交…」），并清掉它的旧失败。 */
     begin: (id) => {
       const k = key(id);
+      // 用户点了「重试」= 新的一轮安装 ⇒ 停滞秒表重新起算（否则会立刻又判一次超时）。
+      try { stallRef.current.delete(k); } catch { /* ignore */ }
       setErrs((m) => {
         if (!Object.prototype.hasOwnProperty.call(m, k)) return m;
         const n = { ...m };
@@ -652,6 +965,19 @@ function useDlCards(dl) {
     /** 记下这张卡片的失败原因（卡片上显示人话 + 「重试」）。 */
     fail: (id, code) => { setErrs((m) => ({ ...m, [key(id)]: { code: String(code == null ? "failed" : code) } })); },
     /**
+     * 本地**没有对应 job** 的卡片：清掉残留的"进行中"痕迹，让它**回落到 idle、可点安装**。
+     *
+     * 为什么需要它（4.23.6，Lenovo 实测）：宿主重启后队列被重置，卡片上残留的 submitting /
+     * 停滞锚没有任何 job 会来推进 ⇒ 界面看起来"还在干活"，可点却是灰的（或点下去也不对）。
+     * 队列里没有它，那它就不在发生 —— 界面的默认格必须是 idle（可点「安装」）。
+     * ⚠️ 故意**不动** `errs`：已记录的原因（失败原因）是用户要看的，清掉等于把失败变静默。
+     */
+    settle: (id) => {
+      const k = key(id);
+      try { if (stallRef.current.has(k)) stallRef.current.delete(k); } catch { /* ignore */ }
+      setSub((s) => (s && key(s.id) === k ? null : s));
+    },
+    /**
      * 宿主已经明确回"装好了"⇒ 这张卡片**立刻**按完成显示。
      *
      * 为什么不能只依赖下一次 `/skins/list`：站点 slug 与本机 `skin.json` 里的 id 不总相同
@@ -667,10 +993,21 @@ function useDlCards(dl) {
     /** 一张卡片 → 状态。四个页签都只用这一个入口（别名 `cards.stateOf`）。 */
     stateOf: (o) => {
       const x = o || {};
-      return dlCardState({
+      // 4.23.6：把「下完但没落地」的观察锚与宽容窗口一起交给状态机 —— 超时判 failed 的口径
+      // 只写在 `dlCardState` ③ 那一处，页签不必各写一遍。
+      const stallMs = Number(dl && dl.installStallMs) || dlInstallStallMs();
+      const since = stallOf(x.id, x.job, x.done);
+      const st = dlCardState({
         id: x.id, job: x.job, done: x.done, labels: x.labels,
         sub: api.subOf(x.id), err: api.errOf(x.id), etaSec: api.etaOf(x.job), nowMs,
+        installStallMs: stallMs, installingSince: since,
       });
+      // 已经判过超时 ⇒ 标记 expired：秒表停转（不空转），卡片保持 failed +「重试」。
+      if (since > 0 && nowMs - since >= stallMs) {
+        const e = stallRef.current.get(key(x.id));
+        if (e && e.at === since) e.expired = true;
+      }
+      return st;
     },
   };
   return api;

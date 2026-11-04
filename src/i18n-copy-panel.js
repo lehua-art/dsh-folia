@@ -537,6 +537,31 @@ const WE_I18N_EN_PANEL = {
   "正在提交…": "Submitting…",
   "已等待 {s} 秒": "Waiting {s}s",
   "解压/落位中…": "Extracting…",
+  // ── 「下载已完成但安装没落地」的自愈（4.23.6）──────────────────────────────
+  // 死锁形态：job=done、落地没发生、卡片永远「解压/落位中…」。两类文案：
+  //   ① 超时之后**结果**（失败原因，卡片上的红字 +「重试」）；
+  //   ② 挂载自愈**过程**（自动补装/自动收尾 + 它们的结果）。
+  "下载已完成但安装未落地，点「重试」": "The download finished but the install never landed — press Retry",
+  "下载已完成但没落地，正在自动补装：{name}": "The download finished but never landed — installing it now: {name}",
+  "下载已完成，已自动补装：{name} —— 点「应用」就能切换": "The download finished and was installed automatically: {name} — press Apply to switch to it",
+  "下载已完成，已自动补装：{name}": "The download finished and was installed automatically: {name}",
+  "自动补装失败：{why}": "Automatic re-install failed: {why}",
+  "下载已完成但没落地，正在自动收尾：{name}": "The download finished but never landed — finalising it now: {name}",
+  "下载已完成，已自动收尾：{name}": "The download finished and was finalised automatically: {name}",
+  "自动收尾失败：{why}": "Automatic finalisation failed: {why}",
+  // ── 「任务丢了」与兜底核对（4.23.6，另一台机器实测）──────────────────────────
+  // 宿主回过一条 jobId，但它在 `/downloads/list` 里**根本查不到**（宿主重启 / 队列被重置 /
+  // job 被清理）⇒ 前端在等一个不存在的任务，旧实现会一路转圈到 30 分钟上界。
+  // 判失败之前先回列表核一次 `installed`：装好了就直接当成功（列表是唯一真源）。
+  "下载任务已丢失，点「重试」": "The download task was lost — press Retry",
+  "已确认装好：{name} —— 点「应用」就能切换": "Confirmed installed: {name} — press Apply to switch to it",
+  "已确认装好：{name}": "Confirmed installed: {name}",
+  "已确认落地：{name}": "Confirmed finalised: {name}",
+  // ── 「装了两遍」的去重（4.23.6）──────────────────────────────────────────────
+  // 同一个 id 有两条安装路径（客户端 202 轮询 / 宿主 scheduleFinishInstall 自调用）：
+  // 宿主回 `deduped:true` 说明另一条正在装，这里既不当失败、也不假装完成。
+  "这套皮肤正在安装中，稍后自动刷新：{name}": "This skin is already being installed — the list will refresh automatically: {name}",
+  "已装过：{name}": "Already installed: {name}",
   "原因：{why}": "Reason: {why}",
   "{a}/{b} MB · 约剩 {s} 秒": "{a}/{b} MB · about {s}s left",
   "{a}/{b} MB": "{a}/{b} MB",

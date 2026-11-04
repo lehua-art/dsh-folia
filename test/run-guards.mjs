@@ -291,6 +291,14 @@ const VERIFY_STEPS = [
   step('test/verify-site-media.mjs'),
   // ㉒ 站点资源本地化队列：并发上限 / 幂等 / 续传 / 原子 / 可失败（点击即下载的那条链路）。
   step('test/verify-downloads.mjs'),
+  // ㉕ 4.23.6：**下载/安装状态机的流程级回归** —— 14 行覆盖表（本地 × 队列 × 已装 × 时长
+  //    ⇒ 展示状态 + 是否可点）+ 4 条端到端（真站点替身 + 真路由 + 真队列 + 真 zip，含
+  //    "宿主重启 job 表被清空"与"站点 500"两条故障注入）。对应 docs/INSTALL-FLOW.md 的防复发清单。
+  step('test/verify-install-flow.mjs'),
+  // ㉖ 4.23.6：**整条链路**（清单→选档→下载→落位→安装→启用）的端到端回归 —— 6 个场景逐段断言 + 计时：
+  //    快链路选原画/0 Range/<2s、慢链路 3 秒切 ranged:8 且吞吐 ≥2.5×、清单陈旧回落、缓存命中 0 请求、
+  //    落位安装幂等、故障注入（重启/500/磁盘写失败）。数字给在 docs/DOWNLOAD-CHAIN-REPORT.md。
+  step('test/verify-download-chain.mjs'),
   // ㉓ 1080p 变体选档（4.23.4，策略 A 自动）：纯函数逐条（无变体 / 慢链路 / 大文件小屏 /
   //    强制原画 / 非法 url）+ `/downloads/add` 真的按选档入队 + `job.chosenVariant` 出现在
   //    `/downloads/list` + inventory 透传 `variants`。站点还没上线该字段时的回退（原画）也在其中。

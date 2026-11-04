@@ -941,6 +941,303 @@ try { rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
   }
 }
 
+/* ㉔ 4.23.6：**「下载已完成但安装没落地」的自愈与超时**。
+   真实故障（用户实测，已确诊）：`/folia/downloads/list` 里 job.status 已经是 `done`
+   （17,509,106 B 全下完、缓存 zip 完好、能解压、含 skin.json），但 `skins/rainy-night` 不存在；
+   卡片在这一格上被永久映射成「解压/落位中…」（disabled、retry=false、无超时）。
+   根因：当初的收尾是宿主内存里的 `setTimeout`（`scheduleFinishInstall()`），DSH 重启就没了，
+   而 `jobs.json` 里的 `status=done` 落了盘 ⇒ 重启后没人再推进"落地"。
+
+   判据分三层（都用真数据，不做"看起来对"的断言）：
+     ① **超时**：done + 未落地 + 超过阈值 ⇒ failed +「重试」；阈值内 / 无样本 / 已落地都不许判失败；
+     ② **自愈**：done + 未落地 ⇒ 挂载时自动打 1 次安装请求（幂等、走缓存）；成功 → markOk → done；
+        失败 → 卡片带原因；同一 id 每次会话只试 1 次（防抖）；
+     ③ **可观测**：宿主把窗口随 `/downloads/list` 下发；安装成功/失败日志在 `warn` 档且带
+        id / 耗时 / 结果 / 错误码。 */
+{
+  const src = readFileSync(join(ROOT, 'src', 'local-first.js'), 'utf8');
+  const a = src.indexOf('const DL_POLL_MS = 1500;');
+  const b = src.indexOf('function useDownloadJobs(');
+  const slice = (a >= 0 && b > a) ? src.slice(a, b) : '';
+  const shim = (key, vars) => String(key).replace(/\{(\w+)\}/g, (m, name) => (vars && Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : m));
+  /** 每个沙箱一份**独立**模块作用域（`LF_HEAL_TRIED` 是模块级，防抖判据必须互不污染）。 */
+  const makeMod = (poster) => {
+    try {
+      return new Function('weT', 'apiPostJson', slice
+        + '\nreturn { DL_PHASES, DL_INSTALL_STALL_MS, dlCardState, dlFailReason, dlInstallStallMs, dlHealOnce, dlHealTargets, dlHealStuck };')(shim, poster);
+    } catch { return null; }
+  };
+  const posts = [];
+  const mod = makeMod(async (path, body) => { posts.push({ path, body }); return { ok: true, status: 200, data: { ok: true } }; });
+  check('㉔ 自愈 / 超时那一段纯函数能被取出来真跑', Boolean(mod), mod ? 'ok' : 'slice=' + slice.length);
+
+  if (mod) {
+    const labels = { idle: '安装', done: '已安装', failed: '重试' };
+    const now = Date.now();
+    const st = (o) => mod.dlCardState(Object.assign({ id: 'c1', labels }, o || {}));
+
+    // ── ① 超时：死锁那一格必须有上界 ────────────────────────────────────────
+    const stalled = st({ job: { id: 'j1', status: 'done' }, installingSince: now - 90001, installStallMs: 90000, nowMs: now });
+    check('㉔ done + 未落地 + 超过阈值（90s）⇒ failed 且「重试」可用',
+      stalled.phase === 'failed' && stalled.retry === true && stalled.label === '重试' && stalled.disabled === false,
+      JSON.stringify(stalled));
+    check('㉔ 它的原因说清「下载已完成、这次失败在落地」并给出下一步（点重试）',
+      stalled.reason.includes('下载已完成') && stalled.reason.includes('安装未落地') && stalled.reason.includes('重试'),
+      stalled.reason);
+    check('㉔ 负对照：阈值内（30s < 90s）仍是 installing —— 正在解压的包不许被误判',
+      st({ job: { id: 'j1', status: 'done' }, installingSince: now - 30000, installStallMs: 90000, nowMs: now }).phase === 'installing',
+      st({ job: { id: 'j1', status: 'done' }, installingSince: now - 30000, installStallMs: 90000, nowMs: now }).phase);
+    check('㉔ 负对照：还没有观察样本（installingSince=0）时不判失败',
+      st({ job: { id: 'j1', status: 'done' }, nowMs: now }).phase === 'installing');
+    check('㉔ 负对照：已落地（done=true）⇒ done，不会被超时判成 failed',
+      st({ job: { id: 'j1', status: 'done' }, done: true, installingSince: now - 90001, installStallMs: 90000, nowMs: now }).phase === 'done');
+
+    // ── ①b 窗口覆盖（夹取 + 非法回落）──────────────────────────────────────
+    //     ⚠️ 客户端**不许**读 `process.env`（`scripts/build-client.mjs` 的浏览器安全判据会红），
+    //     所以客户端只认宿主注入的全局袋 `globalThis.__weEnv`；真正解析环境变量的是宿主，
+    //     见 `lib/routes/downloads.js` 的 `installStallMs()`（随 `/downloads/list` 下发）。
+    const envKey = 'DSH_FOLIA_INSTALL_STALL_MS';
+    const envBackup = globalThis.__weEnv;
+    delete globalThis.__weEnv;
+    check('㉔ 默认窗口 = 90 秒', mod.dlInstallStallMs() === 90000, 'ms=' + mod.dlInstallStallMs());
+    check('㉔ 常量与默认一致（两处漂开就会各判各的）', mod.DL_INSTALL_STALL_MS === mod.dlInstallStallMs());
+    globalThis.__weEnv = { [envKey]: '15000' };
+    check('㉔ 宿主注入的窗口可覆盖（15000 ⇒ 15 秒）', mod.dlInstallStallMs() === 15000, 'ms=' + mod.dlInstallStallMs());
+    globalThis.__weEnv = { [envKey]: '1' };
+    check('㉔ 覆盖值被夹到下限 5 秒（比一次正常解压还短会把好包判成失败）', mod.dlInstallStallMs() === 5000, 'ms=' + mod.dlInstallStallMs());
+    globalThis.__weEnv = { [envKey]: '999999999' };
+    check('㉔ 覆盖值被夹到上限 30 分钟（更长就等于回到"永远卡住"）', mod.dlInstallStallMs() === 30 * 60 * 1000, 'ms=' + mod.dlInstallStallMs());
+    globalThis.__weEnv = { [envKey]: 'abc' };
+    check('㉔ 非法值回落默认（值写错不该让功能失效）', mod.dlInstallStallMs() === 90000, 'ms=' + mod.dlInstallStallMs());
+    if (envBackup === undefined) delete globalThis.__weEnv; else globalThis.__weEnv = envBackup;
+    check('㉔ 宿主侧的解析（读环境变量、夹取同一区间）与客户端默认值一致',
+      (() => { const d = readFileSync(join(ROOT, 'lib', 'routes', 'downloads.js'), 'utf8'); return /INSTALL_STALL_DEFAULT_MS = 90000/.test(d) && /INSTALL_STALL_MIN_MS = 5000/.test(d) && /INSTALL_STALL_MAX_MS = 30 \* 60 \* 1000/.test(d); })());
+
+    // ── ② 挂载自愈：done + 未落地 ⇒ 自动补装一次 ─────────────────────────────
+    const jobs = [{ id: 'jc', url: 'https://site.example/media/skins/rainy-night.zip', kind: 'skin', status: 'done' }];
+    const items = [{ id: 'rainy-night', title: '鲸鱼娘 · 雨夜', url: 'https://site.example/media/skins/rainy-night.zip' }];
+    const okSeen = [];
+    const failSeen = [];
+    const base = {
+      kind: 'skin', jobs, items, path: '/skins/install',
+      body: (it) => ({ id: it.id, url: it.url }),
+      onOk: (it) => okSeen.push(it.id),
+      onFail: (it, code) => failSeen.push([it.id, code]),
+    };
+    posts.length = 0;
+    const tried1 = await mod.dlHealStuck(Object.assign({}, base, { doneOf: () => false }));
+    check('㉔ 挂载自愈：done + 未落地 ⇒ 自动打**一次**安装请求（走缓存，不重新下载）',
+      posts.length === 1 && posts[0].path === '/skins/install' && posts[0].body.id === 'rainy-night' && tried1.length === 1,
+      JSON.stringify(posts));
+    check('㉔ 补装只带 id + url（宿主据此从本地 zip 解压，不需要重新入队下载）',
+      posts[0] && Object.keys(posts[0].body).sort().join(',') === 'id,url', JSON.stringify(posts[0] && posts[0].body));
+    check('㉔ 安装成功 ⇒ onOk（页签据此 cards.markOk()）', okSeen.length === 1 && failSeen.length === 0, JSON.stringify({ okSeen, failSeen }));
+    check('㉔ markOk 之后卡片状态就是 done（不再停在「解压/落位中…」）',
+      (() => { const d = st({ job: { id: 'jc', status: 'done' }, done: true }); return d.phase === 'done' && d.disabled === true; })());
+
+    // 防抖：同一 id 每次会话（= 同一个模块作用域）只自动尝试 1 次
+    await mod.dlHealStuck(Object.assign({}, base, { doneOf: () => false }));
+    check('㉔ 防抖：同一 id 同一会话内第二次不再发请求（切页签重新挂载也不重打）', posts.length === 1, 'posts=' + posts.length);
+    await mod.dlHealStuck(Object.assign({}, base, { doneOf: () => false }));
+    await mod.dlHealStuck(Object.assign({}, base, { doneOf: () => false }));
+    check('㉔ 防抖对多次挂载同样成立（计数恒为 1）', posts.length === 1, 'posts=' + posts.length);
+    check('㉔ 防抖是"记账一次"而不是"永远不试"：换一个 id 仍会试（判据没有把自愈关死）',
+      (() => { const fresh = mod.dlHealOnce('skin:another-skin'); const again = mod.dlHealOnce('skin:another-skin'); return fresh === true && again === false; })());
+
+    // 负对照：已经落地 / job 还在下 ⇒ 一条请求都不发
+    posts.length = 0;
+    await mod.dlHealStuck({
+      kind: 'boot', jobs: [{ id: 'jb', url: 'u-boot', kind: 'boot', status: 'done' }],
+      items: [{ id: 'c1', url: 'u-boot' }], doneOf: () => true,
+      path: '/boot/download', body: (it) => ({ id: it.id }),
+    });
+    check('㉔ 负对照：已落地 ⇒ 一条请求都不发', posts.length === 0, 'posts=' + posts.length);
+    await mod.dlHealStuck({
+      kind: 'boot', jobs: [{ id: 'jb', url: 'u-boot', kind: 'boot', status: 'running' }],
+      items: [{ id: 'c2', url: 'u-boot' }], doneOf: () => false,
+      path: '/boot/download', body: (it) => ({ id: it.id }),
+    });
+    check('㉔ 负对照：job 还在下（running）⇒ 不发收尾请求', posts.length === 0, 'posts=' + posts.length);
+    // 开机动画 / 桌宠走同一个执行体，只是收尾接口不同
+    await mod.dlHealStuck({
+      kind: 'boot', jobs: [{ id: 'jb', url: 'u-boot', kind: 'boot', status: 'done' }],
+      items: [{ id: 'c3', url: 'u-boot' }], doneOf: () => false,
+      path: '/boot/download', body: (it) => ({ id: it.id }),
+    });
+    check('㉔ 开机动画也走同一个执行体：done + 未落地 ⇒ 打 /boot/download', posts.length === 1 && posts[0].path === '/boot/download', JSON.stringify(posts));
+    posts.length = 0;
+    await mod.dlHealStuck({
+      kind: 'pet', jobs: [{ id: 'jp', url: 'u-pet', kind: 'pet', status: 'done' }],
+      items: [{ id: 'p1', url: 'u-pet' }], doneOf: () => false,
+      path: '/pets/install', body: (it) => ({ id: it.id }),
+    });
+    check('㉔ 桌宠也走同一个执行体：done + 未落地 ⇒ 打 /pets/install', posts.length === 1 && posts[0].path === '/pets/install', JSON.stringify(posts));
+
+    // ── ③ 失败：卡片带原因（不是静默回「安装」）──────────────────────────────
+    const mod2 = makeMod(async () => ({ ok: false, status: 422, data: { ok: false, error: 'no-skin-json' } }));
+    const fail2 = [];
+    await mod2.dlHealStuck({
+      kind: 'skin', jobs, items, doneOf: () => false, path: '/skins/install',
+      body: (it) => ({ id: it.id, url: it.url }),
+      onOk: () => { throw new Error('不该走 onOk'); },
+      onFail: (it, code) => fail2.push([it.id, code]),
+    });
+    check('㉔ 补装失败 ⇒ onFail 带**宿主给的错误码**（不是裸 failed）',
+      fail2.length === 1 && fail2[0][1] === 'no-skin-json', JSON.stringify(fail2));
+    const failCard = st({ job: { id: 'jc', status: 'done' }, err: { code: 'no-skin-json' } });
+    check('㉔ 失败后卡片带原因（说得出"包里没有 skin.json"）+「重试」可点',
+      failCard.phase === 'failed' && failCard.retry === true && failCard.reason.includes('skin.json'),
+      JSON.stringify(failCard));
+    check('㉔ 负对照：这条失败不会被「done 但没落地」盖回 installing（否则失败又变成静默）',
+      failCard.phase !== 'installing');
+    const mod3 = makeMod(async () => { throw new Error('network down'); });
+    const fail3 = [];
+    await mod3.dlHealStuck({
+      kind: 'skin', jobs, items, doneOf: () => false, path: '/skins/install',
+      body: (it) => ({ id: it.id, url: it.url }), onFail: (it, code) => fail3.push([it.id, code]),
+    });
+    check('㉔ 自愈**抛错**也不静默：落到 network 码并写回卡片', fail3.length === 1 && fail3[0][1] === 'network', JSON.stringify(fail3));
+    check('㉔ 自愈绝不把异常抛给页签（单张卡片失败不影响整页）',
+      (await mod3.dlHealStuck({ kind: 'skin', jobs, items: [{ id: 'x', url: 'nope' }], doneOf: () => false, path: '/skins/install', body: () => ({}) })) !== null);
+
+    // ── ④ 可观测性：窗口随 list 下发；安装日志在 warn 档且四要素齐全 ────────────
+    const bootTab = readFileSync(join(ROOT, 'src', 'panel-tabs-boot.js'), 'utf8');
+    const petsTab = readFileSync(join(ROOT, 'src', 'panel-tabs-pets.js'), 'utf8');
+    const skinsTab = readFileSync(join(ROOT, 'src', 'panel-tabs-skins.js'), 'utf8');
+    const downloadsRoute = readFileSync(join(ROOT, 'lib', 'routes', 'downloads.js'), 'utf8');
+    const skinsRoute = readFileSync(join(ROOT, 'lib', 'routes', 'skins.js'), 'utf8');
+    const bootRoute = readFileSync(join(ROOT, 'lib', 'routes', 'boot.js'), 'utf8');
+    const petsRoute = readFileSync(join(ROOT, 'lib', 'routes', 'pets.js'), 'utf8');
+    check('㉔ 三个页签挂载时都走**同一个**自愈执行体（不是各写一套）',
+      [skinsTab, bootTab, petsTab].every((t) => /dlHealStuck\(/.test(t))
+      && (src.match(/function dlHealStuck\(/g) || []).length === 1);
+    check('㉔ 三个模块的收尾接口各自正确（skin → /skins/install、boot → /boot/download、pet → /pets/install）',
+      /path: "\/skins\/install"/.test(skinsTab) && /path: "\/boot\/download"/.test(bootTab) && /path: "\/pets\/install"/.test(petsTab));
+    check('㉔ 三个页签都把自愈失败写回卡片（cards.fail + dlFailReason，不静默）',
+      [skinsTab, bootTab, petsTab].every((t) => /cards\.fail\(/.test(t) && /dlFailReason\(/.test(t)));
+    check('㉔ 宿主把超时窗口随 /downloads/list 下发（浏览器里没有 process.env）',
+      /installStallMs: installStallMs\(\)/.test(downloadsRoute) && /function installStallMs\(\)/.test(downloadsRoute));
+    check('㉔ 两端默认值一致：都是 90 秒（漂开就会各判各的）',
+      /INSTALL_STALL_DEFAULT_MS = 90000/.test(downloadsRoute) && /DL_INSTALL_STALL_MS = 90000/.test(src));
+    check('㉔ 秒表真的在走（useDownloadJobs 停表时，否则 90 秒的超时永远不触发）',
+      /setInterval\(\(\) => \{[\s\S]{0,200}stallRef\.current\.values\(\)/.test(src) && /installingSince: since/.test(src));
+    check('㉔ 皮肤安装成功/失败日志在 warn 档，且带 id / 耗时 / 结果 / 错误码',
+      /function logInstallResult\(log, o\)/.test(skinsRoute)
+      && /'id=' \+ String\(x\.id/.test(skinsRoute) && /'result=' \+ String\(x\.result/.test(skinsRoute)
+      && /'took=' \+ took/.test(skinsRoute) && /'code=' \+ String\(x\.code/.test(skinsRoute)
+      && /log\('skins install ' \+ parts\.join\(' '\), 'warn'\)/.test(skinsRoute));
+    check('㉔ 开机动画 / 桌宠的收尾日志同样在 warn 档并带四要素',
+      /\[boot\] finish id=' \+ id \+ ' result=' \+ result \+ ' took='/.test(bootRoute)
+      && /'ms code=' \+ \(code \|\| '-'\)/.test(bootRoute)
+      && /\[pets\] finish id=' \+ id \+ ' result=' \+ result \+ ' took='/.test(petsRoute)
+      && /\[pets\] install id=' \+ id \+ ' result=/.test(petsRoute)
+      && /'ms code=' \+ String\(code \|\| 'failed'\)/.test(petsRoute));
+    check('㉔ 负对照：把结果日志降回 info（去掉 warn）时同一条判据不成立',
+      !/log\('skins install ' \+ parts\.join\(' '\), 'warn'\)/.test(skinsRoute.split(", 'warn')").join(')')));
+  }
+}
+
+/* ㉕ 4.23.6（**另一台机器 Lenovo 实测**）：**"任务丢了"导致的永久转圈**。
+   现象：卡片「鲸鱼娘·雨夜」永远「解压/落位中…」，但 `/skins/list` 的 installed 里没有它，
+   而 `/downloads/list` 里**根本没有**那条 job（连 url 里的 sha 都搜不到）
+   ⇒ 前端在等一个不存在的 jobId（宿主重启 / 队列被重置 / job 被清理），
+   而旧循环"查不到就静默继续"，一路转到 30 分钟上界。
+   判据：① 连续 N 次查不到 ⇒ 判 lost（不是无限轮询）；
+        ② 判失败**之前**先核一次 installed（装好了 ⇒ done）；
+        ③ 本地没有对应 job 的卡片 ⇒ 回落 idle、可点安装。 */
+{
+  const src = readFileSync(join(ROOT, 'src', 'local-first.js'), 'utf8');
+  const a = src.indexOf('const DL_POLL_MS = 1500;');
+  const b = src.indexOf('function useDownloadJobs(');
+  const head = (a >= 0 && b > a) ? src.slice(a, b) : '';
+  const shim = (key, vars) => String(key).replace(/\{(\w+)\}/g, (m, name) => (vars && Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : m));
+  let listedJobs = [];
+  let listCalls = 0;
+  const mod = (() => {
+    try {
+      return new Function('weT', 'apiPostJson', 'apiJson', head
+        + '\nreturn { DL_JOB_MISS_LIMIT, dlAwaitJob, dlStaleCards, dlCardState, dlFailReason, dlHealStuck };')(
+        shim,
+        async () => ({ ok: false, status: 500, data: null }),
+        async () => { listCalls += 1; return { ok: true, status: 200, data: { jobs: listedJobs } }; },
+      );
+    } catch { return null; }
+  })();
+  check('㉕ 轮询容错那一段能被取出来真跑', Boolean(mod), mod ? 'ok' : 'slice=' + head.length);
+
+  if (mod) {
+    const labels = { idle: '安装', done: '已安装', failed: '重试' };
+    check('㉕ 连续查不到的阈值 = 5 次（5 × 1.5s ≈ 7.5s，不是 30 分钟）', mod.DL_JOB_MISS_LIMIT === 5, 'limit=' + mod.DL_JOB_MISS_LIMIT);
+
+    listedJobs = [];
+    listCalls = 0;
+    const t0 = Date.now();
+    const lost = await mod.dlAwaitJob('job-that-never-exists', 120000);
+    const tookMs = Date.now() - t0;
+    check('㉕ jobId 连续 5 次查不到 ⇒ 判 lost（不再无限轮询）',
+      Boolean(lost) && lost.status === 'lost' && listCalls >= mod.DL_JOB_MISS_LIMIT,
+      JSON.stringify({ lost, listCalls }));
+    check('㉕ 从"查不到"到失败只用 ≈7.5 秒（旧实现要 30 分钟）', tookMs < 20000, 'took=' + tookMs + 'ms');
+    check('㉕ 「任务丢了」有独立的人话原因（不是裸 failed）',
+      mod.dlFailReason('job-lost').includes('任务已丢失') && mod.dlFailReason('job-lost') !== 'failed',
+      mod.dlFailReason('job-lost'));
+    const lostCard = mod.dlCardState({ id: 'c1', labels, err: { code: 'job-lost' } });
+    check('㉕ 卡片落在 failed +「重试」可点，且写着原因',
+      lostCard.phase === 'failed' && lostCard.retry === true && lostCard.disabled === false && lostCard.reason.includes('任务已丢失'),
+      JSON.stringify(lostCard));
+
+    // 负对照：job 真的在列表里 ⇒ 立刻按它的状态返回，绝不误判 lost
+    listedJobs = [{ id: 'job-live', status: 'done', url: 'u', kind: 'skin' }];
+    listCalls = 0;
+    const got = await mod.dlAwaitJob('job-live', 120000);
+    check('㉕ 负对照：job 在列表里 ⇒ 正常返回它的状态（不会误判成 lost）',
+      Boolean(got) && got.status === 'done' && listCalls === 1, JSON.stringify({ got, listCalls }));
+    // 负对照：列表请求**失败**（不是"查不到"）不许记账 —— 网络抖动不该把任务判丢
+    const modErr = (() => {
+      try {
+        return new Function('weT', 'apiPostJson', 'apiJson', head + '\nreturn { DL_JOB_MISS_LIMIT, dlAwaitJob };')(
+          shim, async () => ({ ok: false }),
+          async () => { throw new Error('network down'); },
+        );
+      } catch { return null; }
+    })();
+    const stillWaiting = await modErr.dlAwaitJob('job-x', 4000);
+    check('㉕ 负对照：/downloads/list 自己请求失败 ⇒ 判 timeout 而不是 lost（网络抖动不等于任务丢失）',
+      stillWaiting && stillWaiting.status === 'timeout', JSON.stringify(stillWaiting));
+
+    // ③ 本地没有对应 job ⇒ 回落 idle、可点安装
+    const items = [{ id: 'rainy-night', url: 'u1' }];
+    check('㉕ 本地没有对应 job ⇒ 判为残留（页签据此 settle ⇒ 回落 idle）',
+      mod.dlStaleCards([], 'skin', items, () => false).length === 1);
+    check('㉕ 负对照：有对应 job ⇒ 不是残留（不许把正在下的卡片打回 idle）',
+      mod.dlStaleCards([{ id: 'j1', url: 'u1', kind: 'skin', status: 'running' }], 'skin', items, () => false).length === 0);
+    check('㉕ 负对照：已装好 ⇒ 不是残留',
+      mod.dlStaleCards([], 'skin', items, () => true).length === 0);
+    const idleCard = mod.dlCardState({ id: 'rainy-night', labels, job: null, done: false });
+    check('㉕ 无 job 的卡片状态是 idle 且**可点**（回落「安装」，不是灰的）',
+      idleCard.phase === 'idle' && idleCard.disabled === false && idleCard.retry === false,
+      JSON.stringify(idleCard));
+
+    // ④ 三个页签的接线（源码级：顺序也判 —— 必须先核 installed 再判失败）
+    const skinsTab = readFileSync(join(ROOT, 'src', 'panel-tabs-skins.js'), 'utf8');
+    const bootTab = readFileSync(join(ROOT, 'src', 'panel-tabs-boot.js'), 'utf8');
+    const petsTab = readFileSync(join(ROOT, 'src', 'panel-tabs-pets.js'), 'utf8');
+    check('㉕ 皮肤页签：连续查不到 ⇒ 先核 installed、再判 job-lost（顺序不许反）',
+      /jobMisses >= DL_JOB_MISS_LIMIT/.test(skinsTab)
+      && /const already = await skinInstalledNow\(/.test(skinsTab)
+      && /cards\.fail\(cardId, "job-lost"\)/.test(skinsTab)
+      && skinsTab.indexOf('await skinInstalledNow(') > 0
+      && skinsTab.indexOf('await skinInstalledNow(') < skinsTab.indexOf('cards.fail(cardId, "job-lost")'));
+    check('㉕ 皮肤页签：连续计数在**查到 job** 时清零（抖一下就判丢是错的）',
+      /if \(job\) jobMisses = 0;/.test(skinsTab));
+    check('㉕ 开机动画 / 桌宠：lost 与 timeout 都先核列表再判失败',
+      /done\.status === "lost"/.test(bootTab) && /bootInstalledNow\(cardId\)/.test(bootTab)
+      && /done\.status === "lost"/.test(petsTab) && /petsInstalledNow\(cardId\)/.test(petsTab));
+    check('㉕ 三个页签都在挂载时清理"无 job 的残留卡片"（回落 idle、可点安装）',
+      [skinsTab, bootTab, petsTab].every((t) => /dlStaleCards\(/.test(t) && /cards\.settle\(/.test(t)));
+  }
+}
+
 let failed = 0;
 for (const r of results) {
   if (r.ok) process.stdout.write('  ✓ ' + r.name + '\n');

@@ -21,6 +21,24 @@ function bootFmtBytes(n) {
   return v + " B";
 }
 
+/**
+ * 兜底核对（4.23.6）：`/boot/list` 的 `installed`（= 落地校验过了、meta 也写了）是唯一真源。
+ *
+ * 用在宿主回的 jobId **连续查不到**或等到超时的时候：这两种情况都不该直接判失败 ——
+ * 最常见的情形是"其实早就收尾好了，只是我们等的那条 job 没了"（宿主重启 / 队列重置 / job 被清理）。
+ */
+async function bootInstalledNow(id) {
+  const want = String(id || "").trim();
+  if (!want) return false;
+  try {
+    const resp = await apiJson("/boot/list", { parse: "always" });
+    const doc = (resp && resp.data) || null;
+    const clips = (doc && Array.isArray(doc.clips)) ? doc.clips : [];
+    const hit = clips.find((c) => c && String(c.id) === want);
+    return Boolean(hit && hit.installed);
+  } catch { return false; }
+}
+
 const BOOT_STYLE = {
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "10px", marginTop: "8px" },
   card: {
@@ -58,6 +76,55 @@ function BootTabPanel() {
 
   React.useEffect(() => { load(false); }, [load]);
 
+  // 4.23.6：**挂载自愈** —— 队列里 job 已经 `done`、但本机 `installed=false` 的条目，
+  // 自动补打一次 `POST /folia/boot/download`。
+  //
+  // 这一条对开机动画同样成立（同一个死锁形态）：下载本身属于宿主队列，而"落地"（验 ftyp/EBML
+  // 文件头 + 写 meta，`installed` 就是从 meta 推出来的）以前只由宿主内存里的
+  // `scheduleBootFinish()` 推进 —— 进程一重启就没人做了，卡片看起来"没下载"，其实文件早就在
+  // 盘上（`/boot/download` 在本地文件已存在时**只做收尾、不会重下**，所以这是幂等安全的）。
+  //
+  // 「成功了怎么表示」与皮肤不同：这个页签的"完成"形态是**换一组按钮**（使用/删除），
+  // 不是同一个按钮变字，所以这里不调 `cards.markOk()`（传 `done:false` 时它不影响渲染），
+  // 而是 `load(true)` 让 `/boot/list` 用 `installed:true` 把它翻过去 —— 那才是本页签的真源。
+  // 防抖与"失败不静默"同皮肤页签：`dlHealStuck()` 按 `boot:<id>` 每次会话只试一次。
+  React.useEffect(() => {
+    const clips2 = (state && state.clips) || [];
+    // `url` 为空的条目是"本地有、清单里没有"的孤儿：既然本地已有，它不该被补装。
+    const items = clips2.filter((c) => c && c.id && c.url);
+    if (!items.length) return undefined;
+    let alive = true;
+    // ⓪ 「本地没有对应 job」的卡片：清掉残留的进行中痕迹 ⇒ 回落「下载」，可点。
+    //    与皮肤页签同一条口径：队列里没有它，它就不在发生。
+    for (const c of dlStaleCards(dl.jobs, "boot", items, (x) => Boolean(x.installed))) {
+      cards.settle(c.id);
+    }
+    dlHealStuck({
+      kind: "boot",
+      jobs: dl.jobs,
+      items,
+      doneOf: (c) => Boolean(c.installed),
+      path: "/boot/download",
+      body: (c) => ({ id: c.id }),
+      onTry: (c) => {
+        if (!alive) return;
+        setNote({ ok: true, text: weT("下载已完成但没落地，正在自动收尾：{name}", { name: c.title || c.id }) });
+      },
+      onOk: (c) => {
+        if (!alive) return;
+        setNote({ ok: true, text: weT("下载已完成，已自动收尾：{name}", { name: c.title || c.id }) });
+        load(true);
+      },
+      onFail: (c, code) => {
+        if (!alive) return;
+        cards.fail(c.id, code);
+        setNote({ ok: false, text: weT("自动收尾失败：{why}", { why: dlFailReason(code) }) });
+      },
+    }).catch(() => { /* dlHealStuck 内部已兜住 */ });
+    return () => { alive = false; };
+  }, [state, dl.jobs]);
+
+
   async function act(kind, payload, label) {
     if (busy) return;
     // 只有结构性操作（下载 / 选择 / 删除）才锁 UI；开关与参数是幂等的，锁了反而闪。
@@ -83,7 +150,18 @@ function BootTabPanel() {
             setNote({ ok: true, text: dlBusyLabel({ percent: 0, mode: r.mode }) });
             const done = await dlAwaitJob(r.jobId);
             if (done && done.status === "done") setNote({ ok: true, text: weT("已下载：{name}", { name: label }) });
-            else if (done && done.status !== "timeout") {
+            else if (done && (done.status === "lost" || done.status === "timeout")) {
+              // 兜底核对（4.23.6）：先问列表"到底落地没有"，再决定是失败还是成功。
+              const okNow = await bootInstalledNow(cardId);
+              if (okNow) {
+                cards.markOk(cardId);
+                setNote({ ok: true, text: weT("已确认落地：{name}", { name: label }) });
+              } else {
+                const code = done.status === "lost" ? "job-lost" : "download-timeout";
+                cards.fail(cardId, code);
+                setNote({ ok: false, text: dlFailReason(code) });
+              }
+            } else if (done) {
               cards.fail(cardId, done.error || done.status);
               setNote({ ok: false, text: dlFailReason(done.error || done.status) });
             } else {

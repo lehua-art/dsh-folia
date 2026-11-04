@@ -21,7 +21,7 @@
 # 0) 语法/构建
 node scripts/build-client.mjs
 
-# 1) 18 项门禁
+# 1) 22 项门禁（+ build 共 23 步）
 node test/run-guards.mjs smoke
 node test/verify-features.mjs
 node test/verify-route-registry.mjs
@@ -42,6 +42,10 @@ node test/verify-picker-model.mjs
 node test/verify-api-client.mjs
 node test/verify-site-media.mjs
 node test/verify-downloads.mjs
+# 下载/安装**状态机**的流程级回归（14 行覆盖表 + 4 条端到端，见 docs/INSTALL-FLOW.md）：
+node test/verify-install-flow.mjs
+# **整条链路**（清单→选档→下载→落位→安装→启用）的 6 个场景，逐段断言 + 计时：
+node test/verify-download-chain.mjs
 
 # 2) 全量审计（必须 0 失败）
 node test/run-audit.mjs

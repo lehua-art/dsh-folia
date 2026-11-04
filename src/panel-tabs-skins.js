@@ -45,6 +45,28 @@ function normSkinId(raw) {
   return s.startsWith("skin-") ? s.slice(5) : s;
 }
 
+/**
+ * 兜底核对（4.23.6）：`/skins/list` 的 `installed` 是"到底装没装"的**唯一真源**。
+ *
+ * 用在三个"前端已经等不到结果"的时刻：
+ *   ① 宿主回的 jobId 在 `/downloads/list` 里**连续查不到**（宿主重启 / 队列被重置 / job 被清理）；
+ *   ② 等到了 30 分钟上界；
+ *   ③ 发安装请求**之前**（已经装好就别再触发一次解压 —— "装了两遍"的客户端半边）。
+ * 比对走 `skinInstalledMatch()`（**目录名 / skin.json.id / catalog id 三者任一命中**）：
+ * 站点 slug 与本机目录名不总相同，只比一个名字就是"装好了却显示没装"的来源。
+ */
+async function skinInstalledNow(rawId) {
+  const want = String(rawId || "").trim();
+  if (!want) return false;
+  try {
+    // 不带 `refresh=1`：`installed` 是宿主每次请求现读磁盘（`listInstalled()`），不必触发站点重扫。
+    const resp = await apiJson("/skins/list", { parse: "always" });
+    const doc = (resp && resp.data) || null;
+    const list = (doc && Array.isArray(doc.installed)) ? doc.installed : [];
+    return skinInstalledMatch(list, want);
+  } catch { return false; }
+}
+
 function SkinsTabPanel() {
   const [state, setState] = React.useState(null);
   const [busy, setBusy] = React.useState("");
@@ -163,6 +185,53 @@ function SkinsTabPanel() {
     return () => { alive = false; };
   }, [load]);
 
+  // 4.23.6：**挂载自愈** —— 队列里 job 已经 `done`、但本机 `installed=false` 的条目，
+  // 自动补打一次 `/folia/skins/install`（幂等：走 `cache/skins-zip/<sha256(url)>.zip`，不再下载）。
+  //
+  // 为什么需要它（真实故障，已确诊）：鲸鱼娘·雨夜 17,509,106 B 全下完、缓存 zip 完好、能解压，
+  // 但 `skins/rainy-night` 不存在 —— 当初的收尾是宿主内存里的 `setTimeout`，DSH 重启后就没了，
+  // 而 `jobs.json` 里 `status=done` 落了盘 ⇒ 重启后没有任何人会再推进落地，卡片永远停
+  // 「解压/落位中…」。这一条在**用户什么都不点**的情况下把它补完。
+  //
+  // 防抖：`dlHealStuck()` 内部按 `skin:<id>` 记账，**同一 id 每次会话只自动尝试一次**
+  // （切页签重新挂载不会重打；用户手动点「重试」不受此限）。
+  // 失败不静默：原因经 `cards.fail()` 写到卡片上（红字 +「重试」），提示行同时给一句人话。
+  React.useEffect(() => {
+    const items = (state && state.site) || [];
+    if (!items.length) return undefined;
+    let alive = true;
+    // ⓪ 「本地没有对应 job」的卡片：把残留的"进行中"痕迹清掉 ⇒ **回落 idle、可点安装**。
+    //    这是 Lenovo 实测的另一半：队列里根本没有那条 job 了，界面却还留着"在干活"的样子。
+    for (const it of dlStaleCards(dl.jobs, "skin", items, (x) => Boolean(x.installed) || cards.okOf(x.id))) {
+      cards.settle(it.id);
+    }
+    dlHealStuck({
+      kind: "skin",
+      jobs: dl.jobs,
+      items,
+      doneOf: (it) => Boolean(it.installed) || cards.okOf(it.id),
+      path: "/skins/install",
+      body: (it) => ({ id: it.id, url: it.url }),
+      onTry: (it) => {
+        if (!alive) return;
+        setNote({ ok: true, text: weT("下载已完成但没落地，正在自动补装：{name}", { name: it.title || it.id }) });
+      },
+      onOk: (it) => {
+        if (!alive) return;
+        cards.markOk(it.id);
+        setNote({ ok: true, text: weT("下载已完成，已自动补装：{name} —— 点「应用」就能切换", { name: it.title || it.id }) });
+        load(true);
+      },
+      onFail: (it, code) => {
+        if (!alive) return;
+        cards.fail(it.id, code);
+        setNote({ ok: false, text: weT("自动补装失败：{why}", { why: dlFailReason(code) }) });
+      },
+    }).catch(() => { /* dlHealStuck 内部已兜住；这里只防未处理的 rejection */ });
+    return () => { alive = false; };
+    // 依赖只放"清单"与"队列快照"：两者变了才需要重新判断该不该补装。
+  }, [state, dl.jobs]);
+
   const act = async (kind, payload, label) => {
     // 结构性操作才锁整块 UI；`activate` 是幂等的、而且要让人能连点换皮肤，所以不锁。
     const structural = kind === "install" || kind === "remove";
@@ -179,6 +248,15 @@ function SkinsTabPanel() {
     if (isInstall && cardId) cards.begin(cardId);
     setNote(null);
     try {
+      // 4.23.6：**先问列表，再发请求** —— 已经装好就别再触发一次解压。
+      // 这是"装了两遍"的客户端半边：202 轮询到 done 会再打一次安装，而宿主那边
+      // `scheduleFinishInstall()` 也会打一次；两条路都不问现状的话就会把刚装好的目录删掉重写。
+      if (isInstall && cardId && await skinInstalledNow(cardId)) {
+        cards.markOk(cardId);
+        setNote({ ok: true, text: weT("已装过：{name}", { name: label || "" }) });
+        await load(true);
+        return;
+      }
       if (kind === "activate") {
         const wantId = (payload && payload.id) || null;
         // ⚠️ 这里写入的必须是**皮肤中心自己认识的 id**（= skin.json 里的原始 id），
@@ -240,6 +318,15 @@ function SkinsTabPanel() {
 
       const resp = await apiPostJson("/skins/" + kind, payload || {}, { parse: "always" });
       const r = (resp && resp.data) || null;
+      // 4.23.6：宿主说"同一套**正在装**"（`scheduleFinishInstall` 的自调用与客户端 202 轮询撞上了）。
+      // 这不是失败、也**不是完成**：保持当前卡片状态（后面的 90 秒上界兜底），只把清单刷新一遍 ——
+      // 若那边已经装好就直接 markOk；没装好就等下一拍，绝不重复解压、也不把卡片灰死。
+      if (resp && resp.ok && r && r.deduped) {
+        setNote({ ok: true, text: weT("这套皮肤正在安装中，稍后自动刷新：{name}", { name: label || "" }) });
+        if (cardId && await skinInstalledNow(cardId)) cards.markOk(cardId);
+        await load(true);
+        return;
+      }
       // 还没下完：宿主回 202 pending（弱网下 13.8 MB 可能要两分钟以上）。
       // 这里**不能当成失败**，更不能让用户重新点 —— 后台队列继续下、.part 可续传，
       // 我们只负责轮询进度，下完自动再调一次安装（那次读本地 zip，很快）。
@@ -275,15 +362,45 @@ function SkinsTabPanel() {
         const started = Date.now();
         /** 最近 3 秒的 received 采样：只用来算"约剩 N 秒"，样本不足就不显示。 */
         const samples = [];
+        /**
+         * 连续「列表里查不到这条 jobId」的次数（4.23.6，Lenovo 实测的永久转圈）。
+         *
+         * 真实故障：宿主回的 jobId 在 `/downloads/list` 里**根本没有**（宿主重启 / 队列被重置 /
+         * job 被清理），而旧循环只在"查到了 job 但还在跑"时有分支、查不到就静默继续 ⇒ 一路转到
+         * 30 分钟上界，卡片永远「解压/落位中…」。
+         * 现在：**连续** `DL_JOB_MISS_LIMIT`（5）次查不到 ⇒ 判失败（先回 `/skins/list` 核一次
+         * `installed`，装好了就直接当成功）。
+         */
+        let jobMisses = 0;
         while (Date.now() - started < 30 * 60 * 1000) {
           await new Promise((resolve) => { setTimeout(resolve, 1200); });
           let jobs = [];
+          let listed = false;
           try {
             const list = await apiJson("/downloads/list");
             const doc = (list && list.data) || list || {};
             jobs = Array.isArray(doc.jobs) ? doc.jobs : [];
-          } catch { /* 拉不到就继续等 */ }
+            listed = true;
+          } catch { /* 拉不到就继续等（不算"查不到"） */ }
           const job = jobs.find((x) => x && x.id === jobId);
+          // ① 任务丢了：连续 N 次查不到 ⇒ 不再空等（先核一次 installed，见下面 ②）
+          if (listed && !job) {
+            jobMisses += 1;
+            if (jobMisses >= DL_JOB_MISS_LIMIT) {
+              const already = await skinInstalledNow((payload && payload.id) || cardId);
+              if (already) {
+                if (cardId) cards.markOk(cardId);
+                setNote({ ok: true, text: weT("已确认装好：{name} —— 点「应用」就能切换", { name: label2 }) });
+                await load(true);
+                return;
+              }
+              if (cardId) cards.fail(cardId, "job-lost");
+              setNote({ ok: false, text: dlFailReason("job-lost") });
+              return;
+            }
+            continue;   // 还没到阈值：继续轮询（这一段已经等过 1.2s）
+          }
+          if (job) jobMisses = 0;
           const pct = job && Number(job.percent) ? Number(job.percent) : 0;
           const rec = job && Number(job.received) ? (Number(job.received) / 1048576).toFixed(1) : "0";
           const tot = job && Number(job.total) ? (Number(job.total) / 1048576).toFixed(1) : "?";
@@ -330,7 +447,17 @@ function SkinsTabPanel() {
             return act("install", payload, label);
           }
         }
-        // 30 分钟还没落地：卡片上留「超时 + 重试」，提示行给同一句人话。
+        // 30 分钟还没落地：**先核一次 installed**（也许早装好了，只是我们等的那条 job 没了），
+        // 再判超时。卡片上留「超时 + 重试」，提示行给同一句人话。
+        {
+          const already = await skinInstalledNow((payload && payload.id) || cardId);
+          if (already) {
+            if (cardId) cards.markOk(cardId);
+            setNote({ ok: true, text: weT("已确认装好：{name} —— 点「应用」就能切换", { name: label2 }) });
+            await load(true);
+            return;
+          }
+        }
         cards.fail(cardId, "download-timeout");
         setNote({ ok: false, text: dlFailReason("download-timeout") });
         return;

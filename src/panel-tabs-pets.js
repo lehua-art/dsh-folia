@@ -6,6 +6,23 @@
  * 这里的每个动作最终都落到宿主 `/folia/pets/*`，渲染由 pet-layer.js 负责。
  */
 
+/**
+ * 兜底核对（4.23.6）：`/pets/list` 的 `pets[].dirId` 是"到底装上没有"的唯一真源。
+ *
+ * 用在宿主回的 jobId **连续查不到**或等到超时的时候：先问列表再判失败 ——
+ * 最常见的情形是"其实早就装好了，只是我们等的那条 job 没了"（宿主重启 / 队列重置 / job 被清理）。
+ */
+async function petsInstalledNow(id) {
+  const want = String(id || "").trim();
+  if (!want) return false;
+  try {
+    const resp = await apiJson("/pets/list", { parse: "always" });
+    const doc = (resp && resp.data) || null;
+    const pets = (doc && Array.isArray(doc.pets)) ? doc.pets : [];
+    return pets.some((p) => p && String(p.dirId) === want);
+  } catch { return false; }
+}
+
 const PET_STYLE = {
   row: { display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" },
   card: {
@@ -59,6 +76,51 @@ function PetsTabPanel() {
 
   React.useEffect(() => { load(false); }, [load]);
 
+  // 4.23.6：**挂载自愈** —— 队列里 job 已经 `done`、但本机没装上的条目，自动补打一次
+  // `POST /folia/pets/install`。
+  //
+  // 同一死锁形态：桌宠包的下载属于宿主队列，而"落地"（解压 + 校验 pet.json/雪碧图 + 写 config）
+  // 以前只由宿主内存里的 `schedulePetsFinish()` 推进 —— 进程重启后就没人做了。
+  // `/pets/install` 在 `cache/pets-zip/<id>.zip` 还在时**只解压、不再下载**（4.23.3 的队列缓存），
+  // 已装好时直接回 `exists:true`，所以这个补打是幂等的、不会白占带宽。
+  //
+  // 防抖 / 不静默同另两个页签：`dlHealStuck()` 按 `pet:<id>` 每次会话只试一次；
+  // 失败经 `cards.fail()` 把原因写在卡片上。
+  React.useEffect(() => {
+    const installedNow = new Set(((state && state.pets) || []).map((p) => p.dirId));
+    const items = ((state && state.site) || []).filter((s) => s && s.id && !installedNow.has(s.id));
+    if (!items.length) return undefined;
+    let alive = true;
+    // ⓪ 「本地没有对应 job」的卡片：清掉残留的进行中痕迹 ⇒ 回落「安装」，可点。
+    for (const s of dlStaleCards(dl.jobs, "pet", items, () => false)) {
+      cards.settle(s.id);
+    }
+    dlHealStuck({
+      kind: "pet",
+      jobs: dl.jobs,
+      items,
+      doneOf: () => false,   // 已在上面按 installed 过滤过了
+      path: "/pets/install",
+      body: (s) => ({ id: s.id }),
+      onTry: (s) => {
+        if (!alive) return;
+        setNote({ ok: true, text: weT("下载已完成但没落地，正在自动补装：{name}", { name: s.title || s.id }) });
+      },
+      onOk: (s) => {
+        if (!alive) return;
+        setNote({ ok: true, text: weT("下载已完成，已自动补装：{name}", { name: s.title || s.id }) });
+        load(true);
+      },
+      onFail: (s, code) => {
+        if (!alive) return;
+        cards.fail(s.id, code);
+        setNote({ ok: false, text: weT("自动补装失败：{why}", { why: dlFailReason(code) }) });
+      },
+    }).catch(() => { /* dlHealStuck 内部已兜住 */ });
+    return () => { alive = false; };
+  }, [state, dl.jobs]);
+
+
   const act = async (kind, payload, label) => {
     // 只有安装/卸载/导入这类**结构性**操作才锁 UI；开关与大小是幂等的。
     const structural = kind === "install" || kind === "remove" || kind === "import";
@@ -83,7 +145,18 @@ function PetsTabPanel() {
             setNote({ ok: true, text: dlBusyLabel({ percent: 0, mode: r.mode }) });
             const done = await dlAwaitJob(r.jobId);
             if (done && done.status === "done") setNote({ ok: true, text: weT("已安装并启用：{name}", { name: label || "" }) });
-            else if (done && done.status !== "timeout") {
+            else if (done && (done.status === "lost" || done.status === "timeout")) {
+              // 兜底核对（4.23.6）：先问列表"到底装上没有"，再决定是失败还是成功。
+              const okNow = await petsInstalledNow(cardId);
+              if (okNow) {
+                cards.markOk(cardId);
+                setNote({ ok: true, text: weT("已确认装好：{name}", { name: label || "" }) });
+              } else {
+                const code = done.status === "lost" ? "job-lost" : "download-timeout";
+                cards.fail(cardId, code);
+                setNote({ ok: false, text: dlFailReason(code) });
+              }
+            } else if (done) {
               cards.fail(cardId, done.error || done.status);
               setNote({ ok: false, text: dlFailReason(done.error || done.status) });
             } else {
