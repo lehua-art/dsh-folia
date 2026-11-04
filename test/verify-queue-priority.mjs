@@ -210,6 +210,14 @@ try {
     const finished = q.snapshot().find((j) => j.id === clicked.id);
     check('C5 下完仍是 high（没有任何路径把它降回 low）', finished?.status === 'done' && finished?.priority === 'high',
       finished ? finished.status + '/' + finished.priority : 'missing');
+    // C6/C7：客户端点击 / 在播的**真实入队点**必须是 high —— 上面 C2 用的是队列 API，
+    // 若有人把 localFirstApply 改回 low，C2 不会红；这一条才是那条回归的牙。
+    const lfSrc = readFileSync(join(ROOT, 'src', 'local-first.js'), 'utf8');
+    const clickHighOf = (src) => /items: \[lfAddItem\(item, item\.media, "high"\)\]/.test(src);
+    check('C6 客户端点击/在播入队 priority="high"（不是 low）', clickHighOf(lfSrc));
+    check('C7 负对照：把点击入队改回 low ⇒ C6 立即红',
+      !clickHighOf(lfSrc.replace('items: [lfAddItem(item, item.media, "high")]',
+        'items: [lfAddItem(item, item.media, "low")]')));
     up.close();
   }
 
