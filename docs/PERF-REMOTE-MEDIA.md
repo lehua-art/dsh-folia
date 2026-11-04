@@ -76,6 +76,30 @@ key = sha256(url) 的前 32 hex + 原扩展名（.mp4/.webm/.jpg…）
 用 `sha256(url)` 而不是 slug：站点重传文件会换 URL（`…/715028863ae3.zip` 带内容哈希），
 **换 URL 即换键**，天然不会拿到旧内容；同 URL 才算同一份缓存。
 
+### 2.4 已完成载荷的浏览器缓存：小文件一年，大文件一小时（4.23.5）
+
+4.23.2 起，代理对**已完成**的文件回 `public, max-age=31536000, immutable`。这条对重开
+壁纸很有用（不必再穿一遍宿主、播放器也能直接复用），但 Electron/Chromium 的 HTTP 缓存
+**也会把大视频存一份** ⇒ 同一个 12 MB 的视频在 `cache/site-media`（或 `library`）与
+Chromium Cache 里各占一份磁盘。小文件长期缓存收益大、副本小；大文件长期缓存等于长期双份。
+
+规则（唯一实现在 `lib/serve.js` 的 `completedCacheControl`，`serveFile(..., { immutable: true })`
+的所有调用点自动生效）：
+
+| 已完成文件大小 | 响应头 |
+|---|---|
+| `size ≤ 8 MB` | `Cache-Control: public, max-age=31536000, immutable`（与 4.23.2 相同） |
+| `size > 8 MB` | `Cache-Control: public, max-age=3600`（**不加** `immutable`） |
+
+- 阈值 `DSH_FOLIA_BIG_CACHE_MB` 可覆盖，夹取 `1..1024`，非法值/缺省回落 `8`；每次响应重读
+  （重启宿主后改设置立刻生效）。边界语义：**等于**阈值算小文件。
+- 已完成载荷加 `Vary: Range`：Range 请求（播放器的常态）与非 Range 是不同缓存表示，
+  避免中间的缓存/代理把一个 `bytes=0-` 分片当成整份文件复用。只多一行头，故直接加。
+- **下载中仍是 `no-store`**：`.part` 渐进读的内容还在增长，缓存半份没有意义。
+- 升级说明：4.23.4 及以前已经让 Chromium 存下的旧副本带着一年 `immutable`，新策略不会
+  主动删它们（那是浏览器自己的缓存）；清一次浏览器缓存即可立刻释放，新请求从 4.23.5 起
+  按上表分档。
+
 ---
 
 ## 3. 客户端只需要改一处

@@ -109,7 +109,7 @@
 | `verify-settings-namespaces.mjs` | `lib/index.js` `lib/kernel/data-dir.js` `lib/routes/settings.js` `lib/settings-schema.js` `src/persistence.js` |  |
 | `verify-settings-ownership.mjs` | `lib/settings-schema.js` `lib/settings/ownership.js` |  |
 | `verify-settings-schema-exports.mjs` | `lib/index.js` `lib/subpackage-boot.js` | ✅ |
-| `verify-site-media.mjs` | `lib/routes/site-media.js` |  |
+| `verify-site-media.mjs` | `lib/routes/site-media.js` `lib/serve.js` |  |
 | `verify-skin-center-bundle.mjs` | `src/features.js` `src/skin-compat.js` |  |
 | `verify-softrender.mjs` | — | ✅ |
 | `verify-static.mjs` | — |  |
@@ -235,7 +235,7 @@
 | `lib/routes/upload.js` | 2 | `verify-body-caps` `verify-package-files` |
 | `lib/routes/we-assets.js` | 1 | `verify-scene-live` |
 | `lib/scene-manifest.js` | 2 | `verify-scene-probe` `verify-scene` |
-| `lib/serve.js` | 4 | `verify-avatar-interval-and-rotation` `verify-downloads` `verify-logging` `verify-scene-live` |
+| `lib/serve.js` | 5 | `verify-avatar-interval-and-rotation` `verify-downloads` `verify-logging` `verify-scene-live` `verify-site-media` |
 | `lib/settings-schema.js` | 17 | `verify-adapter` `verify-avatar-interval-and-rotation` `verify-client` `verify-component-fonts` `verify-contracts` `verify-extra-glass` `verify-fontset` `verify-glass-compat` `verify-glass-surfaces` `verify-module-layout` `verify-presets` `verify-scene-live` `verify-settings-namespaces` `verify-settings-ownership` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `lib/settings/ownership.js` | 1 | `verify-settings-ownership` |
 | `lib/shim-seed.js` | 1 | `verify-scene-live` |

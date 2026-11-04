@@ -10,15 +10,20 @@
  *   ④ 目录不可写：整族降级 —— 仍 302，不报错（只读盘机器与正常机器行为一致）
  *   ⑤ 超容量：按 atime 淘汰，总量回落到上限内（别人的 C 盘可能只剩几 G）
  *   ⑥ 并发去重：同一 URL 并发只发一次上游
+ *   ⑦ 只允许 GET/HEAD
+ *   ⑧ 已完成载荷的缓存策略（4.23.5）：小文件 immutable 一年、大文件 1 小时、阈值可覆盖；
+ *      下载中仍 no-store（见文件末节，用真 serveFile + 真 http.Server 验响应头）
  *
  * 每条都配负对照：把该条判据的前提改坏，判据必须变红。
  */
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
+import { createServer, request } from 'node:http';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { registerSiteMediaRoutes } from '../lib/routes/site-media.js';
+import { createServeKit, bigCacheThresholdBytes } from '../lib/serve.js';
+import { registerSiteMediaRoutes, serveGrowingFile } from '../lib/routes/site-media.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const results = [];
@@ -179,6 +184,125 @@ const q = 'u=' + encodeURIComponent(mediaUrl);
 {
   const r = await call({ method: 'POST', query: q });
   check('POST ⇒ 405', r.status === 405, 'status=' + r.status);
+}
+
+/* ⑧ 已完成载荷的浏览器缓存策略（4.23.5）：小文件一年、大文件 1 小时
+ *
+ * 背景：4.23.2 起对已完成文件回 `immutable`，Electron/Chromium 也会存一份大视频
+ * ⇒ 同一文件在 library 与 Chromium Cache 各占一份磁盘。规则见 lib/serve.js 的
+ * `completedCacheControl`：size ≤ 8 MB ⇒ 一年 + immutable；更大 ⇒ 1 小时、无 immutable；
+ * 阈值可用 `DSH_FOLIA_BIG_CACHE_MB` 覆盖（夹取 1..1024）。
+ *
+ * 这一节要断言**真实响应头**：命中分支把字节交给 lib/serve.js 的 serveFile，
+ * 所以用真实现 + 真 http.Server 收发；既有 ①–⑦ 的 mock-res 判据不动。
+ */
+{
+  const routesReal = [];
+  const kit = createServeKit({
+    activeStreams: new Set(), BASE: '/folia', mediaMap: new Map(),
+    log: () => {}, appendDiagLine: () => {}, traceRequests: () => {},
+    traceMediaRequests: () => {}, readWebShim: () => '', buildSeedScript: () => '',
+  });
+  registerSiteMediaRoutes(
+    { register: (s) => { routesReal.push(s); return () => {}; } },
+    { disposers: [], base: '/folia', log: () => {}, serveFile: kit.serveFile },
+  );
+  const realRoute = routesReal.find((r) => r.path === '/folia/site-media');
+  const app = createServer((req, res) => {
+    Promise.resolve(realRoute.handler(req, res)).catch(() => { try { res.destroy(); } catch { /* ignore */ } });
+  });
+  await new Promise((ok) => { app.listen(0, '127.0.0.1', ok); });
+  const appPort = app.address().port;
+  const get = (pathname) => new Promise((ok, fail) => {
+    const req = request({ host: '127.0.0.1', port: appPort, path: pathname, method: 'GET' }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(Buffer.from(c)));
+      res.on('end', () => ok({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
+    });
+    req.on('error', fail);
+    req.end();
+  });
+
+  // 命中分支的键 = sha256(url)[:32] + 扩展名（与 lib/routes/site-media.js 的 keyFor 同口径）。
+  const cacheDirReal = join(home, 'cache', 'site-media');
+  mkdirSync(cacheDirReal, { recursive: true });
+  const place = (name, bytes) => {
+    const u = 'http://127.0.0.1:' + upPort + '/media/big/' + name;
+    const ext = (new URL(u).pathname.match(/\.([a-z0-9]{2,5})$/i) || ['', 'bin'])[1];
+    const key = createHash('sha256').update(u).digest('hex').slice(0, 32) + '.' + ext;
+    writeFileSync(join(cacheDirReal, key), Buffer.alloc(bytes, 5));
+    return '/folia/site-media/x.mp4?u=' + encodeURIComponent(u);
+  };
+
+  const MB = 1024 * 1024;
+  const small = await get(place('small-2mb.mp4', 2 * MB));
+  check('⑧ 小文件（2 MB）: 200 且字节完整', small.status === 200 && small.body.length === 2 * MB,
+    'status=' + small.status + ' len=' + small.body.length);
+  check('⑧ 小文件（2 MB）: immutable + max-age=31536000',
+    /immutable/.test(small.headers['cache-control']) && /max-age=31536000/.test(small.headers['cache-control']),
+    'cc=' + small.headers['cache-control']);
+  check('⑧ 小文件（2 MB）: Vary: Range（分片不与整份混存）',
+    String(small.headers.vary || '').toLowerCase().includes('range'), 'vary=' + small.headers.vary);
+
+  const big = await get(place('big-12mb.mp4', 12 * MB));
+  check('⑧ 大文件（12 MB）: max-age=3600', /max-age=3600\b/.test(big.headers['cache-control']),
+    'cc=' + big.headers['cache-control']);
+  check('⑧ 大文件（12 MB）: 不含 immutable', !/immutable/.test(big.headers['cache-control']),
+    'cc=' + big.headers['cache-control']);
+  check('⑧ 大文件（12 MB）: 仍带 Vary: Range',
+    String(big.headers.vary || '').toLowerCase().includes('range'), 'vary=' + big.headers.vary);
+
+  const atCap = await get(place('edge-8mb.mp4', 8 * MB));
+  check('⑧ 边界 8 MB（=阈值）视为小文件 ⇒ immutable', /immutable/.test(atCap.headers['cache-control']),
+    'cc=' + atCap.headers['cache-control']);
+  const overCap = await get(place('edge-over-8mb.mp4', 8 * MB + 1));
+  check('⑧ 边界 8 MB+1 视为大文件 ⇒ 3600 且无 immutable',
+    /max-age=3600\b/.test(overCap.headers['cache-control']) && !/immutable/.test(overCap.headers['cache-control']),
+    'cc=' + overCap.headers['cache-control']);
+
+  // 环境变量覆盖：设成 1 ⇒ 2 MB 也算大；删掉 ⇒ 立刻回到 8 MB 口径（每次响应重读）。
+  process.env.DSH_FOLIA_BIG_CACHE_MB = '1';
+  const smallAsBig = await get(place('small-2mb.mp4', 2 * MB));
+  check('⑧ DSH_FOLIA_BIG_CACHE_MB=1 ⇒ 2 MB 也按大文件（3600）',
+    /max-age=3600\b/.test(smallAsBig.headers['cache-control']) && !/immutable/.test(smallAsBig.headers['cache-control']),
+    'cc=' + smallAsBig.headers['cache-control']);
+  delete process.env.DSH_FOLIA_BIG_CACHE_MB;
+  const smallAgain = await get(place('small-2mb.mp4', 2 * MB));
+  check('⑧ 去掉环境变量 ⇒ 2 MB 恢复一年（运行时读取，不是启动快照）',
+    /immutable/.test(smallAgain.headers['cache-control']), 'cc=' + smallAgain.headers['cache-control']);
+
+  // 阈值本身的夹取（1..1024）与非法值回落。
+  delete process.env.DSH_FOLIA_BIG_CACHE_MB;
+  check('⑧ 阈值默认 8 MB', bigCacheThresholdBytes() === 8 * MB, 'bytes=' + bigCacheThresholdBytes());
+  process.env.DSH_FOLIA_BIG_CACHE_MB = '1';
+  check('⑧ 阈值可覆盖为 1 MB', bigCacheThresholdBytes() === 1 * MB, 'bytes=' + bigCacheThresholdBytes());
+  process.env.DSH_FOLIA_BIG_CACHE_MB = '0.5';
+  check('⑧ 阈值下界夹到 1 MB', bigCacheThresholdBytes() === 1 * MB, 'bytes=' + bigCacheThresholdBytes());
+  process.env.DSH_FOLIA_BIG_CACHE_MB = '9999';
+  check('⑧ 阈值上界夹到 1024 MB', bigCacheThresholdBytes() === 1024 * MB, 'bytes=' + bigCacheThresholdBytes());
+  process.env.DSH_FOLIA_BIG_CACHE_MB = 'nonsense';
+  check('⑧ 非法阈值回落默认 8 MB', bigCacheThresholdBytes() === 8 * MB, 'bytes=' + bigCacheThresholdBytes());
+  delete process.env.DSH_FOLIA_BIG_CACHE_MB;
+
+  // 下载中依旧 no-store：直接驱动路由用的同一个函数（队列是模块单例，没有可注入的替身）。
+  const partFile = join(home, 'growing.part');
+  writeFileSync(partFile, Buffer.alloc(256 * 1024, 2));
+  const growRes = {
+    statusCode: 0, headers: {}, headersSent: true, writableEnded: false,
+    setHeader(k, v) { this.headers[String(k).toLowerCase()] = String(v); },
+    write() { return true; }, once() { return this; },
+    end() { this.writableEnded = true; },
+  };
+  const growJob = {
+    status: 'running', dest: partFile, total: 256 * 1024,
+    refresh: () => ({ status: 'done', total: 256 * 1024, dest: partFile }),
+  };
+  const growOk = await serveGrowingFile(partFile, growJob, growRes, false);
+  check('⑧ 下载中（.part 渐进读）仍 no-store',
+    growOk === true && growRes.headers['cache-control'] === 'no-store',
+    'cc=' + growRes.headers['cache-control']);
+
+  await new Promise((ok) => { app.close(ok); });
 }
 
 upstream.close();

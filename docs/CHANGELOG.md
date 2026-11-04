@@ -1,5 +1,47 @@
 # 变更记录（Changelog）
 
+### v4.23.5（2026-11-04）
+
+> 主题：**大文件不再双份占盘**——已完成载荷的浏览器缓存按时长分档（小文件一年，大文件 1 小时）。
+
+#### 1. 动机（4.23.2 的副作用）
+
+4.23.2 起，`/folia/site-media` 对"已完成"的媒体响应回
+`Cache-Control: public, max-age=31536000, immutable`。收益是重开壁纸不必再穿一遍宿主，
+但**Electron/Chromium 也会把大视频存进它自己的 HTTP 缓存** ⇒ 同一个文件在
+`$DSH_HOME/cache/site-media`（或 `library`）与 Chromium Cache 里各占一份磁盘。
+站点 4K 视频 8～29 MB 时长期双份占用不可忽略；小文件则相反（副本小、收益大）。
+
+#### 2. 规则（实现位置）
+
+- `lib/serve.js` 新增 `bigCacheThresholdBytes()` / `completedCacheControl(size)`，
+  是大小分档的**唯一一处**（`serveFile(..., { immutable: true })` 的所有调用点自动生效）：
+  - `size ≤ 8 MB` → `public, max-age=31536000, immutable`（与 4.23.2 逐字相同）；
+  - `size > 8 MB` → `public, max-age=3600`（**不加** `immutable`）。
+- 阈值 `DSH_FOLIA_BIG_CACHE_MB` 可覆盖，夹取 `1..1024`；非法值/缺省回落 `8`。每次响应
+  重新读取（运行期改设置后重启宿主即生效，不是模块加载时的快照）。边界语义：
+  **等于**阈值算小文件。
+- 同时给已完成载荷加 `Vary: Range`：Range 请求（播放器常态）与非 Range 是不同的缓存
+  表示，避免中间的缓存/代理把一个 `bytes=0-` 分片当成整份文件复用；只多一行头，故直接加。
+- **下载中不变**：`.part` 渐进读仍 `no-store`（`lib/routes/site-media.js` 的
+  `serveGrowingFile`）。缓存命中 / 队列 done 两条"已完成"分支都走 `immutable`，
+  因此自动获得上面的分档；`lib/routes/site-media.js` 只保留"内容不可变"的声明与注释。
+
+#### 3. 判据
+
+- `test/verify-site-media.mjs` **+16 条**（⑧，19 → 35 条执行）：用**真** `serveFile` +
+  真 `http.Server` 断言响应头 —— 2 MB 带 `immutable` + 一年、12 MB 为 `max-age=3600`
+  且不含 `immutable`、8 MB（=阈值）算小、8 MB+1 算大、两条都带 `Vary: Range`、
+  `DSH_FOLIA_BIG_CACHE_MB=1` 时 2 MB 也算大、去掉变量立刻恢复一年、阈值默认/覆盖/
+  上下界夹取/非法回落，以及 `.part` 渐进读仍 `no-store`。既有 ①–⑦ 断言未改动。
+
+#### 4. 升级提示
+
+`package.json` 4.23.4 → 4.23.5。宿主半边（`lib/serve.js` / `lib/routes/site-media.js`）有
+改动 ⇒ **要重启 `dsh web`**。4.23.2–4.23.4 期间 Chromium 已经缓存的大文件带着一年
+`immutable`：新策略不会主动删浏览器缓存，清一次浏览器缓存即可立刻释放；新请求从
+4.23.5 起按上面的规则分档。
+
 ### v4.23.4（2026-11-04）
 
 > 主题：**点了就得有反应**——四个下载模块共用一套卡片状态机（含失败原因与「重试」）、
