@@ -1,5 +1,53 @@
 # 变更记录（Changelog）
 
+### v4.23.12（2026-11-04）
+
+> 主题：**「点了没反应」的最后两公里** —— 4.23.11 修好了死锁（点击确实生效），但未缓存的壁纸
+> 仍要 **6–9 秒**才出画面；而在那几秒里点「本机」里的场景壁纸会被**整片吞掉**（用户实测）。
+> 本版把这一段做成**四段式**：立刻有反应 → 先出首帧 → 后台下到本地 → 无缝切到本地。
+
+#### 1. 实测（本机 43129，`/folia/diag/switch-stats` 与真请求）
+
+| 项 | 数值 |
+|---|---|
+| `switchLatencyMs`（6 次成功切换） | **8338 / 8809 / 6067 / 115 / 299 / 79**，均 3951，max 8809 |
+| 第 7 次 | **15119 ms `ok:false reason:timeout`** |
+| 慢的那三条源的属性 | 4320×2160@60 / 2524×1080@60 / 3840×2160@60（`avc1`，moov 全在**文件头**） |
+| 快的那两条 | 1920×1080@30 / 1920×1080@30（同尺寸 45 MB，同一个盘） |
+| 本机文件直出（`/folia/local-media/<job>`） | TTFB **1–5 ms**，45 MB 全量 **97 ms**（≈487 MB/s） |
+| 代理首字节（`/folia/site-media/…`，未命中） | **TTFB 607 ms**，1 MB 用 1506 ms，头里有 `content-length: 44848486` + `accept-ranges: bytes` |
+| 「下载中」的 `.part` 分支（旧） | `200` + **chunked（无 content-length）** + **`accept-ranges: none`** + **`application/octet-stream`**，Range 请求被忽略 |
+| 上游 `Range: bytes=0-131071` | 直接取首 128 KB < 0.5 s（首帧要的那点字节根本不慢） |
+
+结论：**瓶颈不在"取字节慢"，而在两件事**——
+① 「下载中」那条分支的头让浏览器**无法提前取 moov**（只能攒够一大段才出帧）；
+② 结算点挂在首帧上 ⇒ `weSwitchBusy()` 的窗口 = 首帧耗时 ⇒ 这期间 `onClick` 的
+`if (weSwitchBusy()) return;` 把**每一次**点击（尤其本机场景）都吞掉。
+
+#### 2. 修法
+
+| 位置 | 改动 |
+|---|---|
+| `lib/routes/site-media.js:96`（`serveGrowingFile`） | 「下载中」分支：`content-length = job.total`、`accept-ranges: bytes`、按**去 `.part` 后的扩展名**给 `Content-Type`（`video/mp4`），支持 `Range`（区间在已写字节内 ⇒ 立刻 `206 + Content-Range`；在已写字节之后（moov 在尾）⇒ 等文件长到那儿，有 30 s 停滞上限）。总量未知时**仍然**退回 chunked —— 绝不谎报长度 |
+| `src/video-switch.js` | ① 缓冲阈值 **1500 → 300 ms**，且**真的画出来**（覆盖层 `we-switch-hint`，文案「缓冲中 x%（a/b MB · 约剩 N 秒）」，进度读 `/downloads/list`）；② `weSwitchPublish()`（层上屏）**一定排结算** —— 不再等首帧；③ **终态保证**：2.5 s 内没有任何播放器被装上 ⇒ 自己收口（`reason:'no-media-branch'`）；④ **last-click-wins**：`weSwitchBegin()` 先把上一次未结算的收口成 `superseded` 再开新的；⑤ 硬上限 **15 s → 5 s**（`reason:'busy-timeout'`）；⑥ 下载完成后把本地副本装进**不在屏上的池元素**、对齐 `currentTime`（差 > 0.3 s 放弃）再交叉淡入 |
+| `src/quick-panel.js:298/470` | 删掉两处 `if (weSwitchBusy()) { toast; return; }` —— 点击**永不**被吞 |
+| `src/video-layer.js` | `poster` **先于** `src` 赋上（首帧前屏上是这张壁纸的图，不是空元素）；把 `kind`/`originUrl` 交给状态机 |
+| `src/media-prep.js` | 两条**早退分支**（清除壁纸 / 被过滤档排除）也结算；非视频结算带上类型（`weSwitchSettleAs`） |
+| `lib/routes/diag.js` | `switch-stats` 增记 `kind`（video/scene/web/image），汇总加 `byKind` / `superseded` / `busyTimeout` |
+
+#### 3. 新增判据
+
+`test/verify-first-frame.mjs`（**35 条**，已进 `verify` 链）：代理头结构（`content-length` /
+`accept-ranges` / `206` / 正确 `Content-Type`）；200 KB/s 慢速上游下「出首帧所需的字节 ≤ 1.5 s」
+（负对照：全量 28 MB 在该速率下要 143 s）；300 ms 缓冲提示与覆盖层真的挂上 DOM；
+**终态保证**；**last-click-wins**（慢视频切换中点本机场景不许被吞）；五类连点
+video→scene→web→image→video 全部生效；切本地副本的时间对齐；`poster` 先于 `src` 的顺序。
+`test/verify-switch-smooth.mjs` 47 → **49 条**（D7 反转成 last-click-wins、D7c 5 s 硬上限）。
+`test/verify-downloads.mjs` 202 → **204 条**（渐进读的头契约 + 总量未知的负对照，此前 2 条红）。
+
+**负对照**：把 `if (weSwitchBusy()) return;` 贴回 `src/quick-panel.js` ⇒
+`verify-first-frame` 的 D6 立刻红（已实测）。
+
 ### v4.23.11（2026-11-04）
 
 > 主题：**P0 热修** —— 4.23.8 起「点未下载过的壁纸毫无反应」（用户实测）。

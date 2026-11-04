@@ -122,6 +122,10 @@ const VERIFY_STEPS = [
   // 4.23.8：已缓存壁纸的切换手感 —— 缓存族归一化 / 双元素池（元素身份）/
   // 切换状态机 / 点击反馈 / switchLatencyMs 与 clickFeedbackMs 度量。
   step('test/verify-switch-smooth.mjs'),
+  // 4.23.12：**首帧四段式**与终态保证 —— 代理头的 content-length/accept-ranges/206、
+  // 200 KB/s 慢速上游下"出首帧所需的字节 ≤ 1.5s"、300ms 缓冲提示与覆盖层、
+  // last-click-wins（慢视频切换中点本机场景不许被吞）、五类连点全部生效、切本地副本的时间对齐。
+  step('test/verify-first-frame.mjs'),
   // 4.23.9：面板「标签」下拉改为**动态**（站点 facets → 分组多选 OR），判据含
   // 「任何请求不得出现 category≠wallpaper」的负对照（护住壁纸库的承重闸门）。
   step('test/verify-filters-dynamic.mjs'),

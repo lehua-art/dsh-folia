@@ -183,7 +183,7 @@ try { rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
   check('⑨ 代理会复用队列里同 URL 的 job（queueJobFor）', /queueJobFor\(u\.toString\(\), 'wallpaper'\)/.test(sm));
   check('⑨ 存在渐进读函数 serveGrowingFile', /async function serveGrowingFile\(/.test(sm));
   check('⑨ 渐进读会读 .part（下载中的文件）', /\.dest \+ '\.part'/.test(sm));
-  check('⑨ 无新字节时有上限（stalled）不无限挂着', /stalled > 600/.test(sm));
+  check('⑨ 无新字节时有上限（stalled）不无限挂着', /stalled > GROWING_STALL_LIMIT/.test(sm));
   check('⑨ negative control: 去掉复用块 ⇒ 判据会红', !/serveGrowingFile\(partPath, job, res, headOnly\)/.test(sm.replace(/await serveGrowingFile\(partPath, job, res, headOnly\);/, '')));
 }
 
@@ -471,8 +471,17 @@ try { rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
   check('⑯ 已完成的站点文件按不可变载荷发（immutable + 长缓存）',
     /\{ immutable: true \}/.test(smedia) && /public, max-age=31536000, immutable/.test(serveSrc));
   check('⑯ 负对照：下载中的渐进读仍然是 no-store（不缓存半截文件）',
-    /serveGrowingFile\(partPath, job, res, headOnly\)/.test(smedia)
+    // 4.23.12：调用点改成 `serveGrowingFile(partPath, job, res, headOnly, req)`（多传 req 才能回 206），
+    // 判据跟着放宽成"把 req 也传下去"，但**no-store 这一条不许变**。
+    /serveGrowingFile\(partPath, job, res, headOnly, req\)/.test(smedia)
     && /res\.setHeader\('cache-control', 'no-store'\)/.test(smedia));
+  check('⑯ 下载中的渐进读给出 content-length / accept-ranges / 正确 Content-Type（4.23.12）',
+    /GROWING_MIME/.test(smedia)
+    && /res\.setHeader\('content-length', String\(end - start \+ 1\)\)/.test(smedia)
+    && /res\.setHeader\('accept-ranges', 'bytes'\)/.test(smedia)
+    && /res\.setHeader\('content-range', 'bytes ' \+ start \+ '-' \+ end \+ '\/' \+ total\)/.test(smedia));
+  check('⑯ 负对照：渐进读仍保留"总量未知 ⇒ 不给错的总长"的旧形态',
+    /res\.setHeader\('accept-ranges', 'none'\)/.test(smedia));
 
   check('⑯ 面板有排队位置文案，且 N = queuePos - 1',
     /排队中：前面还有 \{n\} 个任务/.test(panel) && /pos - 1/.test(panel));

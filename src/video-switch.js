@@ -53,9 +53,18 @@
 // 交叉淡入时长：150–250ms 是需求区间，取中值。短于此观感是"跳变"，长于此会被
 // 当成"又卡了一下"——两个方向都坏。
 const WE_SWITCH_FADE_MS = 200;
-// 缓冲提示阈值：1.5s 内没进到可播状态就出「正在缓冲 x%」，而不是留一块空白/旧壁纸
-// 让人以为"点了没反应"。
-const WE_SWITCH_BUFFER_HINT_MS = 1500;
+// 缓冲提示阈值（4.23.12：1500 → **300**）。
+// 用户口径改了：**300ms 没出帧就算"慢"**，必须当场告诉他"在缓冲，别以为没点上"。
+// 1.5s 的旧值意味着一次 8 秒的首帧里有 1.5 秒是**完全静默**的 —— 那正是"点了没反应"。
+const WE_SWITCH_BUFFER_HINT_MS = 300;
+// 缓冲进度的轮询间隔（读 `/folia/downloads/list` 的 received/total）。
+// 500ms：既能让"x%（a/b MB）"看起来在动，又不会把宿主的列表接口打成热点。
+const WE_SWITCH_PROGRESS_POLL_MS = 500;
+// **终态保证**（4.23.12）：点击后这么久还停在 priming/preloading 且**没有装上任何播放器**
+// ⇒ 说明这条分支根本没有结算腿（最典型：场景/网页壁纸走了 `applySelection` 的早退，
+// 而非视频的结算点就写在早退之后）。这时必须自己收口，否则 `weSwitchBusy()` 恒真，
+// **之后每一次点击都被连点防护吞掉** —— 用户看到的就是"场景壁纸点了完全没反应"。
+const WE_SWITCH_SETTLE_GUARD_MS = 2500;
 // 度量环形缓冲：只留最近 20 次（需求 D9）。
 const WE_SWITCH_STATS_MAX = 20;
 // 掉帧判定：< 24fps 且持续 2s（需求 D10）。
@@ -70,7 +79,12 @@ const WE_SWITCH_POOL_SIZE = 2;
 const WE_SWITCH_PRESS_MS = 1200;
 // 状态机硬上限：真正的"永远等不到"必须收口，否则连点会被永久挡住。
 // 取值远大于缓冲阈值，让缓冲提示有充分的展示窗口。
-const WE_SWITCH_HARD_MS = 15000;
+// 状态机硬上限（4.23.12：15000 → **5000**）。
+// 为什么收短：这是"结算腿断了"的最后一道兜底，而 `weSwitchBusy()` 在这段时间里会挡住/影响
+// 后续点击的观感。15s 的上限意味着一次漏结算 = 用户 15 秒内点哪都没反应；
+// 5s 与实测的慢首帧（4K60 ≈ 6–9s）仍然同量级，但**不会**把"点了没反应"放大成一个半屏的沉默。
+// 收口记 `reason:'busy-timeout'`，便于在 `/folia/diag/switch-stats` 里一眼认出这一类。
+const WE_SWITCH_HARD_MS = 5000;
 
 // ── 池与状态 ──────────────────────────────────────────────────────────────────
 const weSwitchPool = [];          // [{ id, el }] 长度恒 ≤ WE_SWITCH_POOL_SIZE
@@ -296,6 +310,71 @@ function weSwitchDetachedPlayer() {
   if (el) { try { el.dataset.wePlayerId = "we-detached"; } catch { /* ignore */ } }
   return el;
 }
+// ── 缓冲提示：文案（纯函数）+ 覆盖层 ──────────────────────────────────────────
+/**
+ * 缓冲提示文案。**纯函数**（判据直接喂数字断言，不碰 DOM）。
+ *
+ * 格式（需求 B）：`缓冲中 x%（a/b MB · 约剩 N 秒）`
+ *   · 总量未知 ⇒ 只给「缓冲中…」（**绝不编数字**）；
+ *   · 没有速度样本（`etaSec <= 0`）⇒ 省掉"约剩 N 秒"那一截（同上）。
+ */
+function weSwitchBufferHintText(recv, total, etaSec) {
+  const r = Math.max(0, Number(recv) || 0);
+  const t = Math.max(0, Number(total) || 0);
+  const pct = t > 0 ? Math.max(0, Math.min(100, Math.round((r / t) * 100))) : 0;
+  if (!(total > 0)) return "缓冲中…";
+  const a = (r / 1048576).toFixed(1);
+  const b = (t / 1048576).toFixed(1);
+  const s = Math.max(0, Math.round(Number(etaSec) || 0));
+  return s > 0
+    ? "缓冲中 " + pct + "%（" + a + "/" + b + " MB · 约剩 " + s + " 秒）"
+    : "缓冲中 " + pct + "%（" + a + "/" + b + " MB）";
+}
+
+/** 覆盖层元素（惰性创建；`document` 不可用时全程 null，所有函数退化成 no-op）。 */
+let weSwitchOverlayEl = null;
+
+/** 取/建覆盖层。挂在 `body` 上，`pointer-events:none`（不许挡住播放控制）。 */
+function weSwitchOverlayEnsure() {
+  if (weSwitchOverlayEl) return weSwitchOverlayEl;
+  if (typeof document === "undefined" || !document.body) return null;
+  if (typeof document.createElement !== "function") return null;
+  let el;
+  try { el = document.createElement("div"); } catch { return null; }
+  if (!el) return null;
+  try { el.className = "we-switch-hint"; } catch { /* 精简 DOM */ }
+  try {
+    el.setAttribute("role", "status");
+    el.setAttribute("aria-live", "polite");
+    // 只放"看得见的一块胶囊"：不抢焦点、不挡鼠标；颜色走 CSS 变量，主题跟随既有机制。
+    el.style.cssText = "position:fixed;left:50%;bottom:14%;transform:translateX(-50%);"
+      + "padding:8px 16px;border-radius:999px;font-size:13px;line-height:1.4;"
+      + "pointer-events:none;z-index:2147483000;color:#fff;"
+      + "background:rgba(0,0,0,.62);backdrop-filter:blur(6px);display:none;";
+  } catch { /* ignore */ }
+  try { document.body.appendChild(el); } catch { return null; }
+  weSwitchOverlayEl = el;
+  return el;
+}
+
+/** 显示/刷新缓冲提示（幂等；`text` 为空 ⇒ 隐藏）。 */
+function weSwitchOverlaySet(text) {
+  const el = weSwitchOverlayEnsure();
+  if (!el) return;
+  const s = String(text || "");
+  try {
+    if (!s) { el.style.display = "none"; return; }
+    el.textContent = s;
+    el.style.display = "block";
+  } catch { /* ignore */ }
+}
+
+/** 收起覆盖层（结算/失败/成功都要调；幂等）。 */
+function weSwitchOverlayHide() {
+  if (!weSwitchOverlayEl) return;
+  try { weSwitchOverlayEl.style.display = "none"; } catch { /* ignore */ }
+}
+
 // ── 切换度量 ──────────────────────────────────────────────────────────────────
 
 function weSwitchNow() {
@@ -373,6 +452,20 @@ function weSwitchIs1080p(url) {
  *   · 记 `clickFeedbackMs` = 到"第一处视觉变化"的耗时（同步 ⇒ 实测 < 1ms）。
  */
 function weSwitchBegin(el) {
+  // **last-click-wins（4.23.12，P0 的关键那一半）**：上一次切换还没结算时又来一次点击，
+  // 说明用户已经不想等前一张了 —— **立刻把它收口**（记 `superseded`），然后开新的一轮。
+  //
+  // 为什么不是"忽略这一次"（旧实现）：忽略的前提是"前一次必然会在可接受的时间内结算"。
+  // 实测否证了这个前提 —— 慢视频的首帧要 6–9 秒，而这一段时间里用户去点「本机」里的场景壁纸
+  // 就被判成"正在切换，请稍候"而**完全没反应**。用户的结论是"连本机都不能点了"。
+  // 取消式没有死锁风险：旧上下文被置为 failed/settled 之后，busy 立刻变假。
+  const prev = weSwitchCtx;
+  if (prev && !prev.settled) {
+    try { weSwitchFail("superseded"); } catch { /* 收口失败也要继续开新的 */ }
+  }
+  if (weSwitchPending) weSwitchPending = null;   // 旧实现的"补切最后一个"不再参与（取消式取代）
+  // 新一轮切换开始：上一张的"等本地副本"到此为止（它已经不在屏上了）。
+  weSwitchStopLocalWatch();
   // 复用 ptrdown 那一枪的视觉反馈（如果有）：同一次点击只该量一段"点击 → 第一处视觉变化"。
   const pressed = weSwitchConsumePress();
   const t0 = (pressed && pressed.at) || weSwitchNow();
@@ -386,28 +479,97 @@ function weSwitchBegin(el) {
   const feedbackMs = (pressed && pressed.ms) || 0;
   const ctx = {
     startedAt: t0, feedbackMs: (pressed && pressed.ms) || 0, state: "priming",
-    cardEl: target, pendingEl: null, bufferTimer: 0, pressTimer: 0, hardTimer: 0,
+    cardEl: target, pendingEl: null, bufferTimer: 0, pressTimer: 0, hardTimer: 0, settleGuard: 0,
     slug: "-", cacheFamilyHit: false, is1080p: false, settled: false,
+    // 4.23.12：这次点的是哪一类（video / scene / web / image）。度量与排障都要它 ——
+    // "某一类点了没反应"在延迟直方图上只表现为"恰好 15s"，没有 kind 就分不出是谁。
+    kind: "unknown",
+    // 4.23.12：本条壁纸的**站点原始地址**（下载/进度都用它，不是播放代理地址）。
+    originUrl: "", bytesRecv: 0, bytesTotal: 0, etaSec: 0, progressPoll: 0, progressLast: null,
   };
   weSwitchCtx = ctx;
   if (typeof setTimeout === "function") {
     // 视觉兜底：只摘 pressed / aria-busy，**不结算**（见 WE_SWITCH_PRESS_MS 的注释）。
     ctx.pressTimer = setTimeout(() => { weSwitchResetCard(ctx); }, WE_SWITCH_PRESS_MS);
-    // 缓冲提示：1.5s 还没进到可播状态 ⇒ 转 buffering 并发事件（面板画「正在缓冲 x%」）。
+    // 缓冲提示：**300ms** 还没进到可播状态 ⇒ 转 buffering、出「缓冲中 x%」并开始取进度。
     ctx.bufferTimer = setTimeout(() => {
       if (ctx.settled || weSwitchCtx !== ctx) return;
       if (ctx.state === "priming" || ctx.state === "preloading") {
         weSwitchSetState(ctx, "buffering");
+        weSwitchOverlaySet(weSwitchBufferHintText(ctx.bytesRecv, ctx.bytesTotal, ctx.etaSec));
+        weSwitchStartProgressPoll(ctx);
         weSwitchListens(ctx);
       }
     }, WE_SWITCH_BUFFER_HINT_MS);
+    // **终态保证**（4.23.12，P0）：到点仍停在 priming 且**没有任何播放器被装上** ⇒
+    // 这条分支没有结算腿（早退 / 异常 / 未知类型）。自己收口，绝不让"切换中"永久为真。
+    // 已经有播放器（`pendingEl`）时不动它：视频档由首帧结算，最差由 15s 硬上限兜底。
+    ctx.settleGuard = setTimeout(() => {
+      if (ctx.settled || weSwitchCtx !== ctx) return;
+      if (ctx.pendingEl) return;
+      // priming（还没装）/ preloading（装了但没有元素）/ buffering（300ms 后转过来的那个）
+      // 三种"没有任何播放器在等"的形态都必须收口。有元素时交给首帧与 5s 硬上限。
+      if (ctx.state !== "priming" && ctx.state !== "preloading" && ctx.state !== "buffering") return;
+      weSwitchSetState(ctx, "playing");
+      weSwitchFinish(ctx, true, "no-media-branch");
+    }, WE_SWITCH_SETTLE_GUARD_MS);
     // 硬上限：真正的"永远等不到"收口。
     ctx.hardTimer = setTimeout(() => {
       if (ctx.settled || weSwitchCtx !== ctx) return;
-      weSwitchFail("timeout");
+      weSwitchFail("busy-timeout");
     }, WE_SWITCH_HARD_MS);
   }
   return ctx;
+}
+
+/**
+ * 缓冲期间的进度来源：`/folia/downloads/list` 里与 `originUrl` 匹配的那条 job。
+ *
+ * 为什么读队列而不是读 `<video>.buffered`：`buffered` 只回答"解码器手上有什么"，
+ * 用户问的是"还要多久"——那是**下载**的事实（received / total），只有队列知道。
+ * 取不到就保持"缓冲中…"（绝不编百分比）。
+ */
+function weSwitchStartProgressPoll(ctx) {
+  if (!ctx || ctx.progressPoll) return;
+  if (typeof setInterval !== "function") return;
+  if (typeof apiJson !== "function") return;
+  const tick = () => {
+    if (ctx.settled || weSwitchCtx !== ctx) { weSwitchStopProgressPoll(ctx); return; }
+    if (!ctx.originUrl) return;
+    Promise.resolve()
+      .then(() => apiJson("/downloads/list"))
+      .then((res) => {
+        const doc = (res && res.data) || res || {};
+        const jobs = Array.isArray(doc.jobs) ? doc.jobs : [];
+        const job = jobs.find((j) => j && String(j.url || "") === String(ctx.originUrl)) || null;
+        if (!job) return;
+        const recv = Math.max(0, Number(job.received) || 0);
+        const total = Math.max(0, Number(job.total) || 0);
+        // 速度样本：两次采样的字节差 / 时间差 ⇒ 约剩秒数（样本不足就不给）。
+        const now = Date.now();
+        const last = ctx.progressLast;
+        if (last && now > last.at && recv > last.recv) {
+          const bps = (recv - last.recv) / ((now - last.at) / 1000);
+          if (bps > 0 && total > recv) ctx.etaSec = Math.round((total - recv) / bps);
+        }
+        ctx.progressLast = { at: now, recv };
+        ctx.bytesRecv = recv;
+        ctx.bytesTotal = total;
+        weSwitchOverlaySet(weSwitchBufferHintText(recv, total, ctx.etaSec));
+        weSwitchListens(ctx);
+      })
+      .catch(() => { /* 进度是增强：拿不到就保持上一帧文案 */ });
+  };
+  ctx.progressPoll = setInterval(tick, WE_SWITCH_PROGRESS_POLL_MS);
+  try { if (ctx.progressPoll && typeof ctx.progressPoll.unref === "function") ctx.progressPoll.unref(); } catch { /* ignore */ }
+  tick();
+}
+
+/** 停进度轮询（幂等：结算、失败、离开 buffering 都调）。 */
+function weSwitchStopProgressPoll(ctx) {
+  if (!ctx || !ctx.progressPoll) return;
+  if (typeof clearInterval === "function") { try { clearInterval(ctx.progressPoll); } catch { /* ignore */ } }
+  ctx.progressPoll = 0;
 }
 
 /** 摘掉卡片的 pressed / aria-busy（视觉复位；幂等，结算与兜底都调它）。 */
@@ -437,7 +599,13 @@ function weSwitchListens(ctx) {
   const ev = {
     state: ctx.state,
     slug: ctx.slug,
-    percent: Number(ctx.percent) || 0,
+    kind: ctx.kind || "unknown",
+    percent: ctx.bytesTotal > 0 ? Math.min(100, Math.round((ctx.bytesRecv / ctx.bytesTotal) * 100)) : 0,
+    recvBytes: Math.max(0, Number(ctx.bytesRecv) || 0),
+    totalBytes: Math.max(0, Number(ctx.bytesTotal) || 0),
+    etaSec: Math.max(0, Number(ctx.etaSec) || 0),
+    // 覆盖层上正在显示的那一行（面板若要自己画，直接用它，别各写一份格式化）。
+    hint: weSwitchBufferHintText(ctx.bytesRecv, ctx.bytesTotal, ctx.etaSec),
     reason: ctx.reason || "",
     latencyMs: Number(ctx.latencyMs) || 0,
     feedbackMs: Number(ctx.feedbackMs) || 0,
@@ -456,7 +624,12 @@ function weSwitchAttachPlayer(el, url, opts) {
   ctx.slug = weSwitchSlugOf(url);
   ctx.is1080p = o.is1080p === true || weSwitchIs1080p(url);
   ctx.cacheFamilyHit = o.cacheFamilyHit === true;
+  // 4.23.12：类型与站点原始地址（进度/切本地都要它）。
+  if (o.kind) ctx.kind = String(o.kind);
+  if (o.originUrl) ctx.originUrl = String(o.originUrl);
   if (!ctx.settled) weSwitchSetState(ctx, "preloading");
+  // 已经进入 buffering 的上下文，装上播放器后进度轮询要能跟上（幂等）。
+  if (ctx.state === "buffering") weSwitchStartProgressPoll(ctx);
   return ctx;
 }
 
@@ -468,13 +641,26 @@ function weSwitchPublish(el, opts) {
     weSwitchVisibleEl = el;
     weSwitchStartJankProbe(el);
   }
+  // 首帧已上屏 ⇒ 缓冲提示立刻收掉（交叉淡入期间还挂着"缓冲中"是自相矛盾的观感）。
+  weSwitchOverlayHide();
   if (ctx && !ctx.settled) {
+    weSwitchStopProgressPoll(ctx);
     weSwitchSetState(ctx, "swapping");
-    if (o.fadeMs && typeof setTimeout === "function") {
-      const at = ctx;
-      setTimeout(() => { weSwitchFinish(at, true, ""); }, Math.max(0, Number(o.fadeMs) || WE_SWITCH_FADE_MS));
+    // **结算点前移**（4.23.12 / P0）：层一旦上屏（poster 或首帧已经挂进 DOM、交叉淡入开始），
+    // 这一次切换对用户来说就"已经生效"了 —— 到此结算，**不等第一帧解码完成**。
+    //
+    // 旧行为：`o.fadeMs` 只在极少数调用点给过，`{}` 传来的那一次**根本不排结算**，于是
+    // 状态机要一直等到 `weSwitchPlayed()` —— 而那条腿只在 `syncLayers` 里、`readyState >= 2`
+    // 时才被调用，`syncLayers` 又要等一次 emit。实测结果就是 busy 窗口 = 首帧耗时 = 6–9 秒，
+    // 这期间点别的（尤其"本机"里的场景壁纸）全部被连点防护吞掉 = 用户说的"点了没反应"。
+    const at = ctx;
+    const fade = Math.max(0, Number(o.fadeMs) || WE_SWITCH_FADE_MS);
+    if (typeof setTimeout === "function") {
+      setTimeout(() => { weSwitchFinish(at, true, ""); }, fade);
       return ctx;
     }
+    weSwitchFinish(at, true, "");
+    return ctx;
   }
   return ctx;
 }
@@ -510,15 +696,21 @@ function weSwitchFinish(ctx, ok, reason) {
     if (ctx.pressTimer) { try { clearTimeout(ctx.pressTimer); } catch { /* ignore */ } }
     if (ctx.bufferTimer) { try { clearTimeout(ctx.bufferTimer); } catch { /* ignore */ } }
     if (ctx.hardTimer) { try { clearTimeout(ctx.hardTimer); } catch { /* ignore */ } }
+    if (ctx.settleGuard) { try { clearTimeout(ctx.settleGuard); } catch { /* ignore */ } }
   }
   ctx.pressTimer = 0;
   ctx.bufferTimer = 0;
   ctx.hardTimer = 0;
+  ctx.settleGuard = 0;
+  weSwitchStopProgressPoll(ctx);
+  // 结算即收提示：屏上要么已经有真画面，要么就有失败文案 —— 都不该再挂着"缓冲中"。
+  weSwitchOverlayHide();
   weSwitchSetState(ctx, ok ? "playing" : "failed");
   // 卡片复位：pressed 摘掉、aria-busy 放下（需求 H14 / G4）。
   weSwitchResetCard(ctx);
   weSwitchRecord({
     slug: ctx.slug,
+    kind: ctx.kind || "unknown",
     cacheFamilyHit: ctx.cacheFamilyHit === true,
     is1080p: ctx.is1080p === true,
     switchLatencyMs: Math.round(ctx.latencyMs),
@@ -528,6 +720,9 @@ function weSwitchFinish(ctx, ok, reason) {
   });
   weSwitchListens(ctx);
   if (weSwitchCtx === ctx) weSwitchCtx = null;
+  // 视频档：首帧已上屏后开始等**本地副本**（下载完成就无缝切过去，需求 C）。
+  // 非视频档没有 `<video>`，这条链自然不启动（`pendingEl` 为空）。
+  if (ok === true && ctx.pendingEl) { try { weSwitchBeginLocalWatch(ctx); } catch { /* 增强 */ } }
   // 连点防护：上一轮结束了，补切"最后点的那个"（需求 G7）。放在清空上下文之后 ——
   // 补切会开启新的一轮，必须在 `weSwitchCtx` 已为空时进行，否则新上下文会被这里覆盖。
   weSwitchFlushPick();
@@ -650,14 +845,180 @@ function weSwitchSettle() {
   weSwitchFinish(ctx, true, "");
   return ctx;
 }
+
+/**
+ * 非视频类型（scene / web / image / 本机文件）的结算入口 —— **带类型**。
+ *
+ * 为什么要有它而不是直接 `weSwitchSettle()`：`kind` 是排障时区分"哪一类卡住"的唯一字段
+ * （4.23.12 加进 `/folia/diag/switch-stats`）。调用点知道类型，状态机不该去猜。
+ */
+function weSwitchSettleAs(kind) {
+  const ctx = weSwitchCtx;
+  if (!ctx) return null;
+  if (kind) ctx.kind = String(kind);
+  return weSwitchSettle();
+}
+
+// ── 后台下载完成 ⇒ 无缝切到本地文件（需求 C）────────────────────────────────
+/**
+ * 「播放中」的这张壁纸，本地那一份什么时候到？到了就切过去。
+ *
+ * 为什么要切：代理流是**边下边播**，它的字节来自网络，用户拖动进度条、暂停再播都在打网络；
+ * 而队列下完之后 `/folia/local-media/<job>` 是磁盘直出（实测 TTFB 1–5ms、45 MB 全量 97ms）。
+ * 切过去之后，同一张再点一次就是 200ms 级（需求 D「之后重复点 = 直接用本地」）。
+ *
+ * 不变量：
+ *   · **不在在屏元素上换源**（那会清掉当前帧）：本地这份装进**池里不在屏上的另一个元素**，
+ *     首帧就绪后交叉淡入、旧元素淡出后才移除；
+ *   · 切换前把本地元素的 `currentTime` 对齐到在屏元素的当前时间，**差 > 0.3s 就放弃**
+ *     （宁可不切，也不要画面"跳一下"）；
+ *   · 整条链失败全部静默（代理流继续播，功能不受影响）。
+ */
+let weSwitchLocalWatch = null;   // { timer, slug }
+
+function weSwitchStopLocalWatch() {
+  const w = weSwitchLocalWatch;
+  weSwitchLocalWatch = null;
+  if (w && w.timer && typeof clearInterval === "function") {
+    try { clearInterval(w.timer); } catch { /* ignore */ }
+  }
+}
+
+/** 池里"不在屏上"的那个元素（切换/换源只许动它）。 */
+function weSwitchPoolPickHidden(except) {
+  const pool = weSwitchPoolEnsure();
+  for (const p of pool) {
+    if (p && p.el && p.el !== except && p.el !== weSwitchVisibleEl) return p.el;
+  }
+  return null;
+}
+
+/** 开始等这张壁纸的本地副本（幂等；没有 originUrl / 已命中族 就不必等）。 */
+function weSwitchBeginLocalWatch(ctx) {
+  const o = ctx || {};
+  if (!o.originUrl || o.cacheFamilyHit === true) return null;
+  const slug = String(o.slug || "");
+  if (weSwitchLocalWatch && weSwitchLocalWatch.slug === slug) return weSwitchLocalWatch;
+  weSwitchStopLocalWatch();
+  if (typeof setInterval !== "function" || typeof apiJson !== "function") return null;
+  const rec = { timer: 0, slug };
+  const tick = () => {
+    if (weSwitchLocalWatch !== rec) return;
+    Promise.resolve()
+      .then(() => apiJson("/downloads/list"))
+      .then((res) => {
+        const doc = (res && res.data) || res || {};
+        const jobs = Array.isArray(doc.jobs) ? doc.jobs : [];
+        const job = jobs.find((j) => j && String(j.url || "") === String(o.originUrl)
+          && String(j.status || "") === "done");
+        if (!job || !job.id) return;
+        weSwitchStopLocalWatch();
+        weSwitchHandoverLocal("/folia/local-media/" + encodeURIComponent(String(job.id)));
+      })
+      .catch(() => { /* 网络抖动：下一拍再试 */ });
+  };
+  rec.timer = setInterval(tick, 1000);
+  try { if (rec.timer && typeof rec.timer.unref === "function") rec.timer.unref(); } catch { /* ignore */ }
+  weSwitchLocalWatch = rec;
+  return rec;
+}
+
+/**
+ * 把播放切到本地副本：预热（不在屏上的池元素）→ 对齐时间 → 交叉淡入。
+ * 返回 true 表示**已开始**淡入（首帧在本元素上就位）；false = 放弃（继续播代理流）。
+ */
+function weSwitchHandoverLocal(localUrl) {
+  const from = weSwitchVisibleEl;
+  const u = String(localUrl || "");
+  if (!from || !u) return false;
+  if (String(from.__weUrl || "") === u) return false;   // 已经在本地那份上了
+  const to = weSwitchPoolPickHidden(from);
+  if (!to) return false;
+  const fromTime = Number(from.currentTime) || 0;
+  try {
+    to.__weUrl = u;
+    to.muted = true;
+    to.src = u;
+    if (typeof to.load === "function") to.load();
+  } catch { return false; }
+  // 先播起来（rVFC 只在出帧时回调），再把时间对齐 —— 顺序不能反：
+  // 未起播时 `currentTime` 的赋值会被随后的资源选择覆盖掉。
+  try {
+    const p = to.play();
+    if (p && typeof p.catch === "function") p.catch(() => { /* 静音元素被策略拒绝：等 loadeddata 再说 */ });
+  } catch { /* ignore */ }
+  try { if (fromTime > 0) to.currentTime = fromTime; } catch { /* ignore */ }
+
+  let done = false;
+  const settleToLocal = () => {
+    if (done) return;
+    done = true;
+    const nowTime = Number(from.currentTime) || 0;
+    const toTime = Number(to.currentTime) || 0;
+    // **对齐判据**：差 > 0.3s 就不切（画面跳一下比继续走网络更糟）。
+    if (Math.abs(toTime - nowTime) > 0.3) return;
+    try { if (Number(from.playbackRate) > 0) to.playbackRate = from.playbackRate; } catch { /* ignore */ }
+    try { to.loop = from.loop === true; } catch { /* ignore */ }
+    weSwitchCrossfadeTo(to, from);
+  };
+  if (typeof to.requestVideoFrameCallback === "function") {
+    try { to.requestVideoFrameCallback(() => settleToLocal()); return true; } catch { /* 退化到事件 */ }
+  }
+  if (typeof to.addEventListener === "function") {
+    const onData = () => settleToLocal();
+    try { to.addEventListener("loadeddata", onData, { once: true }); } catch { /* ignore */ }
+    try { to.addEventListener("canplay", onData, { once: true }); } catch { /* ignore */ }
+    return true;
+  }
+  settleToLocal();
+  return true;
+}
+
+/**
+ * 交叉淡入到 `to`，旧元素淡出**之后**才从 DOM 移除（任何时刻都有一帧在屏上 = 不黑屏）。
+ * `to` 插在 `from` **之前**：`layer.querySelector("video")` 因此会返回新的那个。
+ */
+function weSwitchCrossfadeTo(to, from) {
+  if (!to || !from) return false;
+  const parent = from.parentElement;
+  if (!parent) return false;
+  try { parent.insertBefore(to, from); } catch { return false; }
+  try {
+    to.style.opacity = "0";
+    to.style.transition = "opacity " + WE_SWITCH_FADE_MS + "ms linear";
+  } catch { /* 精简 DOM：直接当已切换 */ }
+  const reveal = () => {
+    try { to.style.opacity = "1"; } catch { /* ignore */ }
+    if (typeof setTimeout !== "function") { weSwitchFinishLocalSwap(to, from, parent); return; }
+    setTimeout(() => { weSwitchFinishLocalSwap(to, from, parent); }, WE_SWITCH_FADE_MS);
+  };
+  // 强制一次样式读取，确保上面的 opacity:0 真的被应用（否则过渡不会发生）。
+  try { void (parent && parent.offsetWidth); } catch { /* ignore */ }
+  if (typeof setTimeout === "function") setTimeout(reveal, 0); else reveal();
+  return true;
+}
+
+/** 淡入结束：移除旧元素、把"在屏元素"换成新的。 */
+function weSwitchFinishLocalSwap(to, from, parent) {
+  try { if (parent && from && from.parentElement === parent) parent.removeChild(from); } catch { /* ignore */ }
+  try { if (from && typeof from.pause === "function") from.pause(); } catch { /* ignore */ }
+  if (to) {
+    weSwitchVisibleEl = to;
+    weSwitchStartJankProbe(to);
+  }
+  // 切到本地 = 这一张从此"已缓存"：复用缓存族标记，面板角标与度量同一口径。
+  try { liveLog("local-handover", "已切到本地副本（后续切换走磁盘）"); } catch { /* ignore */ }
+}
 export {
   WE_SWITCH_FADE_MS, WE_SWITCH_BUFFER_HINT_MS, WE_SWITCH_STATS_MAX,
-  WE_SWITCH_JANK_FPS, WE_SWITCH_POOL_SIZE,
+  WE_SWITCH_JANK_FPS, WE_SWITCH_POOL_SIZE, WE_SWITCH_SETTLE_GUARD_MS, WE_SWITCH_PROGRESS_POLL_MS,
   weSwitchPoolPick, weSwitchArm, weSwitchAttachPlayer, weSwitchPublish,
   weSwitchPlayed, weSwitchFail, weSwitchBegin, weSwitchBusy, weSwitchState,
   weSwitchStatsSnapshot, weSwitchStatSummary, weSwitchSubscribe,
   weSwitchJankState, weSwitchSlugOf, weSwitchIs1080p, weSwitchNewPlayer,
   weSwitchQueuePick, weSwitchFlushPick, weSwitchIsVisible,
-  weSwitchPressFeedback, weSwitchConsumePress, weSwitchSettle,
+  weSwitchPressFeedback, weSwitchConsumePress, weSwitchSettle, weSwitchSettleAs,
   weSwitchClickPlayer, weSwitchDetachedPlayer,
+  weSwitchBufferHintText, weSwitchOverlaySet, weSwitchOverlayHide,
+  weSwitchHandoverLocal, weSwitchBeginLocalWatch, weSwitchStopLocalWatch,
 };

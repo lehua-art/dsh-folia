@@ -238,17 +238,11 @@ function buildVideoMedia(sel, fitClass) {
   const useCached = Boolean(rc && rc.url && rc.fps === selection.fpsCap && rc.token === tok);
   if ((!prepared && !warmed)
       || (useCached && media.dataset.weTranscoded !== String(rc.fps))) {
-    // 已经转好的抽帧版（上一次在"已上屏"状态下就绪、刻意没换源的那一份）：
-    // **建层时就用它当 src** —— 这样整个生命周期里一次换源都不发生（换源 = 清掉当前帧 = 纯色）。
-    // 判据只看"这份抽帧版是不是当前上限的"：**不看原生可解性** —— 帧率上限的意义就是压解码
-    // 占用，原生可解的源照样可能帧率超标（4K120 的 H.264），拿它当免转条件会让上限在实际
-    // 在用的 mp4 上完全失效（见 capNeedsTranscode 的注释）。
-    media.src = useCached ? rc.url : sel.url;
-    if (useCached) {
-      try { media.dataset.weTranscoded = String(rc.fps); } catch { /* ignore */ }
-      selection.transcodeState = "ready";
-      selection.transcodeProgress = null;
-    }
+    // ⚠️ **poster 必须先于 src**（4.23.12 / 需求 A）：`src` 一赋上，浏览器就开始资源选择，
+    // 到首帧之间屏上是**空元素**（视频档通常没有原生海报）。先挂 poster 的话，这张缩略图
+    // （站点 10 KB 级的 webp/jpg）几乎立刻就能画出来 —— 用户点下去 <=50ms 看到的是"这张壁纸的图"，
+    // 而不是"什么都没有"。顺序反了这条收益就没了（实测：先 src 后 poster 时海报要等资源选择让位）。
+    //
     // poster=预览图：覆盖初始加载与抽帧转码 swap 的空窗（原黑屏闪烁点）。
     // 视频类壁纸**不设 WE 自带的 `preview.gif`** —— 动图当 poster 会"先播预览、再停首帧、
     // 最后进正片"；改为**只认插件自己抽的静态缩略图**（`/video-preview/…` 是 ffmpeg 抽的一帧
@@ -268,6 +262,18 @@ function buildVideoMedia(sel, fitClass) {
     const stillPreview = !!sel.previewUrl
       && (sel.type !== "video" || /\/video-preview\//.test(sel.previewUrl) || siteStaticThumb);
     if (stillPreview) media.poster = sel.previewUrl;
+    // 首帧之前就能看见的那张图先就位，然后才让浏览器去取流。
+    media.src = useCached ? rc.url : sel.url;
+    // 已经转好的抽帧版（上一次在"已上屏"状态下就绪、刻意没换源的那一份）：
+    // **建层时就用它当 src** —— 这样整个生命周期里一次换源都不发生（换源 = 清掉当前帧 = 纯色）。
+    // 判据只看"这份抽帧版是不是当前上限的"：**不看原生可解性** —— 帧率上限的意义就是压解码
+    // 占用，原生可解的源照样可能帧率超标（4K120 的 H.264），拿它当免转条件会让上限在实际
+    // 在用的 mp4 上完全失效（见 capNeedsTranscode 的注释）。
+    if (useCached) {
+      try { media.dataset.weTranscoded = String(rc.fps); } catch { /* ignore */ }
+      selection.transcodeState = "ready";
+      selection.transcodeProgress = null;
+    }
   }
   // 池元素：把"装载去重 + 预热到首帧"交给池。上面那条 `media.src = …` 已经赋过地址，
   // `weSwitchArm` 据此**不会重复 load**（需求 A5：同一 src 已加载 ⇒ 直接 play）；
@@ -277,6 +283,9 @@ function buildVideoMedia(sel, fitClass) {
     weSwitchAttachPlayer(media, armedSrc, {
       is1080p: Boolean(useCached),
       cacheFamilyHit: sel.cacheFamilyHit === true,
+      // 4.23.12：类型与站点原始地址 —— 度量按类型分簇、下载进度与"切本地副本"都靠它们。
+      kind: "video",
+      originUrl: sel.originUrl || "",
     });
     weSwitchArm(media, armedSrc, null);
   }

@@ -103,7 +103,7 @@ click ─── weSwitchBegin() ⇒ priming
                     ├─ 池里已有该 URL 且首帧已解?  ── 是 ─→ 直接 reparent 进新层 (playing)   ← 命中
                     │                                （元素身份不变、解码器连续）
                     └─ 否 ⇒ 池里另一个元素装 src（它不在屏上，换源安全）
-                              ├─ 1.5s 内没到可播 ⇒ 状态转 buffering
+                              ├─ 300ms 内没到可播 ⇒ 状态转 buffering（4.23.12：原 1.5s）
                               │     ⇒ 「正在缓冲 x%」+ 取消按钮                        ← G2
                               └─ 首帧未到且出错 ⇒ failed + 原因 + 「重试」              ← G5
                     │
@@ -190,7 +190,7 @@ click ─── weSwitchBegin() ⇒ priming
 |---|---|---|
 | 按下瞬间 | 卡片 `pressed` 态（缩放/高亮）+ 按钮文案「切换中…」并禁用 + `aria-busy="true"` | **< 50ms**（同步，实测 < 1ms） |
 | 已缓存切换 | 双缓冲完成，卡片变 active、播放条标题更新、toast「已切换：<名称>」1.5s | 正常 < 300ms |
-| 1.5s 未就绪 | 「正在缓冲 x%…」（不留空白/旧壁纸） | 1.5s |
+| 1.5s 未就绪 → **4.23.12 起 300ms** | 「正在缓冲 x%（a/b MB · 约剩 N 秒）…」（不留空白/旧壁纸） | **300ms** |
 | 未缓存 | 立刻 封面图 + 进度条 +「x%（a/b MB · 约剩 N 秒）」+「取消」 | 立即 |
 | 成功 | 卡片 active + toast 1.5s 自动消失 | — |
 | 失败 | 卡片红边 + 原因（连不上 / 404 / 超时 / 解码失败）+「重试」 | — |
@@ -258,3 +258,48 @@ click ─── weSwitchBegin() ⇒ priming
   本文的时序图描述的是 native `<video>` 那条腿。
 - **族键的保守性**：只剥清晰度/编码后缀。站点若用"完全不同的文件名"命名变体
   （例如 `x.mp4` 与 `x_alt.mp4`），族判据认不出来 —— 此时行为退回精确匹配（安全方向）。
+
+---
+
+## 7. 4.23.12：剩下的 6–9 秒与「点了没反应」（实测与修法）
+
+### 7.1 实测（本机 43129）
+
+| 项 | 数值 | 怎么量的 |
+|---|---|---|
+| `switchLatencyMs`（6 次 ok） | **8338 / 8809 / 6067 / 115 / 299 / 79**，avg 3951，max 8809 | `GET /folia/diag/switch-stats` |
+| 第 7 次 | **15119 ms `ok:false reason:timeout`** | 同上 |
+| 慢的三条源 | 4320×2160@**60** / 2524×1080@**60** / 3840×2160@**60**（`avc1`，`moovStart` 24/24/32） | `lib/media/mp4-probe.js` 直读缓存文件 |
+| 快的两条源 | 1920×1080@**30** / 1920×1080@**30** | 同上 |
+| 本机文件直出 TTFB | **1–5 ms**；45 MB 全量 **97 ms**（≈487 MB/s） | 对 `/folia/local-media/<job>` 发 Range 0-131071 / 全量 |
+| 代理首字节（未命中） | **TTFB 607 ms**；1 MB 用 1506 ms；`content-length: 44848486` + `accept-ranges: bytes` | 对 `/folia/site-media/?u=…` |
+| 「下载中」`.part` 分支（4.23.11） | `200` + **chunked** + **`accept-ranges: none`** + **`application/octet-stream`**；Range 被忽略 | 入队后立刻请求同一 URL |
+| 上游 `Range: bytes=0-131071` | 首 128 KB < 0.5 s | 直连站点 |
+
+**读法**：取字节一点都不慢（本机文件 500 MB/s、上游首 128 KB < 0.5 s）。慢在别处：
+
+1. **「下载中」的响应头让浏览器没法提前取 moov**。没有 `content-length`、`accept-ranges: none`、
+   类型未知 ⇒ Chromium 只能把流当成"未知长度的 octet-stream"**先攒一大段**再起解码。
+   而 `moov`（索引）其实在**前 32 字节**后 —— 只要允许 Range，几百 KB 就能出第一帧。
+2. **结算点挂在首帧上**。`weSwitchPublish()`（层上屏）过去不排结算，要等 `syncLayers` 里
+   `readyState >= 2` ⇒ `weSwitchBusy()` 的窗口 = 首帧耗时 = 6–9 秒；这期间
+   `onClick` 的 `if (weSwitchBusy()) return;` 把**每一次**点击（尤其「本机」场景）都吞掉。
+3. 60 fps 的源在软件解码路径上本身更贵（这是硬件/浏览器边界，见 §6），但它**不该**让
+   界面沉默 —— 该有 300 ms 的"缓冲中 x%"，该能随时点别的。
+
+### 7.2 修法（四段式）
+
+| 段 | 用户看到什么 | 实现 |
+|---|---|---|
+| A 点击瞬间（≤50 ms） | 卡片 pressed + `aria-busy`；播放层先挂 **poster**（站点缩略图） | `weSwitchPressFeedback()`；`video-layer.js` 把 `poster` 提到 `src` **之前** |
+| B 首帧就绪（目标 ≤1.5 s） | 300 ms 未出帧 ⇒ 「缓冲中 x%（a/b MB · 约剩 N 秒）」覆盖在 poster 上；出帧后 150–250 ms 交叉淡入 | `weSwitchBufferHintText()` / `we-switch-hint` 覆盖层 / 进度读 `/downloads/list`；代理侧 `content-length` + `accept-ranges: bytes` + `206` |
+| C 后台下到本地 | 感知不到；队列继续下 | 下载完成后把 `/folia/local-media/<job>` 装进**不在屏上的池元素**，预热到首帧 |
+| D 切到本地 | 「已缓存」角标；之后同一张 200 ms 级 | 对齐 `currentTime`（差 > 0.3 s 放弃）后交叉淡入；`inventory.localReady` 复用 |
+
+**终态保证**（与上面四条并列的硬约束）：任何类型（video / scene / web / image / 本机文件）
+点完都必须收敛到 `playing | failed`。三条兜底：
+`weSwitchPublish()` 必排结算 → 2.5 s「没有任何播放器被装上」自收口（`no-media-branch`）→
+5 s 硬上限（`busy-timeout`）。**last-click-wins**：新点击先把上一次收口成 `superseded`，不再吞。
+
+判据：`test/verify-first-frame.mjs`（35 条，含 200 KB/s 慢速上游的首帧字节时限、
+五类连点、负对照）。

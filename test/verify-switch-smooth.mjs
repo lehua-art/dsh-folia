@@ -333,20 +333,40 @@ function sectionStructure() {
     .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
   check('D6 onClick 里不再用 weSwitchQueuePick 提前 return（P0：那会吞掉每一次点击）',
     !/weSwitchQueuePick\(w\.id/.test(qpCode));
-  check('D7 onClick 的连点判据是 weSwitchBusy()，且之后一定会调 applySelection', (() => {
-    // 两个卡片渲染器（列表行 + 卡片档）都该是同一套顺序：busy → begin → apply。
+  // D7 结构判据（4.23.12 反转）：onClick **不许**再"busy 就 return"。
+  //
+  // 为什么把判据反过来：4.23.9 那版把 `if (weSwitchBusy()) { toast; return; }` 当成连点防护，
+  // 前提是"上一次切换必然很快结算"。实测否证了这个前提（慢视频首帧 6–9 秒），于是这几秒里
+  // 用户点「本机」里的场景壁纸会被整片吞掉 —— 表现就是"点了没反应"。
+  // 现在的口径是 **last-click-wins**：onClick 一定走到 `weSwitchBegin()` + `applySelection()`，
+  // 由 `weSwitchBegin()` 把上一次未结算的切换收口（reason='superseded'）。
+  check('D7 onClick 不再因 weSwitchBusy() 提前 return，且一定调 applySelection（last-click-wins）', (() => {
     const sites = [];
     let at = qpCode.indexOf('onClick: (ev) => {');
     while (at >= 0) { sites.push(at); at = qpCode.indexOf('onClick: (ev) => {', at + 1); }
     if (!sites.length) return false;
-    return sites.some((start) => {
-      const body = qpCode.slice(start, start + 1200);
-      const busyAt = body.indexOf('weSwitchBusy()');
-      const beginAt2 = body.indexOf('weSwitchBegin(ev');
-      const applyAt2 = body.indexOf('applySelection(w.id');
-      return busyAt >= 0 && beginAt2 > busyAt && applyAt2 > beginAt2;
+    const okSites = sites.filter((start) => {
+      const body = qpCode.slice(start, start + 900);
+      const endAt = body.indexOf('onKeyDown');
+      const seg = endAt > 0 ? body.slice(0, endAt) : body;
+      const beginAt2 = seg.indexOf('weSwitchBegin(ev');
+      const applyAt2 = seg.indexOf('applySelection(w.id');
+      // 负对照的形态：seg 里出现 `weSwitchBusy()` 当**守卫**（后面紧跟 return）。
+      const busyGuard = /weSwitchBusy\(\)\s*\)\s*\{[\s\S]{0,160}?return;/.test(seg);
+      return !busyGuard && beginAt2 >= 0 && applyAt2 > beginAt2;
     });
+    return okSites.length === sites.length && sites.length >= 2;
   })(), 'sites=' + (qpCode.match(/onClick: \(ev\) => \{/g) || []).length);
+  // D7b 负对照的**另一半**：`weSwitchBegin` 自己必须能收口上一次（superseded）。
+  const vsCode = read('../src/video-switch.js');
+  check('D7b weSwitchBegin 内建 supersede（上一次未结算 ⇒ 收口后再开新的）',
+    /function weSwitchBegin\(/.test(vsCode)
+    && /weSwitchFail\("superseded"\)/.test(vsCode)
+    && vsCode.indexOf('weSwitchFail("superseded")') > vsCode.indexOf('function weSwitchBegin(')
+    && vsCode.indexOf('weSwitchFail("superseded")') < vsCode.indexOf('function weSwitchBegin(') + 1500);
+  // D7c 硬上限收短到 5s（15s 会让一次漏结算变成十几秒的沉默）。
+  check('D7c 状态机硬上限 = 5s（reason=busy-timeout）',
+    /const WE_SWITCH_HARD_MS = 5000;/.test(vsCode) && /weSwitchFail\("busy-timeout"\)/.test(vsCode));
   check('D8 按下只做视觉（onPointerDown 用 weSwitchPressFeedback，不建上下文）',
     (qpCode.match(/onPointerDown: \(ev\) => \{[\s\S]{0,120}weSwitchPressFeedback\(ev/g) || []).length >= 2);
   // D5 宿主侧度量端点存在。

@@ -478,6 +478,12 @@ function applySelection(id, opts) {
     // themeFollowRelease）。两条清空路径（用户「清除」与皮肤让路）都汇到这里。
     themeFollowRelease();
     emit();
+    // **终态保证**（4.23.12）：清除壁纸也是一次"切换"，不结算就会把状态机永远挂在
+    // "切换中" ⇒ 之后点任何卡片都被连点防护吞掉。
+    // ⚠️ 位置在 `emit()` **之后**：`test/verify-theme-follow.mjs` 用 `/themeFollowRelease\(\);\r?\n\s*emit\(\);/`
+    // 钉着"放回主题 → 再重渲染"这条顺序（顺序反了主题会先画旧色再被覆盖）。结算与它无关，
+    // 排后面既保住那条判据，也保住终态保证。
+    try { if (typeof weSwitchSettleAs === "function") weSwitchSettleAs("cleared"); } catch { /* 度量是增强 */ }
     return;
   }
   const w = selection.inventory.wallpapers.find((x) => x.id === selection.id);
@@ -505,6 +511,9 @@ function applySelection(id, opts) {
     abortTranscodeUpgrade();
     syncSceneAudio(selection);
     syncRotationTimer();
+    // **终态保证**（4.23.12）：被过滤档排除 / 条目消失 —— 这也是一次"切换"，同样必须结算。
+    // 少这一行，"切换中"就永久为真（用户看到的是"点哪都没反应"）。
+    try { if (typeof weSwitchSettleAs === "function") weSwitchSettleAs(w ? "blocked" : "missing"); } catch { /* 度量是增强 */ }
     emit();
     return;
   }
@@ -593,12 +602,18 @@ function applySelection(id, opts) {
   refreshMediaInfo(true);
   syncRotationTimer();
   emit();
-  // ── 切换手感的收口（4.23.9 P0 修复）──────────────────────────────────────
+  // ── 切换手感的收口（4.23.9 P0 修复，4.23.12 补齐类型）──────────────────────
   // **非视频**壁纸没有 `weSwitchPlayed()` 那条腿（它挂在 `<video>` 的首帧事件上），
   // 不在这里结算的话，"有一个切换在飞"会一直为真 ⇒ 之后每一次点击都被连点防护
   // 判成"正在切换，请稍候"而**什么都不做**（用户实测：点了完全没反应）。
-  // 视频档仍由 live-layer 的首帧结算，并有 15s 硬上限兜底。
-  try { if (selection.type !== "video") weSwitchSettle(); } catch { /* 度量是增强 */ }
+  // 视频档由 `weSwitchPublish()`（层上屏）结算，并有 5s 硬上限兜底；这里补上**类型**，
+  // 让 `/folia/diag/switch-stats` 能按 video/scene/web/image 分簇看出是哪一类卡住。
+  try {
+    if (selection.type !== "video") {
+      if (typeof weSwitchSettleAs === "function") weSwitchSettleAs(selection.type || "image");
+      else weSwitchSettle();
+    }
+  } catch { /* 度量是增强 */ }
   // 主题随壁纸（无开关）：本张壁纸的判决在**媒体层已经建好之后**才落一次（作者配色缺席时
   // 它会自己去采样预览图：异步、带代次校验，取不到就保持当前主题不动）。
   // 为什么必须落在 emit() 之后：写作入口在宿主侧是同步的一整轮 —— 重写全量别名令牌 +

@@ -71,6 +71,14 @@
         {
           "kind": "guard",
           "npm": null,
+          "file": "test/verify-first-frame.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
           "file": "test/verify-filters-dynamic.mjs",
           "args": [],
           "tier": "hard",
@@ -1093,6 +1101,14 @@
           "kind": "guard",
           "npm": null,
           "file": "test/verify-switch-smooth.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-first-frame.mjs",
           "args": [],
           "tier": "hard",
           "probe": false

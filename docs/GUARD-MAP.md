@@ -5,7 +5,7 @@
 > 口径：只统计守卫**代码**里真正碰到的模块（先剥注释），并区分"直接读源文件"与"隔着产物 `lib/client.js`"。
 > 写法：字面量路径 / `join(...)` 拼接 / 唯一 basename / 产物配方 / **前缀族读法** `scopeFiles|scopeText(<前缀>)` / **经共享族助手读**（`import { panelText } from './tools/src-scope.mjs'` + 真调用；族口径封在那个库里，见 DEV-GUIDE §4.6「同时是守卫的库」）/ **真源定位读**（`locate('符号')` / `locateFile('文件名')`，`test/tools/source-locator.mjs`：符号唯一声明在哪就是读了哪个模块）。
 
-模块面 197 个 · 守卫 127 个
+模块面 197 个 · 守卫 128 个
 
 ## 守卫 → 模块
 
@@ -50,6 +50,7 @@
 | `verify-extra-glass.mjs` | `lib/settings-schema.js` `src/client.js` `src/effects.js` `src/glass-extra.js` `src/glass-panel.js` `src/quick-panel.js` | ✅ |
 | `verify-features.mjs` | `lib/features.js` `lib/routes/boot.js` `lib/routes/inventory.js` `lib/routes/pets.js` `src/client.js` `src/features.js` `src/pet-layer.js` `src/quick-panel.js` | ✅ |
 | `verify-filters-dynamic.mjs` | `lib/routes/inventory.js` `src/client.js` `src/tag-facets.js` |  |
+| `verify-first-frame.mjs` | `lib/routes/diag.js` `lib/routes/site-media.js` `src/media-prep.js` `src/quick-panel.js` `src/video-layer.js` `src/video-switch.js` |  |
 | `verify-fontset.mjs` | `lib/components/fonts/src/appearance-font-section.js` `lib/components/fonts/src/fontset-editor.js` `lib/index.js` `lib/settings-schema.js` `src/client.js` `src/extension-registry.js` `src/font/apply.js` `src/font/color-roles.js` `src/font/components.js` `src/font/typography.js` `src/fontset-store.js` `src/glass-panel.js` `src/media-prep.js` `src/module-reset.js` `src/panel-tabs-advanced.js` `src/panel-tabs-appearance.js` `src/panel-tabs-boot.js` `src/panel-tabs-effects.js` `src/panel-tabs-mascot.js` `src/panel-tabs-pets.js` `src/panel-tabs-skins.js` `src/panel-tabs-wallpaper.js` `src/panel-tabs.js` `src/picker-modal.js` `src/picker-props-panel.js` `src/section-head.js` `src/styles-base.js` `src/styles-chrome.js` `src/styles-ext.js` `src/styles-panel.js` `src/styles-quick.js` `src/styles-settings.js` `src/styles-shell.js` `src/styles-sidebar.js` `src/styles.js` `src/system-fonts.js` `src/we-cond.js` | ✅ |
 | `verify-glass-compat.mjs` | `lib/settings-schema.js` `src/glass-panel.js` |  |
 | `verify-glass-compositing.mjs` | — | ✅ |
@@ -220,7 +221,7 @@
 | `lib/routes/boot.js` | 2 | `verify-downloads` `verify-features` |
 | `lib/routes/cache-dir.js` | 1 | `verify-cache-dir` |
 | `lib/routes/cache.js` | 1 | `verify-cache-manager` |
-| `lib/routes/diag.js` | 3 | `verify-logging` `verify-scene-live` `verify-switch-smooth` |
+| `lib/routes/diag.js` | 4 | `verify-first-frame` `verify-logging` `verify-scene-live` `verify-switch-smooth` |
 | `lib/routes/downloads.js` | 4 | `verify-download-chain` `verify-downloads` `verify-install-flow` `verify-variants` |
 | `lib/routes/inventory.js` | 7 | `verify-avatar-interval-and-rotation` `verify-component-visibility` `verify-downloads` `verify-features` `verify-filters-dynamic` `verify-route-index` `verify-variants` |
 | `lib/routes/kernel.js` | 1 | `verify-panel-defensive` |
@@ -236,7 +237,7 @@
 | `lib/routes/scene-media.js` | 1 | `verify-scene` |
 | `lib/routes/scene-serve.js` | 2 | `verify-logging` `verify-scene-live` |
 | `lib/routes/settings.js` | 2 | `verify-scene` `verify-settings-namespaces` |
-| `lib/routes/site-media.js` | 2 | `verify-downloads` `verify-site-media` |
+| `lib/routes/site-media.js` | 3 | `verify-downloads` `verify-first-frame` `verify-site-media` |
 | `lib/routes/site-thumb.js` | 0 | **（无）** |
 | `lib/routes/skins.js` | 5 | `verify-download-chain` `verify-downloads` `verify-install-flow` `verify-no-local-paths` `verify-panel-defensive` |
 | `lib/routes/upload.js` | 2 | `verify-body-caps` `verify-package-files` |
@@ -301,7 +302,7 @@
 | `src/live-layer-watch.js` | 6 | `verify-client` `verify-glass-surfaces` `verify-logging` `verify-occlusion-client` `verify-scene-live` `verify-theme-follow` |
 | `src/live-layer.js` | 6 | `verify-client` `verify-glass-surfaces` `verify-logging` `verify-occlusion-client` `verify-scene-live` `verify-theme-follow` |
 | `src/local-first.js` | 4 | `verify-download-chain` `verify-downloads` `verify-install-flow` `verify-variants` |
-| `src/media-prep.js` | 6 | `verify-client` `verify-downloads` `verify-fontset` `verify-scene-live` `verify-theme-follow` `verify-transcode-state` |
+| `src/media-prep.js` | 7 | `verify-client` `verify-downloads` `verify-first-frame` `verify-fontset` `verify-scene-live` `verify-theme-follow` `verify-transcode-state` |
 | `src/module-reset.js` | 2 | `verify-fontset` `verify-scene-live` |
 | `src/nav-icon.js` | 2 | `verify-client` `verify-i18n` |
 | `src/occlusion.js` | 1 | `verify-occlusion-client` |
@@ -320,7 +321,7 @@
 | `src/picker-model.js` | 1 | `verify-picker-model` |
 | `src/picker-props-panel.js` | 2 | `verify-client` `verify-fontset` |
 | `src/preset-store.js` | 2 | `verify-client` `verify-presets` |
-| `src/quick-panel.js` | 12 | `e2e-web-media-origin` `verify-client` `verify-downloads` `verify-extra-glass` `verify-features` `verify-i18n` `verify-panel-defensive` `verify-presets` `verify-scene-live` `verify-switch-smooth` `verify-system-fonts` `verify-variants` |
+| `src/quick-panel.js` | 13 | `e2e-web-media-origin` `verify-client` `verify-downloads` `verify-extra-glass` `verify-features` `verify-first-frame` `verify-i18n` `verify-panel-defensive` `verify-presets` `verify-scene-live` `verify-switch-smooth` `verify-system-fonts` `verify-variants` |
 | `src/section-head.js` | 2 | `verify-fontset` `verify-scene-live` |
 | `src/sidebar-right.js` | 4 | `verify-i18n` `verify-pet-package` `verify-pet-sidebar-rebound` `verify-scene-live` |
 | `src/skin-compat.js` | 1 | `verify-skin-center-bundle` |
@@ -336,7 +337,7 @@
 | `src/system-fonts.js` | 4 | `verify-client` `verify-fontset` `verify-scene-live` `verify-system-fonts` |
 | `src/tag-facets.js` | 1 | `verify-filters-dynamic` |
 | `src/theme-follow.js` | 2 | `verify-client` `verify-theme-follow` |
-| `src/video-layer.js` | 5 | `verify-avatar-interval-and-rotation` `verify-client` `verify-scene-live` `verify-switch-smooth` `verify-transcode-state` |
-| `src/video-switch.js` | 1 | `verify-switch-smooth` |
+| `src/video-layer.js` | 6 | `verify-avatar-interval-and-rotation` `verify-client` `verify-first-frame` `verify-scene-live` `verify-switch-smooth` `verify-transcode-state` |
+| `src/video-switch.js` | 2 | `verify-first-frame` `verify-switch-smooth` |
 | `src/we-base.js` | 1 | `verify-scene-live` |
 | `src/we-cond.js` | 3 | `verify-client` `verify-fontset` `verify-scene-live` |

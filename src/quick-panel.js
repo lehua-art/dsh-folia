@@ -296,13 +296,10 @@
         try { warmVideoForPointer(ev, true); } catch { /* 预热是增强 */ }
       },
       onClick: (ev) => {
-        // 连点防护（G7）：**只有"切换真的在飞"时**才忽略这一次并当面说明。
-        // ⚠️ P0 教训：判据必须是 `weSwitchBusy()`（有一个已启动、未结算的切换），
-        //    **不能**用"ptrdown 刚按下"当判据 —— 那会让每一次正常点击都被吞掉。
-        if (weSwitchBusy()) {
-          try { lfSay(weT("正在切换，请稍候"), true); } catch { /* ignore */ }
-          return;
-        }
+        // 连点防护（G7）在 4.23.12 改成了 **last-click-wins**：不再"忽略这一次"，
+        // 而是让 `weSwitchBegin()` 收口上一次（记 superseded）后立刻开始新的。
+        // 旧写法 `if (weSwitchBusy()) { toast; return; }` 是用户实测"点了没反应"的直接来源：
+        // 慢视频的首帧要 6–9 秒，这段时间里点「本机」里的场景壁纸会被整片吞掉。
         // 状态机与 applySelection 同生共死：先建上下文（拿 pressed/计时），再真正落地。
         try { weSwitchBegin(ev && ev.currentTarget); } catch { /* 反馈是增强 */ }
         applySelection(w.id, { fromManual: true });
@@ -468,10 +465,8 @@
         try { warmVideoForPointer(ev, true); } catch { /* 预热是增强 */ }
       },
       onClick: (ev) => {
-        if (weSwitchBusy()) {
-          try { lfSay(weT("正在切换，请稍候"), true); } catch { /* ignore */ }
-          return;
-        }
+        // **last-click-wins**（4.23.12，P0）：这里不再有 `if (weSwitchBusy()) return;`。
+        // `weSwitchBegin()` 会把上一次未结算的切换**收口**（记 superseded）再开新的一轮。
         try { weSwitchBegin(ev && ev.currentTarget); } catch { /* 反馈是增强 */ }
         applySelection(w.id, { fromManual: true });
       },
