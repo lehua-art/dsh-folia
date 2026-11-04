@@ -634,6 +634,38 @@ const WE_I18N_EN_PANEL = {
   "清理失败：{error}": "Cleanup failed: {error}",
   "已清理 {name}：释放 {size}（{n} 个文件）": "Cleared {name}: released {size} ({n} files)",
   "已清理 {name}：释放 {size}（{n} 个文件）；{failed} 个文件被占用，重启 DSH 后彻底生效": "Cleared {name}: released {size} ({n} files); {failed} file(s) in use will be removed after restarting DSH",
+
+  // ── 4.23.15「本地副本自愈」（播放失败 → 验内容 → 重下 / 换档 / 转码）───────────────
+  // 这三句是**给用户看的结论**，不是日志：它们回答"我刚点的那张为什么没出来、现在在干什么"。
+  "文件已损坏，已重新下载": "The local file was corrupted — re-downloading it now",
+  "已切换到 1080p（原画超出本机解码上限）": "Switched to 1080p (the original exceeds this machine's decode limit)",
+  "已切换到 30fps 副本（原画 60fps 超出本机解码能力，分辨率不变）": "Switched to a 30fps copy (the 60fps original exceeds this machine's decode capability; resolution unchanged)",
+  "正在生成可播放副本…": "Preparing a playable copy…",
+  "本机不支持该编码（可换一张跳过此壁纸）": "This machine cannot decode that codec (pick another wallpaper to skip it)",
+  "该壁纸分辨率/编码超出本机解码能力（可换一张跳过此壁纸）": "This wallpaper's resolution/codec exceeds this machine's decoding capability (pick another one to skip it)",
+  "重新获取失败（可稍后再点一次这张）": "Re-fetch failed (click this wallpaper again in a moment)",
+  "转码超时（可稍后再点一次这张，宿主会接着上次的进度）": "Transcoding timed out (click this wallpaper again later; the host resumes from its last progress)",
+  "{text} · {label}": "{text} · {label}",
+  // ── 4.23.15「本地媒体自检」读数与按钮（系统 → 缓存管理）────────────────────────
+  "损坏文件": "Corrupted files",
+  "个（已清理 {cleaned} / 待重下 {pending}）": "(cleaned {cleaned} / pending re-download {pending})",
+  "未校验（进本页签时自动读一次）": "Not checked yet (read automatically when you open this tab)",
+  "重新读取校验账本（只读，不触发校验）": "Re-read the verification ledger (read-only, does not start a check)",
+  "校验中…": "Checking…",
+  "校验并修复本地媒体": "Verify and repair local media",
+  "逐个校验已下载的媒体文件（≤20MB 比 sha256，大文件比长度与 mp4 结构）；发现坏文件就删掉并排回下载队列": "Verify every downloaded media file one by one (sha256 for files ≤20MB, length + MP4 structure for larger ones); corrupted files are deleted and queued for re-download",
+  "已校验 {n} 个文件：发现 {bad} 个损坏，已清理并排回下载队列": "Checked {n} file(s): found {bad} corrupted, cleaned up and re-queued for download",
+  "已校验 {n} 个文件：没有发现损坏": "Checked {n} file(s): nothing corrupted",
+  "校验失败：{error}": "Verification failed: {error}",
+  // ── 4.23.15「已按解码上限选 1080p」（卡片小标）──────────────────────────────
+  "已按解码上限选 1080p": "1080p chosen for decode limit",
+  "解码上限 · 1080p": "Decode limit · 1080p",
+  "已按解码上限选 1080p：原画 {w}×{h} 超出本机解码能力（播放器解不出来），改播 1080p 变体": "1080p chosen because of the decode limit: the original is {w}×{h}, beyond this machine's decoding capability (the player cannot decode it), so the 1080p variant is used",
+  // ── 4.23.15「转码进度 / 静态帧兜底」（用户最终目标：最终必须能上屏）───────────────
+  "正在生成本机可播放副本 {percent}%": "Preparing a playable copy on this machine… {percent}%",
+  "正在生成本机可播放副本 {percent}%（约剩 {eta} 秒）": "Preparing a playable copy on this machine… {percent}% (about {eta}s left)",
+  "已降级为静态壁纸（本机无法解码该视频）": "Fell back to a static wallpaper (this machine cannot decode the video)",
+  "无法显示这张壁纸（本机无法解码该视频，且没有可用的静态帧）": "Cannot display this wallpaper (this machine cannot decode the video and no static frame is available)",
 };
 
 export { WE_I18N_EN_PANEL };

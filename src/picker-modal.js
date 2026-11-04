@@ -180,6 +180,14 @@
     !sel.batchMode && !draft && CARD_TYPE_LABELS[w.type]
       && React.createElement("span", { className: "we-picker__card-type" }, CARD_TYPE_LABELS[w.type]),
     React.createElement("span", { className: "we-picker__card-title" }, w.title),
+    // 4.23.15：**已按解码上限选 1080p**。真实案例「原神 绫华」原画 5916×2530 ——
+    // Chromium 根本解不出来。选档阶段避开它之后必须让用户**看得见**为什么下的是 1080p，
+    // 否则他只会以为"画质被偷偷降了"。
+    w.variantReason === "decode-limit"
+      && React.createElement("span", {
+        className: "we-picker__card-badge",
+        title: weT("已按解码上限选 1080p：原画 {w}×{h} 超出本机解码能力（播放器解不出来），改播 1080p 变体", { w: w.width || "?", h: w.height || "?" }),
+      }, weT("已按解码上限选 1080p")),
     w.type === "scene" && React.createElement("span", { className: "we-picker__card-badge" }, w.sceneLive ? weT("实时渲染") : weT("静态帧")),
     w.type === "web" && React.createElement("span", { className: "we-picker__card-badge" }, w.webLive ? weT("实时渲染") : weT("兼容模式")),
     (draft || sel.batchMode)

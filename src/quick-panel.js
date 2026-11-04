@@ -329,6 +329,13 @@
             title: weT("已在本地缓存（原画或 1080p 任一档已落地），点它不必等网络"),
           }, weT("已缓存"))
         : null,
+      // 4.23.15：**已按解码上限选 1080p**（与库视图同一句话、同一个判据源 `variantReason`）。
+      w.variantReason === "decode-limit"
+        ? React.createElement("span", {
+            className: "we-qp__item-cached",
+            title: weT("已按解码上限选 1080p：原画 {w}×{h} 超出本机解码能力（播放器解不出来），改播 1080p 变体", { w: w.width || "?", h: w.height || "?" }),
+          }, weT("解码上限 · 1080p"))
+        : null,
       w.id === sel.id
         ? React.createElement("span", { className: "we-qp__item-badge" }, weT("当前"))
         : React.createElement("span", { className: "we-qp__item-type" }, CARD_TYPE_LABELS[w.type] || weT("壁纸")),

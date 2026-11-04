@@ -35,6 +35,9 @@
           // 播放失败原因（#84）: 浏览器解不了的编码 / 解码失败等 —— 给出可读原因，
           // 配合下面的「播放」按钮重试（不是静默空白）。
           sel.videoError && React.createElement("div", { className: "we-picker__current-error" }, sel.videoError),
+          // 4.23.15：**自愈/本地优先**的信息类提示（"已自动切换 1080p""正在下载到本地 45%"…）。
+          // 与上面那条分开：那条是"红了"，这条是"正在处理/已经换好了"。
+          sel.mediaNote && React.createElement("div", { className: "we-picker__hint" }, sel.mediaNote),
           // 选择被过滤条件排除（#84）: 明确指出是哪一项过滤挡住了、怎么恢复
           sel.blockedNote && React.createElement("div", { className: "we-picker__current-error" }, sel.blockedNote),
           // 实时渲染失败原因（自动回退到旧链时显示）：让「为什么黑」可见 ——

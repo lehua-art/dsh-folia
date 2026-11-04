@@ -171,6 +171,11 @@ function lfAddItem(item, url, priority) {
     screenHeight: lfScreenHeight(),
   };
   if (Array.isArray(it.variants) && it.variants.length) entry.variants = it.variants;
+  // 4.23.15：原画的宽/高/帧率也带上 —— 宿主选档要按**解码上限**判（4K@60 与 5916×2530
+  // 都是"链路再快也解不出来"的那一类）。缺就不发，宿主按兜底口径判。
+  if (Number(it.width) > 0) entry.width = Number(it.width);
+  if (Number(it.height) > 0) entry.height = Number(it.height);
+  if (Number(it.fps) > 0) entry.fps = Number(it.fps);
   // 4.23.7：站点清单给的 sha256（部分条目为空）随条目带给队列 —— 下载完成后按它验内容。
   // 空串不发（宿主侧同样只认 64 位十六进制），免得把"没给"写成"给了个空的"。
   const sha = String(it.sha256 || "").trim().toLowerCase();
@@ -1052,6 +1057,283 @@ async function dlInstallClick(o) {
     settled = true;
     if (timer !== null) { try { clearT(timer); } catch { /* ignore */ } }
     try { if (typeof restore === "function") restore(); } catch { /* ignore */ }
+  }
+}
+
+/* ── 播放失败自愈（4.23.15）：本地副本坏了吗？还是本机解不了？ ──────────────────
+ *
+ * 真实故障（另一台机器）：壁纸显示「视频解码失败（文件可能已损坏）」/「浏览器无法解码这段
+ * 视频」，而面板同时说"缓存命中 4/5"。播放路径直接读本地文件、**没有任何自检** ——
+ * 4.23.6 之前 ranged 静默损坏遗留的坏成品会永久留在 library 里，每次点都是那句错误。
+ *
+ * 这一族只做客户端这一半：**判"要不要惊动宿主"** + **把宿主结论翻成人话**。
+ * 真正的取证（sha256 / 结构 / 重下 / 换档 / 转码）在宿主 `lib/media-selfheal.js`，
+ * 因为浏览器没有磁盘、也没有站点清单。
+ *
+ * 为什么客户端能判断"要不要惊动宿主"：只有**本地副本**才值得验。远端字节我们既不能证明
+ * 坏、也不能替站点重下（那只会让用户白等一次同样的解码失败）。
+ */
+
+/** 每条壁纸最多自愈几次。超过就只提示 —— 防"每次 error 都重下"的死循环。 */
+const LF_HEAL_MAX_TRIES = 2;
+/** 轮询救援产物/重下的间隔与上限（转码是几十秒级的，给 3 分钟）。 */
+const LF_HEAL_POLL_MS = 1500;
+const LF_HEAL_POLL_MAX_MS = 3 * 60 * 1000;
+
+/** 每个壁纸 id 已经自愈过几次（会话内；刷新页面重新计数是合理的）。 */
+const LF_HEAL_TRIES = new Map();
+
+/** 自愈要用到的两个宿主动作：提示位（面板那一行）与"重挂播放"（把新地址装回 <video>）。 */
+const LF_HEAL_HOOKS = { note: null, mount: null };
+
+/**
+ * client.js 注入：`note(text, ok)` 写面板提示；`mount(url)` 把播放器重挂到新地址（返回是否成功）。
+ *
+ * 为什么是注入而不是直接调：`local-first.js` 是**内联进同一个工厂作用域**的片段，
+ * 但"提示位"与"哪个 <video> 在屏上"都只有 `src/client.js` 的正文知道；
+ * 硬编码调用会把这条依赖变成隐式的循环（client.js ← local-first.js ← client.js）。
+ */
+function setSelfHealHooks(note, mount) {
+  LF_HEAL_HOOKS.note = typeof note === "function" ? note : null;
+  LF_HEAL_HOOKS.mount = typeof mount === "function" ? mount : null;
+}
+
+function lfHealSay(text, ok) {
+  try { if (LF_HEAL_HOOKS.note) LF_HEAL_HOOKS.note(text, ok !== false); } catch { /* 提示失败不影响自愈 */ }
+}
+
+/**
+ * 这个播放地址是不是**本地副本**（`/folia/local-media/<id>` 或 library 目录直出）。
+ *
+ * 只认本地：远端 URL 的自愈没有意义（见上面那段"为什么客户端能判断"）。
+ */
+function lfIsLocalMediaUrl(url) {
+  const s = String(url || "");
+  if (!s) return false;
+  if (/\/folia\/local-media\//.test(s)) return true;
+  // 直出形态（旧宿主 / 排障时手工拼的地址）：`.../library/<kind>/<hash>.mp4`
+  return /\/library\/[^/]+\/[0-9a-f]{16,}\./i.test(s);
+}
+
+/**
+ * **要不要惊动宿主**（纯函数；判据见 `test/verify-media-selfheal.mjs`）。
+ *
+ * 只处理两件事都成立的那一格：① 播的是**本地副本**；② 错误码是**解码/源不支持**
+ * （3 = DECODE，4 = SRC_NOT_SUPPORTED）。网络类（2 NETWORK）与中断类（1 ABORTED）
+ * **不走自愈** —— 它们是"这一下没传完"，重下只会把一份好文件换掉。
+ *
+ * 返回 `'heal'`（去验）/ `'skip'`（不动）。
+ * @param {{ isVideo?: boolean, url?: string, code?: number, tries?: number, maxTries?: number }} [inp]
+ * @returns {'heal' | 'skip'}
+ */
+function dlHealPlan(inp) {
+  const o = inp || {};
+  if (o.isVideo === false) return "skip";
+  if (!lfIsLocalMediaUrl(o.url)) return "skip";
+  const code = Number(o.code) || 0;
+  if (code !== 3 && code !== 4) return "skip";
+  const max = Number(o.maxTries) > 0 ? Number(o.maxTries) : LF_HEAL_MAX_TRIES;
+  if ((Number(o.tries) || 0) >= max) return "skip";
+  return "heal";
+}
+
+/**
+ * 宿主的处置结论 → 一句**具体**的人话（纯函数）。
+ *
+ * 为什么每个结论一句不同的话：用户看到的三种情况看起来一模一样（都停在首帧/报错），
+ * 但该做的事完全不同 —— 「已重新下载」是等它，「已切换 1080p」是等它，「本机不支持该编码」
+ * 是**换一张**。用同一句"视频无法播放"会让用户反复点同一张。
+ *
+ * @param {string} verdict
+ * @returns {string}
+ */
+function dlHealNote(verdict) {
+  const v = String(verdict || "");
+  if (v === "corrupt") return weT("文件已损坏，已重新下载");
+  if (v === "variant") return weT("已切换到 1080p（原画超出本机解码上限）");
+  if (v === "transcoded") return weT("已切换到 1080p（原画超出本机解码上限）");
+  if (v === "transcoding") return weT("正在生成可播放副本…");
+  if (v === "undecodable") return weT("本机不支持该编码（可换一张跳过此壁纸）");
+  if (v === "undecodable-no-variant") return weT("该壁纸分辨率/编码超出本机解码能力（可换一张跳过此壁纸）");
+  return "";
+}
+
+/** 这个结论是不是"还在路上"（要轮询），还是已经到达终态。 */
+function dlHealPending(verdict) {
+  const v = String(verdict || "");
+  return v === "corrupt" || v === "variant" || v === "transcoding";
+}
+
+/**
+ * 转码进度 → 一句**带数字**的话（用户明确要求：「转码期间必须有可见进度，不许静默」）。
+ *
+ * 为什么必须有 percent：整片重编码是几十秒到几分钟级，而此刻屏上是黑的 ——
+ * **没有数字的等待与卡死没有区别**。eta 拿不到就只说百分比（不编数字）。
+ * 也绝不报 100%：最后那一下是 rename + 校验，说满了却还没出画会让人更不信。
+ *
+ * @param {{ percent?: number, eta?: number | null } | null} [progress]
+ * @returns {string}
+ */
+function dlHealProgressNote(progress) {
+  const pct = Math.max(0, Math.min(99, Math.round(Number(progress && progress.percent) || 0)));
+  const eta = Number(progress && progress.eta);
+  if (eta > 0 && isFinite(eta)) {
+    return weT("正在生成本机可播放副本 {percent}%（约剩 {eta} 秒）", { percent: pct, eta: Math.max(1, Math.round(eta)) });
+  }
+  return weT("正在生成本机可播放副本 {percent}%", { percent: pct });
+}
+
+/**
+ * **"这张壁纸最终怎么上屏"的最后一级**（纯函数）：转码也救不回来时，静态帧兜底。
+ *
+ * 需求原文（用户最终目标）：**任何一张壁纸，只要站点上有可用文件，最终都必须能上屏** ——
+ * 「只有连静态帧都没有，才允许显示无法显示」。所以这里是两级，不是一级：
+ *   `static-frame`    —— 有缩略图/首帧 ⇒ 拿它当静态壁纸（画面是那张图，能看见）
+ *   `cannot-display`  —— 连图都没有 ⇒ 这时才允许说"无法显示"
+ *   `''`              —— 这个结论不归它管（corrupt/variant/transcoded 都还有得救）
+ *
+ * @param {{ verdict?: string, hasPreview?: boolean }} [inp]
+ * @returns {'' | 'static-frame' | 'cannot-display'}
+ */
+function dlHealFallbackPlan(inp) {
+  const o = inp || {};
+  const v = String(o.verdict || "");
+  if (v !== "undecodable" && v !== "undecodable-no-variant") return "";
+  return o.hasPreview === true ? "static-frame" : "cannot-display";
+}
+
+/**
+ * 等一条 job 落地（**只回答"盘上有这份成品了吗"**）。
+ * 复用 `dlAwaitJob` 的轮询口径：done ⇒ true；failed/cancelled/消失 ⇒ false。
+ * @param {string} jobId
+ * @param {(n: number) => void} [onTick] 每次轮询回调（界面显示进度用）
+ * @returns {Promise<boolean>}
+ */
+async function lfAwaitHealJobP(jobId, onTick) {
+  const id = String(jobId || "");
+  if (!id) return false;
+  const startedAt = Date.now();
+  for (;;) {
+    if (Date.now() - startedAt > LF_HEAL_POLL_MAX_MS) return false;
+    let job = null;
+    try {
+      const resp = await apiJson("/downloads/list");
+      const jobs = (resp && resp.data && Array.isArray(resp.data.jobs)) ? resp.data.jobs
+        : (Array.isArray(resp && resp.jobs) ? resp.jobs : []);
+      job = jobs.find((j) => j && j.id === id) || null;
+    } catch { /* 网络抖动：下一拍再试 */ }
+    if (job) {
+      if (job.status === "done") return true;
+      if (job.status === "failed" || job.status === "cancelled") return false;
+      if (typeof onTick === "function") { try { onTick(Number(job.percent) || 0); } catch { /* ignore */ } }
+    }
+    await new Promise((r) => { const t = setTimeout(r, LF_HEAL_POLL_MS); try { if (t && t.unref) t.unref(); } catch { /* ignore */ } });
+  }
+}
+
+/**
+ * **播放失败自愈的客户端入口**（`<video>` 报 error → 这里）。
+ *
+ * 流程：判要不要去 → `POST /folia/local-heal` → 按结论：
+ *   corrupt / variant ⇒ 拿新 jobId 等它落地 ⇒ 重挂播放（同一张壁纸的下一次播就是好的）
+ *   transcoding      ⇒ 轮询同一个接口直到出片（宿主在后台转，重复调用会命中同一份在途任务）
+ *   transcoded       ⇒ 立刻重挂到 `?playable=1`
+ *   undecodable*     ⇒ 只提示（+ 建议换一张），不再重试
+ *
+ * 返回最终结论（供调用点写 `selection.videoError`）。**不抛**：自愈失败也只是一句提示，
+ * 绝不把"播放已经坏了"的现场升级成"连界面都炸了"。
+ *
+ * @param {{ id?: string, url?: string, code?: number, isVideo?: boolean,
+ *   originUrl?: string, sha256?: string, variants?: any[], base?: string,
+ *   title?: string, playing1080p?: boolean }} [fail]
+ * @returns {Promise<{ verdict: string, message: string, mounted: boolean }>}
+ */
+async function lfHealPlayback(fail) {
+  const f = fail || {};
+  const key = String(f.id || f.url || "");
+  const tried = Number(LF_HEAL_TRIES.get(key) || 0);
+  const plan = dlHealPlan({ isVideo: f.isVideo !== false, url: f.url, code: f.code, tries: tried });
+  if (plan === "skip") return { verdict: "skip", message: "", mounted: false };
+  LF_HEAL_TRIES.set(key, tried + 1);
+  const label = String(f.title || f.id || "");
+  const mount = LF_HEAL_HOOKS.mount;
+  /**
+   * 结论 + 这张壁纸的标题（一句整话，交给词表插值）。
+   * ⚠️ 不能写成 `text + "：" + label`：那会被 i18n 门禁判成"半句话"（模板/拼接），
+   * 而且英文语序里那个全角冒号本来就是错的。
+   */
+  const withLabel = (text) => (label ? weT("{text} · {label}", { text: String(text || ""), label }) : String(text || ""));
+  /** 把本体结论写成人话并试着重挂。 */
+  const finish = async (res) => {
+    const verdict = String((res && res.verdict) || "");
+    if (verdict === "transcoding") {
+      // 带数字的那一句（percent/eta 由宿主的 `transcodePlayableProgress` 给）。
+      lfHealSay(withLabel(dlHealProgressNote(res && res.progress)), true);
+      return { verdict, message: dlHealNote(verdict), mounted: false };
+    }
+    const message = dlHealNote(verdict);
+    if (verdict === "corrupt" || verdict === "variant") {
+      // 等它（单流重下 / 1080p 变体）落地，再重挂播放。
+      const ok = await lfAwaitHealJobP(res.jobId);
+      if (!ok) {
+        const t = weT("重新获取失败（可稍后再点一次这张）");
+        lfHealSay(t, false);
+        return { verdict: "failed", message: t, mounted: false };
+      }
+      const url = res.url || (res.jobId ? "/folia/local-media/" + encodeURIComponent(String(res.jobId)) : "");
+      const done = Boolean(url && mount && mount(url));
+      lfHealSay(withLabel(message), true);
+      return { verdict, message: (res && res.mode === "fps") ? weT("已切换到 30fps 副本（原画 60fps 超出本机解码能力，分辨率不变）") : message, mounted: done };
+    }
+    if (verdict === "transcoded") {
+      // 降帧档与缩分辨率档的文案不同（用户要能看懂"为什么降"）。
+      const msg = (res && res.mode === "fps")
+        ? weT("已切换到 30fps 副本（原画 60fps 超出本机解码能力，分辨率不变）")
+        : message;
+      const done = Boolean(res.url && mount && mount(res.url));
+      lfHealSay(withLabel(msg), true);
+      return { verdict, message: (res && res.mode === "fps") ? weT("已切换到 30fps 副本（原画 60fps 超出本机解码能力，分辨率不变）") : message, mounted: done };
+    }
+    lfHealSay(withLabel(message), false);
+    return { verdict: verdict || "error", message, mounted: false };
+  };
+  try {
+    let res = await apiPostJson("/local-heal", {
+      id: String(f.id || ""),
+      localUrl: String(f.url || ""),
+      originUrl: String(f.originUrl || ""),
+      sha256: String(f.sha256 || ""),
+      variants: Array.isArray(f.variants) ? f.variants : [],
+      base: String(f.base || ""),
+      title: label,
+      playing1080p: f.playing1080p === true,
+    }, { parse: "always" });
+    let doc = (res && res.data) || res || {};
+    let out = await finish(doc);
+    // 转码是几十秒级的：宿主先回 `transcoding`，这里按它给的间隔继续问同一个接口，
+    // 直到出片或超过上限。每次调用都命中宿主那份**在途**任务，不会重复起 ffmpeg。
+    let waited = 0;
+    while (out.verdict === "transcoding" && waited < LF_HEAL_POLL_MAX_MS) {
+      const step = Math.max(500, Number(doc && doc.retryAfterMs) || LF_HEAL_POLL_MS);
+      await new Promise((r) => { const t = setTimeout(r, step); try { if (t && t.unref) t.unref(); } catch { /* ignore */ } });
+      waited += step;
+      res = await apiPostJson("/local-heal", {
+        id: String(f.id || ""), localUrl: String(f.url || ""), sha256: String(f.sha256 || ""),
+        variants: Array.isArray(f.variants) ? f.variants : [], base: String(f.base || ""),
+        title: label, playing1080p: f.playing1080p === true,
+      }, { parse: "always" });
+      doc = (res && res.data) || res || {};
+      out = await finish(doc);
+    }
+    if (out.verdict === "transcoding") {
+      const t = weT("转码超时（可稍后再点一次这张，宿主会接着上次的进度）");
+      lfHealSay(t, false);
+      return { verdict: "timeout", message: t, mounted: false };
+    }
+    return out;
+  } catch (err) {
+    // 老宿主没有这条路由 / 网络问题：只说一句，播放器照旧留着那句原始错误。
+    return { verdict: "error", message: String((err && err.message) || err || ""), mounted: false };
   }
 }
 

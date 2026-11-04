@@ -265,6 +265,7 @@
    */
   function renderCacheManagerBlock(ctx) {
     const { sel, onClearCache, onClearCacheSkins, onRefreshCacheUsage, armedConfirm, onDisarmConfirm } = ctx;
+    const { onVerifyMedia, onRefreshMediaHealth } = ctx;
     const usage = sel && sel.cacheUsage;
     const items = (usage && Array.isArray(usage.items)) ? usage.items : [];
     const rowOf = (t) => items.find((x) => x && x.target === t) || null;
@@ -291,6 +292,14 @@
       );
     };
     const pendingSkins = String(armedConfirm || "") === "cache:skins";
+    // ── 4.23.15「本地媒体自检」读数：**损坏文件 N 个（已清理/待重下）** ──
+    // 为什么放在缓存区而不新开一节：用户是在"我的缓存怎么了"这个问题下看到它的；
+    // 而「系统」页签的节序列是 `verify-scene-live` 的硬锚，不能为一行统计新开一节。
+    const health = sel && sel.mediaHealth;
+    const bad = health ? Number(health.damaged) || 0 : 0;
+    const cleaned = health ? Number(health.cleaned) || 0 : 0;
+    const pending = health ? Number(health.pending) || 0 : 0;
+    const verifying = Boolean(sel && sel.mediaVerifyBusy);
     return React.createElement(React.Fragment, null,
       // ⚠️ 这一行**故意不用** `we-picker__section-label`：那会把「缓存管理」算成第八个"节"，
       // 改掉 `verify-scene-live` 的节序列锚（见上面"为什么放在同一个节里"）。
@@ -314,6 +323,22 @@
       line("skins-zip", weT("皮肤包")),
       line("skins", weT("已装皮肤")),
       line("electron", weT("Electron 缓存"), weT("需重启 DSH")),
+      // ── 本地媒体自检（4.23.15）──────────────────────────────────────────────
+      // 读数口径与宿主 `/folia/local-check` 逐字一致：`damaged` 是**累计发现**的坏文件，
+      // `cleaned` 是其中已删并排回下载队列的，`pending` 是还没修好的（还在队列里等重下）。
+      React.createElement("div", { className: "we-picker__row", key: "media-health" },
+        React.createElement("span", { className: "we-picker__hint we-picker__label" }, weT("损坏文件")),
+        React.createElement("span", { className: "we-picker__uploads-path" },
+          health
+            ? String(bad) + " " + weT("个（已清理 {cleaned} / 待重下 {pending}）", { cleaned, pending })
+            : weT("未校验（进本页签时自动读一次）")),
+        React.createElement("button", {
+          key: "media-health-refresh", type: "button", className: "we-picker__btn",
+          disabled: verifying,
+          title: weT("重新读取校验账本（只读，不触发校验）"),
+          onClick: () => { try { onRefreshMediaHealth(); } catch { /* ignore */ } },
+        }, weT("刷新")),
+      ),
       React.createElement("div", { className: "we-picker__row", key: "cache-mgr-actions" },
         btn("clear-library", weT("清空媒体"), ["library"], weT("删除已下载的壁纸 / 开机动画 / 桌宠（可重新下载）")),
         btn("clear-site-media", weT("清空站点媒体"), ["site-media"]),
@@ -339,7 +364,17 @@
         btn("clear-electron", weT("清空 Electron 缓存"), ["electron"], weT("清的是 Electron 自己的 Cache / GPUCache；占用中的文件请重启 DSH 后彻底生效")),
         btn("clear-all-but-skins", weT("一键清理（不含皮肤）"),
           ["library", "site-media", "skins-zip", "electron"], weT("清掉除「已装皮肤」以外的全部缓存")),
+        // 「校验并修复本地媒体」（4.23.15）= **启动自检的全量版**：逐条比 size / sha256 /
+        // mp4 结构，坏的删掉并排回下载队列。它不是"清理"（不清好文件），所以单独一颗。
+        React.createElement("button", {
+          key: "verify-media", type: "button", className: "we-picker__btn",
+          disabled: verifying,
+          title: weT("逐个校验已下载的媒体文件（≤20MB 比 sha256，大文件比长度与 mp4 结构）；发现坏文件就删掉并排回下载队列"),
+          onClick: () => { try { onVerifyMedia(); } catch { /* ignore */ } },
+        }, verifying ? weT("校验中…") : weT("校验并修复本地媒体")),
       ),
+      sel && sel.mediaVerifyNote
+        && React.createElement("div", { className: "we-picker__hint", key: "media-verify-note" }, sel.mediaVerifyNote),
       sel && sel.cacheNote
         && React.createElement("div", { className: "we-picker__hint", key: "cache-mgr-note" }, sel.cacheNote),
       sel && sel.cacheError

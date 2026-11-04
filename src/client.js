@@ -402,6 +402,14 @@ const selection = {
   cacheBusy: "",
   cacheNote: "",
   cacheError: "",
+  // 「本地媒体自检」（4.23.15，transient）：`GET /folia/local-check` 的账本
+  // （损坏 / 已清理 / 待重下 / 最近发现清单）、全量校验的在途标记、一次校验的结果一句话。
+  // 与 cacheUsage 同款：不落盘 —— 它是"这台机器此刻的体检读数"，重启后重测即可。
+  mediaHealth: null,
+  mediaVerifyBusy: "",
+  mediaVerifyNote: "",
+  // 本地优先/自愈的一句提示（信息类；失败类走 videoError 的红色行）。
+  mediaNote: "",
   // WE 官方资源路径编辑器（transient）：开态 + 草稿路径 + 上次错误。
   // 生效状态（目录/可用性）由 inventory 携带（host 是唯一真相）。
   editingWeAssetsDir: false,
@@ -1670,6 +1678,54 @@ function onCacheClearSkins() {
   clearCacheTargets(["skins"]);
 }
 
+/* ── 本地媒体自检（4.23.15）─────────────────────────────────────────────────
+ *
+ * 面板只做两件事：**把账本画出来**、**把"校验并修复"发过去**。判据与动作全在宿主
+ * （`lib/media-selfheal.js`）：客户端既没有磁盘也没有站点清单，任何"自己判一下"的写法
+ * 都会变成第二份会漂的实现。
+ */
+const MEDIA_HEALTH_URL = "/folia/local-check";
+const MEDIA_VERIFY_URL = "/folia/local-verify";
+
+/** 拉一次体检账本（只读：宿主不建目录、不改盘、不触发校验）。 */
+async function loadMediaHealth() {
+  try {
+    const res = await apiJson(MEDIA_HEALTH_URL);
+    const doc = (res && res.data) || res || null;
+    const health = doc && doc.health ? doc.health : null;
+    if (health) setTransient("mediaHealth", health);
+  } catch { /* 老宿主没有这条路由：面板就显示"未校验"，不报错 */ }
+}
+
+/**
+ * 「校验并修复本地媒体」＝ 第 2 步的**全量版**（同一条判据、同一段代码路径）。
+ * 完成后刷新账本与清单：坏文件已被删掉并排回下载队列 ⇒ 卡片上的「已缓存」角标会跟着变。
+ */
+async function verifyLocalMedia() {
+  if (selection.mediaVerifyBusy) return;
+  setTransient("mediaVerifyBusy", "verify");
+  setTransient("mediaVerifyNote", "");
+  emit();
+  try {
+    const res = await apiPostJson(MEDIA_VERIFY_URL, {}, { parse: "always" });
+    const d = (res && res.data) || {};
+    const checked = Number(d.checked) || 0;
+    const damaged = Number(d.damaged) || 0;
+    if (d && d.health) setTransient("mediaHealth", d.health);
+    setTransient("mediaVerifyNote", damaged
+      ? weT("已校验 {n} 个文件：发现 {bad} 个损坏，已清理并排回下载队列", { n: checked, bad: damaged })
+      : weT("已校验 {n} 个文件：没有发现损坏", { n: checked }));
+    // 坏文件被删 ⇒ inventory 的 localReady/local 会变，清单必须重拉（同一份结论处处一致）。
+    if (damaged) { try { await loadInventory(); } catch { /* 清单刷新失败不影响"已清理"这个事实 */ } }
+  } catch (err) {
+    setTransient("mediaVerifyNote", weT("校验失败：{error}", {
+      error: String((err && err.message) || err || ""),
+    }));
+  }
+  setTransient("mediaVerifyBusy", "");
+  emit();
+}
+
 const WE_ASSETS_DIR_URL = "/folia/we-assets-dir";
 
 // Set / clear the WE official-assets directory (host-persisted). Scene live
@@ -1956,6 +2012,197 @@ function syncVideoState(video) {
   setTransient("videoError", reason);
   emit();
 }
+/* ── 播放失败自愈（4.23.15）────────────────────────────────────────────────────
+ *
+ * 用户实测（另一台机器）：「视频解码失败（文件可能已损坏）」/「浏览器无法解码这段视频」，
+ * 而面板同时说"缓存命中 4/5"。播放路径直接读本地文件、**没有任何自检** —— 4.23.6 之前
+ * ranged 静默损坏遗留的坏成品会永久留在 library 里，每次点都是同一句错误。
+ *
+ * 这一层的职责只有三件（判据与动作都在宿主与 local-first.js，这里只接线）：
+ *   ① 认出"**在屏那个** <video> 报了**解码/源不支持**错误"（预热元素/探测元素不参与）；
+ *   ② 把当前壁纸的证据（id / 本地地址 / 站点 sha256 / 变体 / 是否 1080p）交给 `lfHealPlayback`；
+ *   ③ 提供 `mount(url)`：把修好的地址重挂到**在屏元素**上（同一张壁纸、同一个元素，
+ *      不重建解码器之外的任何东西 —— 换 src 就是一次新的资源选择）。
+ *
+ * 为什么必须"同一个元素重挂"而不是重新 applySelection：重建层会把整条切换四段式再跑一遍
+ *（淡入淡出、首帧预算、池领养），代价是数秒的黑屏；而此刻用户要的是"这张图赶紧出来"。
+ */
+/** 同一张壁纸只允许一条自愈在飞（`error` 事件会连发好几颗）。 */
+let selfHealInflightKey = "";
+
+/** 当前选择对应的 inventory 条目（站点条目带 sha256 / variants；本机条目没有也能用）。 */
+function selfHealItemOf(id) {
+  try {
+    const pools = [
+      selection.inventory && selection.inventory.wallpapers,
+      selection.inventory && selection.inventory.items,
+    ];
+    for (const pool of pools) {
+      if (!Array.isArray(pool)) continue;
+      const hit = pool.find((w) => w && w.id === id);
+      if (hit) return hit;
+    }
+  } catch { /* 清单形状意外：当作没有条目（宿主仍能按 job 自己判） */ }
+  return null;
+}
+
+/** 在屏的那一个 `<video>`（层内或池的可见元素）；都不是就 null。 */
+function onScreenVideo(node) {
+  const v = node || null;
+  if (!v) return null;
+  try {
+    const layer = document.getElementById(LAYER_ID);
+    if (layer && typeof layer.contains === "function" && layer.contains(v)) return v;
+  } catch { /* ignore */ }
+  try { if (typeof weSwitchVisibleEl !== "undefined" && weSwitchVisibleEl && weSwitchVisibleEl === v) return v; } catch { /* ignore */ }
+  return null;
+}
+
+/**
+ * `<video>` 报错 → 要不要自愈（并把证据交给 `lfHealPlayback`）。
+ * 幂等：同一 (id, 地址) 同时只有一条在飞；连续 error 不会连开多条重下。
+ */
+function maybeSelfHealVideo(video) {
+  const el = onScreenVideo(video);
+  if (!el) return;
+  const code = Number((el.error && el.error.code) || 0);
+  const srcUrl = String(el.currentSrc || el.src || selection.url || "");
+  const selUrl = String(selection.url || "");
+  // 只认**当前这张**的地址：池里可能留着上一张的 src（预热对手），那不是本次的故障。
+  const url = srcUrl || selUrl;
+  if (!url) return;
+  if (selUrl && srcUrl && srcUrl.indexOf(selUrl.split("?")[0]) < 0 && srcUrl.indexOf("/local-media/") < 0) return;
+  const id = String(selection.id || "");
+  const key = id + "|" + url;
+  if (selfHealInflightKey === key) return;
+  if (dlHealPlan({ isVideo: selection.type === "video", url, code, tries: 0 }) !== "heal") return;
+  const item = selfHealItemOf(id);
+  const variants = item && Array.isArray(item.variants) ? item.variants : [];
+  const sha256 = String((item && item.sha256) || "");
+  const playing1080p = Boolean(item && item.chosenVariant === "1080p");
+  selfHealInflightKey = key;
+  liveLog("media-selfheal", "code=" + code + " url=" + url + " ⇒ 交给宿主取证");
+  Promise.resolve()
+    .then(() => lfHealPlayback({
+      id, url, code, isVideo: selection.type === "video",
+      originUrl: String((item && item.media) || selection.originUrl || ""),
+      sha256, variants, title: String(selection.title || id),
+      playing1080p,
+    }))
+    .then((res) => {
+      if (res && res.mounted) { liveLog("media-selfheal", "已重挂播放：" + res.message); return; }
+      // 没挂上 ⇒ 走**最后一级**：静态帧兜底。需求原文是"只要站点上有可用文件，最终都必须能上屏"，
+      // 所以只有连一张静态图都没有时，才允许说"无法显示"。
+      const still = staticFallbackUrlOf();
+      const plan = dlHealFallbackPlan({ verdict: res && res.verdict, hasPreview: Boolean(still) });
+      if (plan === "static-frame" && mountStaticFrameFallback(still)) {
+        liveLog("media-selfheal", "静态帧兜底：" + still);
+        try {
+          setTransient("videoError", "");
+          setTransient("mediaNote", weT("已降级为静态壁纸（本机无法解码该视频）"));
+          emit();
+        } catch { /* ignore */ }
+        return;
+      }
+      if (plan === "cannot-display" || (plan === "static-frame" && !still)) {
+        try {
+          setTransient("videoError", weT("无法显示这张壁纸（本机无法解码该视频，且没有可用的静态帧）"));
+          emit();
+        } catch { /* ignore */ }
+        return;
+      }
+      if (res && res.message) { try { setTransient("videoError", res.message); emit(); } catch { /* ignore */ } }
+    })
+    .catch(() => { /* 自愈失败不改写原始错误 */ })
+    .then(() => { if (selfHealInflightKey === key) selfHealInflightKey = ""; });
+}
+
+/**
+ * **静态帧兜底**（4.23.15 的最后一级）：视频解不了时，把这张壁纸的缩略图/首帧当静态壁纸铺上去。
+ *
+ * 为什么必须有这一级（用户的最终目标："任何一张壁纸，只要站点上有可用文件，最终都必须能上屏"）：
+ * 站点的视频条目几乎都带 `thumbUrl` / 宿主抽的首帧（`/video-preview/…`）。一张能看的静态图
+ * 远好过一句"无法显示" —— 用户要的是**有壁纸**，不是"播放器没报错"。
+ *
+ * 实现：**不拆 `<video>`、不重建层**，只在同一层里追加一个 `.we-media` 的 `<img>`
+ *（绝对定位、与视频同一套 fit 规则，后插入的兄弟节点画在上面）。坏掉的视频元素本来就不出像素，
+ * 留着不碍事；拆它反而会把池的"谁在屏上"弄乱（那是 4.23.8 的账）。
+ *
+ * @param {string} url 静态帧地址（缩略图 / 首帧）
+ * @returns {boolean} true = 已经铺上去
+ */
+function mountStaticFrameFallback(url) {
+  const u = String(url || "");
+  if (!u) return false;
+  let layer;
+  try { layer = document.getElementById(LAYER_ID); } catch { layer = null; }
+  if (!layer) return false;
+  try {
+    const found = (typeof layer.querySelector === "function") ? layer.querySelector("img.we-media--static") : null;
+    let img = found;
+    if (!img) {
+      img = document.createElement("img");
+      img.className = "we-media we-media--static";
+      img.setAttribute("alt", "");
+      img.setAttribute("aria-hidden", "true");
+      layer.appendChild(img);
+    }
+    img.src = u;
+    img.dataset.weStatic = "1";
+    return true;
+  } catch { return false; }
+}
+
+/** 这张壁纸能用来兜底的静态图（首帧优先，其次站点缩略图）。取不到 ⇒ ""。 */
+function staticFallbackUrlOf() {
+  const item = selfHealItemOf(String(selection.id || ""));
+  const cands = [
+    selection.previewUrl,
+    item && item.preview,
+    item && item.thumbUrl,
+    selection.frameUrl,
+  ];
+  for (const c of cands) {
+    const s = String(c || "");
+    if (s) return s;
+  }
+  return "";
+}
+
+/**
+ * 把某个地址**重挂到在屏元素**上（自愈成功后调用）。返回 true = 已开始加载。
+ *
+ * 不变量：
+ *   · 只用**已确认可播**的地址（宿主回的 `?playable=1` 或新 job 的 `/local-media/<id>`）；
+ *   · 清掉上一轮的 `weTranscoded` 标记 —— 否则 `maybeUpgradeToTranscoded` 会以为"已经在抽帧版上"；
+ *   · 重挂前把面板那句错误清掉：新一轮要么成功（syncVideoState 自己会清），要么再报一次。
+ */
+function remountLayerVideo(url) {
+  const u = String(url || "");
+  if (!u) return false;
+  let el;
+  try { el = onScreenVideo(null) || (typeof weSwitchVisibleEl !== "undefined" ? weSwitchVisibleEl : null); } catch { el = null; }
+  if (!el) {
+    try {
+      const layer = document.getElementById(LAYER_ID);
+      el = layer && typeof layer.querySelector === "function" ? layer.querySelector("video") : null;
+    } catch { el = null; }
+  }
+  if (!el) return false;
+  try {
+    delete el.dataset.weTranscoded;
+    el.src = u;
+    if (typeof el.load === "function") el.load();
+    const p = el.play();
+    if (p && typeof p.catch === "function") p.catch(() => { /* 静音自动播放被拒：loadeddata 会再试 */ });
+  } catch { return false; }
+  try { el.__weUrl = u; } catch { /* ignore */ }
+  try { setTransient("videoError", ""); emit(); } catch { /* ignore */ }
+  // 新一轮允许再自愈一次（坏文件被换掉之后再失败，是"另一个问题"）。
+  selfHealInflightKey = "";
+  return true;
+}
+
 // 每个元素只挂一次状态监听（切壁纸会新建 <video>，故标记挂在元素上）。
 function watchVideoState(video) {
   if (!video || !video.dataset || video.dataset.weStateWatched === "1") return;
@@ -1963,6 +2210,9 @@ function watchVideoState(video) {
   for (const t of ["play", "playing", "pause", "ended", "error", "emptied"]) {
     try { video.addEventListener(t, () => syncVideoState(video)); } catch { /* ignore */ }
   }
+  // 4.23.15：**播放失败自愈**（本地副本坏了 / 原画超出本机解码上限）。
+  // 与 syncVideoState 并行挂：那一颗负责"把错误显示出来"，这一颗负责"把它修好"。
+  try { video.addEventListener("error", () => { maybeSelfHealVideo(video); }); } catch { /* ignore */ }
   // 「当前视频播完就换下一张」（issue #230 后续诉求）：轮播组选了 `trigger: 'videoEnd'`
   // 时，壁纸视频的 ended 就是轮换信号 —— 与计时器二选一（syncRotationTimer 在该档不计时）。
   // 只认**当前层**那个 <video>：预热 / 探测元素也走 watchVideoState，它们播完不代表壁纸播完。
@@ -4470,7 +4720,12 @@ function WallpaperPicker() {
   // 4.23.7「缓存管理」：进「系统」页签时拉一次用量（宿主那条路由**只读**，不建目录不改盘）。
   // 只在切到这个页签时拉 —— 不跟着轮询走，免得为一份"几分钟都不变"的读数每分钟多发请求；
   // 用户在面板里按「刷新」或清完一轮时会各自再拉一次（`loadCacheUsage` / `clearCacheTargets`）。
-  React.useEffect(() => { if (activeTab === "system") loadCacheUsage(); }, [activeTab]);
+  // 4.23.15：同一次进页签也拉一次**本地媒体体检账本**（`/folia/local-check`，同样只读）。
+  React.useEffect(() => {
+    if (activeTab !== "system") return;
+    loadCacheUsage();
+    loadMediaHealth();
+  }, [activeTab]);
 
   // 页签安全（ADR-0013 D3①）：可见页签表变了（组件行状态随 inventory 轮询回到本地）而当前
   // 页签不在表里 ⇒ 回落到第一个可见页签，自愈、不用用户自己点走。表为空（今天不可能，空表
@@ -4528,6 +4783,21 @@ function WallpaperPicker() {
   React.useEffect(() => {
     if (activeTab === "appearance" && pickerFontOpen && sel.fontCustom) ensureSystemFonts(false);
   }, [activeTab, pickerFontOpen, sel.fontCustom]);
+
+  // 4.23.15：**播放失败自愈**的两处接线（`src/local-first.js` 的两个注入位）。
+  //
+  // 为什么必须有这一个 effect（而不是让 local-first 直接调）：那个文件是内联片段，
+  // 它不知道"往哪写提示、哪个 <video> 在屏上"。在此之前 `setLocalFirstNote` **从来没有
+  // 被调用过** —— 于是 `lfSay()` 全部静默（"正在下载到本地 45%"这类话一句都没显示过）。
+  // 顺手把它接上：信息类进 `mediaNote`（面板提示行），失败类进 `videoError`（红色错误行）。
+  React.useEffect(() => {
+    const say = (text, ok) => {
+      const t = String(text || "");
+      try { setTransient(ok === false ? "videoError" : "mediaNote", t); emit(); } catch { /* ignore */ }
+    };
+    try { if (typeof setLocalFirstNote === "function") setLocalFirstNote(say); } catch { /* ignore */ }
+    try { if (typeof setSelfHealHooks === "function") setSelfHealHooks(say, remountLayerVideo); } catch { /* ignore */ }
+  }, []);
 
   // 侧栏深链（快捷播放面板底栏的「更多外观设置 ›」/「更多播放设置 ›」）：请求"打开
   // 设置页后停在哪一页"。打开对话框由 src/sidebar-right.js 的 DOM 路径负责，这里只管
@@ -4734,6 +5004,8 @@ function WallpaperPicker() {
         // 4.23.7「缓存管理」：用量 / 刷新 / 五目标清理（`skins` 走两段式确认，令牌 "cache:skins"）。
         onClearCache: clearCacheTargets, onClearCacheSkins: onCacheClearSkins,
         onRefreshCacheUsage: loadCacheUsage, armedConfirm: sel.armedConfirm, onDisarmConfirm: disarmConfirm,
+        // 4.23.15「本地媒体自检」：账本刷新 / 全量校验并修复（= 启动采样那套判据的全量版）。
+        onVerifyMedia: verifyLocalMedia, onRefreshMediaHealth: loadMediaHealth,
       }),
     );
     return renderWallpaperTab({
