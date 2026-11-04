@@ -1,5 +1,109 @@
 # 变更记录（Changelog）
 
+### v4.23.4（2026-11-04）
+
+> 主题：**点了就得有反应**——四个下载模块共用一套卡片状态机（含失败原因与「重试」）、
+> 1080p 变体自动选档；修「某张卡片点了毫无反应」与「怎么点都装不上」。
+
+#### 1. 统一状态机（皮肤 / 开机动画 / 桌宠 / 壁纸四个模块共用）
+
+真实故障（用户实测）：「助手皮肤」页签里 14 MB 的包点下去能看到「安装中…」，
+**16.6 MB 那个点下去毫无反应** —— 不置灰、不显示任何进度、也不报错；
+开机动画 / 桌宠 / 皮肤三个页签的"进度"覆盖度不一致；失败时卡片静默回到「安装」。
+
+根因（三条，都能在源码里指出位置）：
+
+1. 卡片的"忙"用的是**页面级** `busy`，且 install 按钮的 `disabled` 绑的是
+   `busyIsStructural` —— **任何**结构操作一开始，所有安装按钮一起灰。于是"另一张卡片在下载时
+   点这一张"等于点在 disabled 按钮上：请求不发、提示不写，**界面上什么都不发生**。
+2. 点击到响应之间没有任何状态。宿主侧 `POST /folia/skins/install` 会同步等下载，
+   真实带宽下这段可以是一两分钟，卡片看起来就是死的。
+3. 失败原因只写在**页面提示行**（还常被下一次刷新冲掉），卡片本身回到「安装」。
+
+现在每张卡片都走同一套格子，**从点击那一刻**就可见：
+
+```
+idle → submitting（正在提交…，按钮立刻置灰）→ queued（排队中：前面还有 N 个）
+     → running（下载中… x% + a/b MB · 约剩 N 秒 · 多连接(n)）→ installing（解压/落位中…）→ done
+任何一步失败 ⇒ failed（具体原因）+「重试」（可点，立刻重新提交）
+```
+
+- 实现位置：`src/local-first.js` 的 **`dlCardState(inp)`（纯函数，四模块唯一的状态计算）**、
+  `dlFailReason(code)`（失败原因人话表，唯一一份）、`dlQueueDetail` / `dlProgressDetail`、
+  以及 React 侧的 `useDlCards(dl)`（按卡片的 submitting / failed / ETA 记忆）。
+  皮肤 / 开机动画 / 桌宠三个页签都改成 `cards.stateOf({ id, job, done, labels })`。
+- **防连点**：点击瞬间 `cards.begin(id)` ⇒ 该卡片立刻置灰且不发第二个请求；请求返回 / 失败 /
+  超时后 `cards.end(id)`；已经有 job 时卡片直接显示 job 的真实进度（不再停在「正在提交…」）。
+- **失败可见且可重试**：`cards.fail(id, code)` 把原因留在**卡片上**（红字）+ 按钮变「重试」。
+  人话表覆盖连不上站点 / 404 / 超时 / 校验失败（size-mismatch）/ 包结构不对（bad-zip、
+  no-skin-json、bad-skin-json）/ 队列起不来；未登记的错误码也会带出码本身，**不出现裸 `failed`**。
+- 提交超时窗口 150 秒（> 宿主 install 自己的等待窗口）：超时即「重试」，不永远停在提交中。
+- 壁纸模块（`panel-tabs-wallpaper.js`）保持原状（它本来有进度），文案函数与上面同源。
+
+#### 2. 修复：「鲸鱼娘·雨夜（16.6 MB）点了没反应」
+
+- ① 上面那条**页面级禁用**是直接原因：另一张卡片在装时点它 = 点 disabled 按钮。
+  现在 install 只禁**这张卡片**自己（`disabled: st.disabled`），并立刻显示「正在提交…」。
+- ② 宿主侧安装请求**同步等下载 120 秒**才回 202 ⇒ 客户端在这两分钟里拿不到 jobId，
+  进度无从显示。改为 **8 秒**：快链路仍走同步（省一次往返），慢链路立刻回 202 + jobId，
+  卡片马上显示排队位置/百分比；下载与落地由宿主的 `scheduleFinishInstall()` 收尾
+  （关掉面板也不影响）。
+- ③ 三个"没有可识别状态"的分支修掉：
+  - **已存在坏 zip 缓存**：旧实现每次「安装」都读同一个坏文件，3 毫秒内以同一个 422 失败
+    ⇒ "怎么点都装不上"，永远没有进度。现在失败即**清掉缓存三件套**（`.zip` / `.etag` / `.part`，
+    清包不清 sidecar 等于没清）并返回 `cacheCleared`，点「重试」会真重新下载。
+  - **站点返回 HTML（200 但不是 zip）**：同样当场清缓存 + 返回 `not-a-zip`（"包结构不对"）。
+  - **202 里 jobId 为空**：旧客户端会静默轮询到超时。现在宿主回 500 `queue-failed`，
+    客户端把卡片标成失败 +「重试」。
+- ④ 站点 slug 与本机 `skin.json` 的 id 归一对不上时，列表的 `installed` 会一直是 false
+  ⇒ 卡片永远停在「安装」（"点了没反应"的另一种样子）。现在宿主回 ok 就 `cards.markOk(id)`，
+  卡片立刻按「已安装」显示；并顺手修掉同处的隐患：`localId` 为空时旧实现会渲染一个
+  `id=""` 的「应用」按钮（点下去等于"恢复默认外观"，会清掉正在用的皮肤）。
+
+#### 3. 1080p 变体自动选档（策略 A，用户确认）
+
+站点（d960c62 起）给视频条目带 `variants`（通常一档 1080p 轻量版）。策略是**先原画**，
+满足任一条件才降到 1080p：
+
+- 前 3 秒实测吞吐 **< 0.6 MB/s**（与下载队列的自适应阈值**同一个数**：慢域标记由队列在
+  同一次 3 秒实测里记下，选档只读它，不自己再量一次、也不另写一个阈值）；
+- 或 **原画 > 20 MB 且屏幕高度 ≤ 1440**（看起来没差别，但省一半流量与解码）；
+- `videoQuality=original` ⇒ 永远原画；`saver` ⇒ 有合法变体就降；非法/缺失 ⇒ `auto`。
+- 变体缺失 / url 非法 / 只有 720p ⇒ **一律原画**（不"顺手"降到用户没要的档）。
+- 决策只在**入队那一刻**做一次，结果写进 job：`chosenVariant: 'original' | '1080p'`，
+  随 `/downloads/list` 出去（面板与排障读同一个事实；旧 `downloads.json` 缺该字段 ⇒ `original`）。
+- 实现位置：新模块 `lib/variant-pick.js`（纯函数 `pickVariant` / `pick1080` / `normalizeVariants`，
+  阈值常量与队列共用口径）；`lib/routes/downloads.js` 的 `/downloads/add` 调它；
+  `lib/routes/inventory.js` 透传 `variants` 并给清单时刻的选档结论；客户端
+  （`src/local-first.js` 的 `lfAddItem` / `lfUseOriginal`）带上变体、屏幕高度与"用原画"覆盖。
+- 面板：走 1080p 时在播放条显示「 · 1080p」小标，并在有变体时提供「用原画」切换
+  （写本地覆盖 + **重新入队原画**；再点一次回到自动选档）。
+- 站点还没上线 `variants` 时的回退：清单里 `variants: []` / `chosenVariant: 'original'` /
+  `variantUrl` = 原 `media`，整条链路与 4.23.3 **逐字节等价**（不报错、不改画质）—— 有判据钉着。
+
+#### 4. 判据
+
+- `test/verify-downloads.mjs` **+30 条**（㉓）：假数据逐格驱动 `dlCardState`
+  （idle / submitting 且按钮禁用 / 已等待秒数 / 提交超时 / 别人的提交不影响本卡 /
+  queued 显示「前面还有 2 个」/ running 的 x% + a/b MB + 约剩 N 秒 + 多连接 /
+  无样本不编 ETA / installing / done / 五类失败原因互不相同 / 未登记码不裸 failed /
+  畸形输入不抛），外加"四模块共用同一个函数""只禁本卡""失败回写卡片"的文本判据与负对照。
+- 新增 `test/verify-variants.mjs` **27 条**：纯函数逐条（无 variants / 慢链路 / >20 MB 且
+  屏幕 ≤1440 / 屏高未知 / 强制原画 / saver / 非法 quality / 相对变体 url / 只有 720p 不冒充），
+  以及 `/folia/downloads/add` → `/folia/downloads/list` 的**真行为**（`chosenVariant` 出现在
+  list 里）与 inventory 透传判据（含"线上字段缺席 ⇒ 原画"的回退）。
+- `test/skins-http.mjs` **+19 条**（⑦）：假站点真打一个 **16.6 MB** 的 zip、前 9.5 秒不发字节
+  ⇒ 断言"点下去 1.2 秒内队列里就有这条 job""202 带 jobId/status/received/total""最终 done
+  且再装一次 200"；以及坏缓存（422 bad-zip + cacheCleared + 重试真的重下）与
+  站点返回 HTML（not-a-zip + 不留缓存）两条分支。
+- 链成员 +1（`verify-variants`）：`test/fixtures/verify-chain.json` 重冻结，
+  `verify-package-files` 的地板按本文件既有纪律抬到 **107/120**（地板 = 实测步数，抬本身即证据）。
+
+#### 5. 升级提示
+
+`package.json` 4.23.3 → 4.23.4。宿主半边（skins 路由 / downloads 路由 / inventory / 队列）有改动
+⇒ **要重启 `dsh web`**；面板状态机与「1080p」小标属纯客户端，刷新页面即可生效。
+
 ### v4.23.3（2026-11-03）
 
 > 主题：**低延迟单流、高延迟多路，自动选**；并发可按机器调；切页签不再丢下载状态。

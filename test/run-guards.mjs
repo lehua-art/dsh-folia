@@ -291,6 +291,10 @@ const VERIFY_STEPS = [
   step('test/verify-site-media.mjs'),
   // ㉒ 站点资源本地化队列：并发上限 / 幂等 / 续传 / 原子 / 可失败（点击即下载的那条链路）。
   step('test/verify-downloads.mjs'),
+  // ㉓ 1080p 变体选档（4.23.4，策略 A 自动）：纯函数逐条（无变体 / 慢链路 / 大文件小屏 /
+  //    强制原画 / 非法 url）+ `/downloads/add` 真的按选档入队 + `job.chosenVariant` 出现在
+  //    `/downloads/list` + inventory 透传 `variants`。站点还没上线该字段时的回退（原画）也在其中。
+  step('test/verify-variants.mjs'),
   step('test/pets-layer.mjs'),
 ];
 

@@ -530,6 +530,40 @@ const WE_I18N_EN_PANEL = {
   "下载中… {p}%": "Downloading… {p}%",
   "下载中… {p}% · 多连接({n})": "Downloading… {p}% · {n} connections",
   "正在下载（皮肤包）{p}%（{a}/{b} MB）": "Downloading skin pack: {p}% ({a}/{b} MB)",
+
+  // ── 四模块统一的卡片状态机（4.23.4）────────────────────────────────────
+  // 由 src/local-first.js 的 `dlCardState()`（纯函数，四个页签共用）产出；
+  // `idle` / `done` 两个词仍由各页签自己给（安装 / 下载 / 使用中 / 已安装）。
+  "正在提交…": "Submitting…",
+  "已等待 {s} 秒": "Waiting {s}s",
+  "解压/落位中…": "Extracting…",
+  "原因：{why}": "Reason: {why}",
+  "{a}/{b} MB · 约剩 {s} 秒": "{a}/{b} MB · about {s}s left",
+  "{a}/{b} MB": "{a}/{b} MB",
+  // 失败原因（「包结构不对 / 校验失败 / 超时 / 404」各有独立词条，绝不回落成裸 failed）
+  "包结构不对：这个 zip 已损坏（多半是上次没下完留下的缓存，已清掉），点「重试」会重新下载": "Bad pack: this zip is corrupt (usually a leftover from an unfinished download — the cache was cleared). Press Retry to download it again",
+  "包结构不对：这个包里没有 skin.json，不是皮肤包": "Bad pack: no skin.json inside — this is not a skin pack",
+  "包结构不对：skin.json 不是合法 JSON": "Bad pack: skin.json is not valid JSON",
+  "包结构不对：皮肤 id 不合法": "Bad pack: invalid skin id",
+  "包解不开（解压阶段失败），点「重试」重新下载": "Could not unpack the archive (extract failed). Press Retry to download it again",
+  "校验失败（站点返回了空文件），请重试": "Verification failed (the site returned an empty file). Please retry",
+  "校验失败（下到的字节数与站点声明的长度不一致，点「重试」会续传）": "Verification failed (the received size differs from the length the site declared; Retry resumes the transfer)",
+  "超时：请求 150 秒没有返回，点「重试」再发一次": "Timed out: no response within 150s. Press Retry to send it again",
+  "站点返回错误（{code}），请稍后重试": "The site returned an error ({code}). Please retry later",
+  "站点上没有这个文件（404，可能正在补传/已被删除）": "The site has no such file (404 — still uploading, or already removed)",
+  "下载/安装失败（没拿到具体原因），请重试": "Download/install failed (no specific reason given). Please retry",
+  "下载/安装失败：{code}": "Download/install failed: {code}",
+
+  // ── 1080p 变体选档（4.23.4，策略 A 自动）────────────────────────────────
+  " · 1080p": " · 1080p",
+  "用原画": "Use original",
+  "用原画 ✓": "Use original ✓",
+  "1080p 是省流量档；点了之后这张固定用原画（可再点一次回到自动）": "1080p is the bandwidth-saving tier; click to always use the original for this wallpaper (click again to go back to automatic)",
+  "已按 1080p 变体下载：{name}（省流量；可在面板点「用原画」改回）": "Downloading the 1080p variant: {name} (saves bandwidth; click \u201cUse original\u201d in the panel to change it)",
+  "已设为用原画，正在下载原画：{name}": "Set to use the original — downloading it now: {name}",
+  "已设为用原画（下载链路不可用，下次点这张会直连原画）：{name}": "Set to use the original (the download queue is unavailable, so the next click streams the original): {name}",
+  "已设为用原画（入队失败，下次点这张会直连原画）：{name}": "Set to use the original (queueing failed, so the next click streams the original): {name}",
+  "已改回自动选档：{name}": "Back to automatic quality selection: {name}",
 };
 
 export { WE_I18N_EN_PANEL };

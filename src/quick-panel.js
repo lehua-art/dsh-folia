@@ -494,6 +494,9 @@
         React.createElement("div", { className: "we-qp__meta" },
           current
             ? qpTypeLabel(current, sel) + weT(playbackLive ? " · 播放中" : " · 已暂停")
+              // 4.23.4：这条走的是 1080p 变体（宿主按速度/体积/设置选的）⇒ 明确标出来。
+              // 不标的话用户只会觉得"怎么比我预期的小/糊"，而不知道这是省流量档。
+              + (current.chosenVariant === "1080p" ? weT(" · 1080p") : "")
             : weT("从下面列表挑一张")),
         sel.videoError && React.createElement("div", { className: "we-picker__current-error" }, sel.videoError),
         // 缓存与速度的**自述**（④）：用户不用开 F12 也能知道"这次是首次下载还是命中缓存"。
@@ -521,6 +524,16 @@
           onClick: onClear, disabled: !sel.id,
           title: weT("清除当前壁纸（停止播放，回到无壁纸状态）"),
         }, weT("清除")),
+        // 4.23.4：**画质档的人工开关**。只在站点给了变体时出现（没变体就没有可切的东西）。
+        // 点它 = 把"这张要原画"记进本地覆盖（local-first.js 的 lfUseOriginal）并重新入队原画；
+        // 再点一次回到自动选档。标签随当前选择变化，用户永远看得见现在的口径。
+        current && Array.isArray(current.variants) && current.variants.length
+          ? React.createElement("button", {
+            className: "we-picker__btn", type: "button",
+            onClick: () => { try { lfUseOriginal(current, !lfPreferOriginal(current.id)); } catch { /* 覆盖写失败也不影响播放 */ } try { loadInventory(); } catch { /* ignore */ } },
+            title: weT("1080p 是省流量档；点了之后这张固定用原画（可再点一次回到自动）"),
+          }, lfPreferOriginal(current.id) ? weT("用原画 ✓") : weT("用原画"))
+          : null,
       ),
     );
   }

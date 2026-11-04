@@ -32,6 +32,11 @@ function PetsTabPanel() {
   const [importable, setImportable] = React.useState([]);
   // 4.23.3：安装进度以 /folia/downloads/list 为真源（kind=pet），切页签回来仍在。
   const dl = useDownloadJobs();
+  // 4.23.4：**卡片级**状态机（四页签共用，见 src/local-first.js 的 `dlCardState`）——
+  // 点击瞬间就有「正在提交…」，随后 排队 / 进度 / 解压 / 失败原因+重试，四模块同一套。
+  const cards = useDlCards(dl);
+  // 只有这两个词属于本页签的口径。
+  const petDlLabels = { idle: weT("安装"), done: weT("已安装"), failed: weT("重试") };
 
   const load = React.useCallback(async (force) => {
     try {
@@ -57,9 +62,13 @@ function PetsTabPanel() {
   const act = async (kind, payload, label) => {
     // 只有安装/卸载/导入这类**结构性**操作才锁 UI；开关与大小是幂等的。
     const structural = kind === "install" || kind === "remove" || kind === "import";
+    const cardId = String((payload && payload.id) || "");
+    const isInstall = kind === "install";
     // 4.23.3：安装走下载队列（payload.queue）时不锁整页 —— 进度落在卡片上，切页签回来仍在。
     const lockUi = structural && !(kind === "install" && payload && payload.queue === true);
-    if (lockUi) setBusy(kind + ":" + (payload.id || ""));
+    if (lockUi) setBusy(kind + ":" + cardId);
+    // 4.23.4：点击瞬间把**这张卡片**置为「正在提交…」（无论走不走队列，都要立刻有反应）。
+    if (isInstall && cardId) cards.begin(cardId);
     setNote(null);
     try {
       const resp = await apiPostJson("/pets/" + kind, payload || {}, { parse: "always" });
@@ -68,12 +77,19 @@ function PetsTabPanel() {
         if (kind === "install") {
           // 宿主回 202 pending（zip 交给队列）：进度看 list，下完宿主会自己再调一次落地。
           if (r.pending && r.jobId) {
+            // 拿到 jobId ⇒ 卡片交给队列显示，不再停在「正在提交…」（那会把真进度盖住）。
+            cards.end(cardId);
             dl.refresh();
             setNote({ ok: true, text: dlBusyLabel({ percent: 0, mode: r.mode }) });
             const done = await dlAwaitJob(r.jobId);
             if (done && done.status === "done") setNote({ ok: true, text: weT("已安装并启用：{name}", { name: label || "" }) });
-            else if (done && done.status !== "timeout") setNote({ ok: false, text: weT("操作失败：{code}", { code: done.error || done.status }) });
-            else setNote({ ok: false, text: weT("下载超时：{name}", { name: label || "" }) });
+            else if (done && done.status !== "timeout") {
+              cards.fail(cardId, done.error || done.status);
+              setNote({ ok: false, text: dlFailReason(done.error || done.status) });
+            } else {
+              cards.fail(cardId, "download-timeout");
+              setNote({ ok: false, text: dlFailReason("download-timeout") });
+            }
             await load(true);
             return;
           }
@@ -91,11 +107,17 @@ function PetsTabPanel() {
         }
       } else {
         const code = (r && r.error) || "failed";
-        setNote({ ok: false, text: weT("操作失败：{code}", { code }) });
+        if (isInstall && cardId) cards.fail(cardId, code);
+        // 失败原因与人话文案同样走共用表（与皮肤 / 开机动画逐字一致，不再各写一套）。
+        setNote({ ok: false, text: dlFailReason(code) });
       }
     } catch (e) {
-      setNote({ ok: false, text: weT("请求失败：{msg}", { msg: (e && e.message) || weT("网络错误") }) });
+      const why = e && e.message ? String(e.message) : "";
+      if (isInstall && cardId) cards.fail(cardId, /timeout|超时/i.test(why) ? "submit-timeout" : "network");
+      setNote({ ok: false, text: weT("请求失败：{msg}", { msg: why || weT("网络错误") }) });
     } finally {
+      // 请求返回/失败/超时 ⇒ 退出「正在提交…」（成功分支已提前 end 的话这里是空操作）。
+      if (isInstall && cardId) cards.end(cardId);
       setBusy("");
     }
   };
@@ -259,7 +281,10 @@ function PetsTabPanel() {
       available.map((s) => {
         // 4.23.3：按 kind=pet + url 找回这条的下载 job（挂载时已在跑的也认得出）。
         const job = dlJobForCard(dl.jobs, "pet", s.url);
-        const jobBusy = dlJobActive(job);
+        // 4.23.4：卡片状态由**四模块共用**的状态机决定（文案/禁用/失败原因+重试都在那一处）。
+        const st = cards.stateOf({ id: s.id, job, done: false, labels: petDlLabels });
+        // running 沿用 4.23.3 的紧凑文案（`下载中… 42% · 多连接(8)`），MB/剩余时间在下面那行明细里。
+        const label = st.phase === "running" ? dlBusyLabel(job) : st.label;
         return React.createElement("div", { key: "site:" + s.id, style: PET_STYLE.card },
           s.cover
             ? React.createElement("img", {
@@ -271,8 +296,15 @@ function PetsTabPanel() {
           React.createElement("div", { style: PET_STYLE.title }, s.title || s.id),
           React.createElement("div", { style: PET_STYLE.meta }, petFmtBytes(s.bytes)),
           React.createElement("div", { style: PET_STYLE.row },
-            btn(jobBusy ? dlBusyLabel(job) : (busy === "install:" + s.id ? weT("安装中…") : weT("安装")),
-              () => act("install", { id: s.id, queue: true }, s.title || s.id), Boolean(busy) || jobBusy)),
+            // 只禁**这一张**卡片（提交中/排队/在下/解压）；别的卡片在动不影响它。
+            btn(label, () => act("install", { id: s.id, queue: true }, s.title || s.id), st.disabled)),
+          // 进度 / 原因明细：`12.3/16.6 MB · 约剩 41 秒`、`排队中：前面还有 2 个任务`、
+          // 或失败原因（红字）。失败时按钮上是「重试」，点它立刻重新提交。
+          st.detail
+            ? React.createElement("div", {
+              style: { ...PET_STYLE.meta, color: st.phase === "failed" ? "#ff9a9a" : undefined },
+            }, st.detail)
+            : null,
         );
       }),
     ));

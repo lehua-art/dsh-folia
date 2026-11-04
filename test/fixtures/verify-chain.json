@@ -853,6 +853,14 @@
         {
           "kind": "guard",
           "npm": null,
+          "file": "test/verify-variants.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
           "file": "test/pets-layer.mjs",
           "args": [],
           "tier": "hard",
@@ -1819,6 +1827,14 @@
           "kind": "guard",
           "npm": null,
           "file": "test/verify-downloads.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-variants.mjs",
           "args": [],
           "tier": "hard",
           "probe": false

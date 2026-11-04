@@ -787,6 +787,160 @@ try { rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
     && dict.includes(JSON.stringify('正在下载（皮肤包）{p}%（{a}/{b} MB）')));
 }
 
+/* ㉓ 4.23.4：**四个模块共用的卡片状态机**（submitting → queued → running → installing → done，
+   失败带具体原因 +「重试」）。
+   真实故障（用户实测）：有的皮肤卡片有进度（14 MB 那个显示「安装中…」），有的点了**毫无反应**
+   （16.6 MB 那个既不置灰、不显示进度、也不报错）；开机动画/桌宠/皮肤的"进度"覆盖度不一致。
+   根因：卡片的"忙"用的是**页面级** busy，且 install 的 disabled 绑 `busyIsStructural`
+   —— 任何结构操作开始，**所有**安装按钮一起灰 ⇒ 点另一张卡片等于点在 disabled 按钮上
+   （请求不发、提示不写、界面什么都不发生）。
+   判据：纯函数用假数据逐格驱动（正/负都咬）＋ 四个页签必须接**同一个**函数。 */
+{
+  const src = readFileSync(join(ROOT, 'src', 'local-first.js'), 'utf8');
+  const a = src.indexOf('const DL_POLL_MS = 1500;');
+  const b = src.indexOf('function useDownloadJobs(');
+  const slice = (a >= 0 && b > a) ? src.slice(a, b) : '';
+  const shim = (key, vars) => String(key).replace(/\{(\w+)\}/g, (m, name) => (vars && Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : m));
+  const mod = (() => {
+    try {
+      return new Function('weT', slice + '\nreturn { DL_PHASES, DL_SUBMIT_TIMEOUT_MS, dlCardState, dlFailReason, dlQueueDetail, dlProgressDetail };')(shim);
+    } catch { return null; }
+  })();
+  check('㉓ 共用状态机能被取出来真跑（纯函数段）', Boolean(mod), mod ? 'ok' : 'slice=' + slice.length);
+
+  if (mod) {
+    const labels = { idle: '安装', done: '已安装', failed: '重试' };
+    const st = (o) => mod.dlCardState(Object.assign({ id: 'c1', labels }, o || {}));
+    const now = Date.now();
+
+    // ① idle
+    const idle = st({});
+    check('㉓ idle ⇒「安装」且可点', idle.phase === 'idle' && idle.label === '安装' && idle.disabled === false,
+      JSON.stringify(idle));
+    // ② submitting：点击瞬间就置灰 +「正在提交…」（"点了没反应"的解药）
+    const sub = st({ sub: { id: 'c1', at: now - 400 }, nowMs: now });
+    check('㉓ 点击瞬间 ⇒ submitting 且**按钮禁用**（这一格必须在点击同一帧出现）',
+      sub.phase === 'submitting' && sub.disabled === true && sub.label.includes('正在提交'),
+      JSON.stringify(sub));
+    const subLong = st({ sub: { id: 'c1', at: now - 7000 }, nowMs: now });
+    check('㉓ 提交中 ≥3 秒 ⇒ 显示已等待秒数（请求在飞也不是死的）',
+      subLong.phase === 'submitting' && subLong.detail.includes('已等待'), JSON.stringify(subLong.detail));
+    const subOther = st({ sub: { id: 'other', at: now - 400 }, nowMs: now });
+    check('㉓ 负对照：**别人**的提交中不影响这张卡片（按卡片、不是按页面）',
+      subOther.phase === 'idle' && subOther.disabled === false, JSON.stringify(subOther));
+    // ③ 提交超时 ⇒ 失败 + 重试（不永远停在提交中）
+    const subTimeout = st({ sub: { id: 'c1', at: now - (mod.DL_SUBMIT_TIMEOUT_MS + 1000) }, nowMs: now });
+    check('㉓ 提交超时 ⇒ failed +「重试」+ 原因里有"超时"',
+      subTimeout.phase === 'failed' && subTimeout.retry === true && subTimeout.label === '重试'
+      && subTimeout.reason.includes('超时'), JSON.stringify(subTimeout));
+    check('㉓ 提交超时窗口 > 宿主 install 的等待窗口（8 秒），不会把还在飞的请求误判成失败',
+      mod.DL_SUBMIT_TIMEOUT_MS >= 8000 * 2, 'ms=' + mod.DL_SUBMIT_TIMEOUT_MS);
+
+    // ④ queued：前面还有 N 个
+    const queued = st({ sub: { id: 'c1', at: now }, nowMs: now, job: { status: 'queued', queuePos: 3 } });
+    check('㉓ queued ⇒ 显示「前面还有 2 个」（queuePos - 1），且仍禁用',
+      queued.phase === 'queued' && queued.label.includes('前面还有 2 个') && queued.disabled === true,
+      JSON.stringify(queued));
+    check('㉓ queued 位置未知时不编数字（只说"排队中"）',
+      st({ job: { status: 'queued', queuePos: 0 } }).label === '排队中');
+
+    // ⑤ running：百分比 + a/b MB + 约剩 N 秒 + 多连接
+    const running = st({
+      job: { status: 'running', percent: 42, received: 7 * 1048576, total: 16.6 * 1048576, mode: 'ranged:8' },
+      etaSec: 41,
+    });
+    const all = running.label + ' ' + running.detail;
+    check('㉓ running ⇒ 进度一应俱全：x% + a/b MB + 约剩 N 秒 + 多连接(n)',
+      running.phase === 'running' && running.label === '下载中… 42% · 多连接(8)'
+      && /7\.0\/16\.6 MB/.test(running.detail) && running.detail.includes('约剩 41 秒'),
+      JSON.stringify({ label: running.label, detail: running.detail }));
+    check('㉓ running 的四个要素都能在一张卡片上读到（% / MB / 约剩 / 多连接）',
+      /42%/.test(all) && /MB/.test(all) && /约剩/.test(all) && /多连接/.test(all), all);
+    const noEta = st({ job: { status: 'running', percent: 3, received: 102400, total: 1048576, mode: 'single' } });
+    check('㉓ 没有速度样本时**不编**剩余时间（只给 MB）',
+      noEta.detail.includes('MB') && !noEta.detail.includes('约剩'), JSON.stringify(noEta.detail));
+
+    // ⑥ installing / done
+    check('㉓ 包下完但还没落地 ⇒ installing（解压/落位中…）',
+      st({ job: { status: 'done' } }).phase === 'installing');
+    const doneSt = st({ done: true, labels });
+    check('㉓ 已装 ⇒ done（按钮禁用、文案用本模块自己的词）',
+      doneSt.phase === 'done' && doneSt.disabled === true && doneSt.label === '已安装', JSON.stringify(doneSt));
+
+    // ⑦ 失败：具体原因 + 重试入口（五类各一条）
+    const fails = [
+      ['http-404', '404'],
+      ['fetch failed', '连不上站点'],
+      ['timeout', '超时'],
+      ['size-mismatch:1/2', '校验失败'],
+      ['bad-zip', '包结构不对'],
+      ['no-skin-json', '包结构不对'],
+    ];
+    const reasons = [];
+    for (const [code, want] of fails) {
+      const f = st({ job: { status: 'failed', error: code } });
+      reasons.push({ code, phase: f.phase, label: f.label, retry: f.retry, reason: f.reason });
+      check('㉓ 失败（' + code + '）⇒ failed +「重试」+ 原因含「' + want + '」',
+        f.phase === 'failed' && f.retry === true && f.label === '重试'
+        && f.disabled === false && f.reason.includes(want), JSON.stringify(f));
+    }
+    check('㉓ 五类失败的原因**互不相同**（不是同一句万能话）',
+      new Set(reasons.map((r) => r.reason)).size === reasons.length);
+    check('㉓ 未登记的错误码也带出码本身（禁止裸 failed）',
+      (() => { const f = st({ job: { status: 'failed', error: 'weird-xyz' } }); return f.reason.includes('weird-xyz') && f.reason !== 'failed'; })());
+    check('㉓ 负对照：失败态一定可重试且带原因（不存在"failed 但没原因/不可点"的组合）',
+      fails.every(([code]) => {
+        const f = st({ job: { status: 'failed', error: code } });
+        return f.retry === true && f.reason.length > 0 && f.timedOut !== true;
+      }));
+    check('㉓ 提交阶段就失败（err）⇒ 同样落到 failed + 原因',
+      (() => { const f = st({ err: { code: 'network' } }); return f.phase === 'failed' && f.reason.includes('连不上站点'); })(),
+      JSON.stringify(st({ err: { code: 'network' } })));
+    check('㉓ 畸形输入不抛（面板不许因为状态机变白屏）',
+      (() => {
+        try {
+          const junk = [undefined, null, {}, { job: null, sub: null, err: null }, { job: { status: 'weird' } }, { sub: 'str' }, { err: 42 }, { job: { status: 'running' } }];
+          return junk.every((x) => {
+            const r = x === undefined ? mod.dlCardState() : mod.dlCardState(x);
+            return r && typeof r.phase === 'string' && typeof r.label === 'string';
+          });
+        } catch { return false; }
+      })());
+
+    // ⑧ 四个页签必须接**同一个**函数（少一处，那个模块就还是"没有进度"）
+    const bootTab = readFileSync(join(ROOT, 'src', 'panel-tabs-boot.js'), 'utf8');
+    const petsTab = readFileSync(join(ROOT, 'src', 'panel-tabs-pets.js'), 'utf8');
+    const skinsTab = readFileSync(join(ROOT, 'src', 'panel-tabs-skins.js'), 'utf8');
+    const lf = readFileSync(join(ROOT, 'src', 'local-first.js'), 'utf8');
+    check('㉓ 四个模块共用同一个状态计算函数（dlCardState 只有一处定义）',
+      (lf.match(/function dlCardState\(/g) || []).length === 1
+      && (lf.match(/function useDlCards\(/g) || []).length === 1);
+    check('㉓ boot / pet / skin 三个页签都走 useDlCards + stateOf（壁纸模块保持原状）',
+      [bootTab, petsTab, skinsTab].every((t) => /useDlCards\(dl\)/.test(t) && /cards\.stateOf\(/.test(t))
+      && !/useDlCards/.test(readFileSync(join(ROOT, 'src', 'panel-tabs-wallpaper.js'), 'utf8')));
+    check('㉓ 安装按钮只禁**这一张**卡片（不再被别处的结构操作一起禁掉）',
+      /disabled: st\.disabled/.test(skinsTab)
+      && !/disabled: busyIsStructural \|\| busy === "install:" \+ s\.id/.test(skinsTab)
+      && !/Boolean\(busy\) \|\| jobBusy/.test(skinsTab + petsTab));
+    check('㉓ 负对照：把 install 的 disabled 绑回页面级 busy 会被这条判据抓出来',
+      /disabled: busyIsStructural \|\| busy === "install:" \+ s\.id || jobBusy/.test('disabled: busyIsStructural || busy === "install:" + s.id || jobBusy')
+      && !/disabled: busyIsStructural \|\| busy === "install:" \+ s\.id \|\| jobBusy/.test(skinsTab));
+    check('㉓ 三个页签都把失败原因写回卡片（cards.fail）并清掉（cards.end）',
+      [bootTab, petsTab, skinsTab].every((t) => /cards\.fail\(cardId/.test(t) && /cards\.end\(cardId/.test(t) && /cards\.begin\(cardId\)/.test(t)));
+    check('㉓ 失败原因的人话表只有一处（四模块共用 dlFailReason）',
+      (lf.match(/function dlFailReason\(/g) || []).length === 1
+      && [bootTab, petsTab, skinsTab].every((t) => /dlFailReason\(/.test(t)));
+    check('㉓ 文案都在英文词表里（正在提交… / 解压/落位中… / 原因：{why}）',
+      (() => {
+        const dict = readFileSync(join(ROOT, 'src', 'i18n-copy-panel.js'), 'utf8');
+        return ['正在提交…', '解压/落位中…', '原因：{why}', '已等待 {s} 秒', '{a}/{b} MB · 约剩 {s} 秒']
+          .every((k) => dict.includes(JSON.stringify(k)));
+      })());
+    check('㉓ 负对照：词表里没有的键会被同一条判据判红',
+      !readFileSync(join(ROOT, 'src', 'i18n-copy-panel.js'), 'utf8').includes(JSON.stringify('正在提交…-不存在')));
+  }
+}
+
 let failed = 0;
 for (const r of results) {
   if (r.ok) process.stdout.write('  ✓ ' + r.name + '\n');

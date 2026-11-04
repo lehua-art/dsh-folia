@@ -54,6 +54,13 @@ function SkinsTabPanel() {
   const [note, setNote] = React.useState(null);
   // 4.23.3：安装/下载进度以 /folia/downloads/list 为真源（kind=skin），切页签回来仍在。
   const dl = useDownloadJobs();
+  // 4.23.4：**卡片级**状态机（四页签共用，见 src/local-first.js 的 `dlCardState`）——
+  // idle→submitting→queued→running→installing→done，失败带原因 +「重试」。
+  const cards = useDlCards(dl);
+  // 状态机里只有两个词是"本模块自己的口径"：空闲时按什么、完成后叫什么。
+  // 其余（正在提交… / 排队中：前面还有 N 个 / 下载中… x% / 解压/落位中… / 重试 / 失败原因）
+  // 全部来自共用函数，四个页签逐字一致。
+  const skinDlLabels = { idle: weT("安装"), done: weT("已安装"), failed: weT("重试") };
 
   // ⚠️ 这两面旗必须**在函数体最前面**算出来：下面「刷新」按钮的文案就要用它。
   // 曾把它们写在列表渲染处（更靠后）⇒ 首次渲染读到 TDZ 里的 const
@@ -159,10 +166,17 @@ function SkinsTabPanel() {
   const act = async (kind, payload, label) => {
     // 结构性操作才锁整块 UI；`activate` 是幂等的、而且要让人能连点换皮肤，所以不锁。
     const structural = kind === "install" || kind === "remove";
+    const cardId = String((payload && payload.id) || "");
+    const isInstall = kind === "install";
     const busyKey = structural
-      ? kind + ":" + ((payload && payload.id) || "")
-      : (kind === "activate" || kind === "repair" ? kind + ":" + ((payload && payload.id) || "") : "");
-    if (busyKey) { setBusy(busyKey); busyRef.current = busyKey; }
+      ? kind + ":" + cardId
+      : (kind === "activate" || kind === "repair" ? kind + ":" + cardId : "");
+    // ⚠️ 4.23.4：安装**不占页面级 busy**。旧实现由 `busyIsStructural` 统一禁用**所有**安装按钮，
+    // 于是"另一张卡片在下载"时点这张卡片 = 点在 disabled 按钮上：请求不发、提示不写，
+    // 界面什么都不发生 —— 这就是用户报的「鲸鱼娘·雨夜 点了没反应」的直接形态。
+    // 现在安装的可见性由**这张卡片自己**的 submitting/queued/running 承担（只禁它自己）。
+    if (busyKey && !isInstall) { setBusy(busyKey); busyRef.current = busyKey; }
+    if (isInstall && cardId) cards.begin(cardId);
     setNote(null);
     try {
       if (kind === "activate") {
@@ -232,6 +246,17 @@ function SkinsTabPanel() {
       if (resp && resp.ok && r && r.pending) {
         const jobId = r.jobId;
         const label2 = label || "";
+        // ⚠️ 202 里**必须有 jobId**：没有它客户端既等不到落地、也没法显示进度，
+        // 旧实现会静默轮询到 30 分钟超时（"点了没反应"的另一种形态）。现在当场判失败。
+        if (!jobId) {
+          cards.fail(cardId, "queue-failed");
+          setNote({ ok: false, text: dlFailReason("queue-failed") });
+          return;
+        }
+        // 4.23.4：一拿到 jobId 就把卡片**交给队列**（排队位置 / 百分比 / 剩余时间），
+        // 不再停在「正在提交…」——那会把真进度盖住。请求本身继续在后台等（下完自动续装）。
+        cards.end(cardId);
+        cards.refresh();
         /**
          * **排队位置**（4.23.2）：job 还在 `queued` 时，显示"前面还有几个"。
          * 为什么必须有：这个页签以前的文案是「正在下载 … 0%」——壁纸预取占满槽位时
@@ -295,7 +320,9 @@ function SkinsTabPanel() {
             setNote({ ok: true, text: statusText });
           }
           if (job && job.status === "failed") {
-            setNote({ ok: false, text: weT("下载失败：{name}（{why}）", { name: label2, why: job.error || "unknown" }) });
+            // 失败必须**留在卡片上**（原因 +「重试」），不只写在提示行 —— 提示行会被下一次操作冲掉。
+            cards.fail(cardId, job.error || "download-failed");
+            setNote({ ok: false, text: dlFailReason(job.error || "download-failed") });
             return;
           }
           if (job && job.status === "done") {
@@ -303,11 +330,17 @@ function SkinsTabPanel() {
             return act("install", payload, label);
           }
         }
-        setNote({ ok: false, text: weT("下载超时：{name}", { name: label2 }) });
+        // 30 分钟还没落地：卡片上留「超时 + 重试」，提示行给同一句人话。
+        cards.fail(cardId, "download-timeout");
+        setNote({ ok: false, text: dlFailReason("download-timeout") });
         return;
       }
       if (resp && resp.ok && r && r.ok) {
         if (kind === "install") {
+          // 宿主回 ok ⇒ 卡片立刻按"已完成"显示（`exists` 幂等分支同样适用）。
+          // 站点 slug 与本机 skin.json 的 id 归一对不上时，列表里的 installed 会一直是 false，
+          // 卡片就会静默回到「安装」= 用户眼里的"点了没反应"。
+          if (cardId) cards.markOk(cardId);
           // 安装时宿主会把 skin.json **规范化**成皮肤中心一定收的样子（它的规则比我们严：
           // id 必须等于目录名、必须 v2、name/nameEn/author/stylesheet 齐全、不允许未知顶层键）。
           // 这一步做了什么要如实告诉用户，否则"为什么它动了我的清单"会变成新的疑问。
@@ -333,36 +366,21 @@ function SkinsTabPanel() {
         await load(true);
       } else {
         const code = (r && r.error) || "failed";
-        const map = {
-          'no-skin-json': weT("这个包里没有 skin.json，不是皮肤包"),
-          'unsafe-entry': weT("包里有非法路径（已整包拒绝）"),
-          'too-large': weT("包太大了（上限 200 MB）"),
-          'host-not-allowed': weT("下载地址不在白名单里"),
-          'site-off': weT("站点被关闭了（DSH_FOLIA_SITE=off）"),
-          'not-a-zip': weT("这个文件不是 zip"),
-          'not-installed': weT("这个皮肤不在本机（先安装）"),
-          'skin-center-missing': weT("装皮肤中心后才能切换皮肤（见下面的安装命令）"),
-          'bad-id': weT("皮肤 id 不合法"),
-          // 网络/上游类错误必须说人话：以前这里落到兜底的 "failed"，用户完全不知道发生了什么。
-          // 实测踩过：`error:"fetch failed"` 时界面显示「操作失败：failed」，看起来像插件坏了。
-          'fetch failed': weT("连不上站点（网络中断或 DNS/TLS 失败），已自动重试一次；再点一次「安装」即可续传"),
-          'network': weT("连不上站点（网络层失败），请重试"),
-          'timeout': weT("站点响应超时，请重试"),
-          'download-failed': weT("下载失败（站点未返回文件），请稍后重试"),
-          'download-timeout': weT("下载超时（已下部分会保留，再点「安装」可续传）"),
-          'http-404': weT("站点上没有这个文件（可能正在补传/已被删除）"),
-          'http-403': weT("站点拒绝访问这个文件（权限或签名问题）"),
-          'http-500': weT("站点服务器错误（HTTP 500），不是本地问题，请稍后重试"),
-          'http-502': weT("站点网关错误（HTTP 502），请稍后重试"),
-          'http-503': weT("站点暂时不可用（HTTP 503），请稍后重试"),
-        };
-        setNote({ ok: false, text: map[code] || weT("操作失败：{code}", { code }) });
+        // 失败原因的**唯一真源**是 `dlFailReason`（四模块共用一张表，见 src/local-first.js）：
+        // 以前这张表只在本页签里，另外两个页签只会显示裸错误码，于是同一个故障在三个地方
+        // 说法不一样。现在卡片与提示行读的是同一句人话。
+        if (isInstall && cardId) cards.fail(cardId, code);
+        setNote({ ok: false, text: dlFailReason(code) });
       }
     } catch (e) {
-      setNote({ ok: false, text: weT("请求失败：{msg}", { msg: (e && e.message) || weT("网络错误") }) });
+      const why = e && e.message ? String(e.message) : "";
+      const code = /timeout|超时/i.test(why) ? "submit-timeout" : "network";
+      if (isInstall && cardId) cards.fail(cardId, code);
+      setNote({ ok: false, text: weT("请求失败：{msg}", { msg: why || weT("网络错误") }) });
     } finally {
-      setBusy("");
-      busyRef.current = "";
+      // 请求返回/失败/超时都在这条路径上 ⇒ 退出「正在提交…」，卡片要么交给队列、要么给「重试」。
+      if (isInstall && cardId) cards.end(cardId);
+      if (busyKey && !isInstall) { setBusy(""); busyRef.current = ""; }
     }
   };
 
@@ -601,10 +619,15 @@ function SkinsTabPanel() {
     site.length === 0
       ? [React.createElement("span", { key: "none", className: "we-picker__hint" }, weT("站点上还没有皮肤。"))]
       : site.map((s) => {
-        const busyThis = busy === "install:" + s.id;
         // 4.23.3：这条站点皮肤对应的队列 job（kind=skin + url）；挂载时已在跑的直接显示进度。
         const job = dlJobForCard(dl.jobs, "skin", s.url);
-        const jobBusy = dlJobActive(job);
+        // 4.23.4：卡片状态（idle/submitting/queued/running/installing/done/failed）由**四模块共用**的
+        // `dlCardState` 算出来 —— 按钮文案、是否禁用、失败原因与「重试」都在那一个函数里。
+        // 旧实现这里是 `disabled: busyIsStructural || jobBusy`：另一张卡片在装 ⇒ 这张的按钮也灰 ⇒ 点了什么都不发生。
+        const st = cards.stateOf({ id: s.id, job, done: Boolean(s.installed) || cards.okOf(s.id), labels: skinDlLabels });
+        // running 的按钮文案沿用 4.23.3 的紧凑形式（`下载中… 42% · 多连接(8)`，4.23.3 的判据逐字钉着它），
+        // MB / 剩余时间放在下面那行明细里；其余状态一律由状态机给。
+        const label = st.phase === "running" ? dlBusyLabel(job) : st.label;
         // 站点条目的 slug 与本机皮肤 id **不一定相同**（站点 slug 由标题生成/为避撞名会加 skin- 前缀），
         // 而皮肤中心只认 skin.json 里的原始 id ⇒ 写之前必须换成**本机那个 id**，
         // 否则它的 activePostHandler 会回 404 skin-not-found（实测报错 skin-center-404）。
@@ -619,28 +642,45 @@ function SkinsTabPanel() {
           React.createElement("div", { style: SKIN_STYLE.meta },
             [skinFmtBytes(s.bytes), (s.tags || []).includes("动态") ? weT("动态") : ""].filter(Boolean).join(" · ")),
           React.createElement("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
-            s.installed
+            s.installed || cards.okOf(s.id)
               // 已装的站点卡片也要能**直接应用**：用户是照着站点缩略图挑的，
               // 让他再滚回上面的「本机已装」区去点一次是多余的一步（实测反馈）。
               ? [
-                localId && isActiveSkin(localId)
-                  ? React.createElement("span", { key: "on", style: { ...SKIN_STYLE.badge, background: "rgba(60,160,90,0.55)" } }, weT("使用中"))
-                  : React.createElement("button", {
-                    key: "apply",
-                    className: "we-picker__btn", type: "button",
-                    disabled: (busyIsActivating && busy === "activate:" + localId) || !canApply,
-                    title: applyBlockedReason || undefined,
-                    onClick: () => act("activate", { id: localId }, s.title),
-                  }, busy === "activate:" + localId ? weT("切换中…") : weT("应用")),
+                // ⚠️ 只有**确实知道本机 id** 时才给「应用」：`localId` 为空表示站点 slug 与本机
+                // skin.json 的 id 对不上（为避撞名会加 `skin-` 前缀）。旧实现此时会渲染一个
+                // id="" 的「应用」按钮 —— 点下去等于"恢复默认外观"（把正在用的皮肤清掉）。
+                localId
+                  ? (isActiveSkin(localId)
+                    ? React.createElement("span", { key: "on", style: { ...SKIN_STYLE.badge, background: "rgba(60,160,90,0.55)" } }, weT("使用中"))
+                    : React.createElement("button", {
+                      key: "apply",
+                      className: "we-picker__btn", type: "button",
+                      disabled: (busyIsActivating && busy === "activate:" + localId) || !canApply,
+                      title: applyBlockedReason || undefined,
+                      onClick: () => act("activate", { id: localId }, s.title),
+                    }, busy === "activate:" + localId ? weT("切换中…") : weT("应用")))
+                  : null,
                 React.createElement("span", { key: "done", style: SKIN_STYLE.badge }, weT("已安装")),
               ]
               : React.createElement("button", {
                 className: "we-picker__btn", type: "button",
-                disabled: busyIsStructural || busy === "install:" + s.id || jobBusy,
-                title: skinCenter === "absent" ? weT("先装皮肤中心，否则皮肤装好也没法启用") : undefined,
+                // 只禁**这张卡片**自己（提交中/排队/在下/解压/已装）；别的卡片在装不影响它。
+                disabled: st.disabled,
+                title: st.phase === "failed" ? st.reason
+                  : (skinCenter === "absent" ? weT("先装皮肤中心，否则皮肤装好也没法启用") : undefined),
                 onClick: () => act("install", { id: s.id, url: s.url }, s.title),
-              }, jobBusy ? dlBusyLabel(job) : (busyThis ? weT("安装中…") : weT("安装"))),
+              }, label),
           ),
+          // 进度 / 原因明细：`12.3/16.6 MB · 约剩 41 秒`、`排队中：前面还有 2 个任务`、
+          // 或失败原因（红字）。失败时按钮上是「重试」，点它立刻重新提交。
+          st.detail
+            ? React.createElement("div", {
+              style: {
+                fontSize: "10.5px", lineHeight: "1.45", marginTop: "2px",
+                opacity: 0.9, color: st.phase === "failed" ? "#ff9a9a" : undefined,
+              },
+            }, st.detail)
+            : null,
         );
       }),
   ));

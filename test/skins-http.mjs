@@ -13,21 +13,37 @@
  */
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
 import { deflateRawSync } from 'node:zlib';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { registerSkinsRoutes } from '../lib/routes/skins.js';
+import { getDownloadQueue } from '../lib/routes/downloads.js';
 
 const results = [];
 function check(name, cond, detail) { results.push({ name, ok: Boolean(cond), detail }); }
+const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 
 /* ── zip 构造（store / deflate 都要覆盖）────────────────────────────────── */
+/**
+ * 表驱动 CRC32：⑦ 的用例要打一个 **16.6 MB** 的真包（用户在站点上遇到的量级），
+ * 逐位版本在 1700 万字节上要跑十几秒；改成查表后同样的结果、几十毫秒。
+ */
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n += 1) {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
 function crc32(buf) {
-  let c = ~0;
-  for (const byte of buf) { c ^= byte; for (let k = 0; k < 8; k += 1) c = (c >>> 1) ^ (0xedb88320 & -(c & 1)); }
-  return (~c) >>> 0;
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i += 1) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
 }
 function makeZip(files) {
   const locals = [];
@@ -78,6 +94,10 @@ const FIXTURES = {
 
 /** 假站点：/api/public/wallpapers 返回两条（其中 demo-skin 已被本机装过） */
 let downloadHits = 0;
+// ⑦ 用：16.6 MB 的真包（模拟「鲸鱼娘·雨夜」那个量级），前 9.5 秒一个字节都不发
+// ⇒ 安装请求在宿主 8 秒窗口内拿不到 done，必然走 202 pending 那条路。
+let bigZip = null;
+let bigHits = 0;
 const server = createServer((req, res) => {
   if (req.url.startsWith('/api/public/wallpapers')) {
     res.setHeader('content-type', 'application/json');
@@ -89,6 +109,19 @@ const server = createServer((req, res) => {
         ],
       },
     }));
+    return;
+  }
+  if (req.url === '/big.zip' && bigZip) {
+    bigHits += 1;
+    res.statusCode = 200;
+    res.setHeader('content-type', 'application/zip');
+    res.setHeader('content-length', String(bigZip.length));
+    // 先把**响应头**真的发出去（真站点就是这样：头先到、体慢到）——
+    // 队列据此拿到总量，卡片才能显示 a/b MB 的分母。
+    try { res.flushHeaders(); } catch { /* 老实现没有这个方法也不致命 */ }
+    // 再"卡" 9.5 秒不发送 body：宿主侧 8 秒窗口结束时 job 还在 running，
+    // 这正是用户看到的"点了半天什么都没有"那段时间（现在有 jobId + 进度可看）。
+    setTimeout(() => { try { res.end(bigZip); } catch { /* 客户端可能已断开 */ } }, 9500);
     return;
   }
   const body = FIXTURES[req.url];
@@ -287,9 +320,114 @@ function call(route, { method = 'GET', body = null, url = null, host = null } = 
   check('activate 只收 POST ⇒ 405', wrongMethod.status === 405, 'status=' + wrongMethod.status);
 }
 
+/* ⑦ 4.23.4：**16.6 MB 皮肤包的 202 pending 全链路**（用户报的「鲸鱼娘·雨夜 点了没反应」）。
+   站点侧真打一个 16.6 MB 的 zip，且前 9.5 秒不发字节 ⇒ 宿主 8 秒窗口结束时它必然还没下完。
+   判据钉住四件事：
+     ① 点下去这段时间，队列里**已经有**这条 job（status + 总量都可读）= 界面有东西可显示；
+     ② 到点回 202 且**带 jobId / status / received / total**（旧实现 jobId 可能为 null ⇒ 客户端
+        既轮询不到进度也等不到收尾，只能静默等到超时）；
+     ③ 最终真的 done，再装一次能解压落位（不是"卡在 0% 再也不动"）；
+     ④ 两个"没有可识别状态"的分支：**坏 zip 缓存**与**站点返回 HTML**，
+        都必须给出明确错误码并**清掉缓存**，让「重试」能真重下（旧实现永远读同一个坏文件秒失败）。 */
+{
+  const MB = 1024 * 1024;
+  const q = getDownloadQueue();
+  const snapAll = () => { try { return q.snapshot() || []; } catch { return []; } };
+  const cacheOf = (u) => join(dshHome, 'cache', 'skins-zip',
+    createHash('sha256').update(u).digest('hex').slice(0, 32) + '.zip');
+  const install = find('/folia/skins/install');
+
+  bigZip = makeZip([
+    { name: 'skin.json', data: JSON.stringify({ id: 'rain-whale', name: '雨夜鲸鱼娘', version: '0.1.0', contributes: { stylesheet: 'skin.css' } }) },
+    { name: 'skin.css', data: '[data-dsh-skin="rain-whale"]{--y:1}' },
+    { name: 'assets/big.bin', data: 'x'.repeat(Math.round(16.6 * MB)), deflate: false },
+  ]);
+  check('⑦ 假站点真的备好了一个 16.6 MB 的皮肤包', bigZip.length > 16.6 * MB, (bigZip.length / MB).toFixed(1) + ' MB');
+
+  const bigUrl = site + '/big.zip';
+  // 不等它返回：这期间"界面能不能看见状态"正是判据本身。
+  const inflight = call(install, { method: 'POST', body: { id: 'rain-whale', url: bigUrl } });
+  await sleep(1200);
+  const live = snapAll().find((j) => j && j.url === bigUrl) || null;
+  check('⑦ 点下去 1.2 秒内队列里就有这条 job（卡片有东西可显示）', Boolean(live),
+    live ? JSON.stringify({ status: live.status, total: live.total }) : 'no-job');
+  check('⑦ 它的 status 是 queued|running（不是"什么都没有"）',
+    Boolean(live && (live.status === 'queued' || live.status === 'running')), live && live.status);
+  check('⑦ 进度分母已知（站点 content-length ⇒ 16 MB 级）',
+    Boolean(live && Number(live.total) > 16 * MB), live && String(live.total));
+
+  const r = await inflight;
+  check('⑦ 16.6 MB 那条真的被站点发过一次（不是本地缓存冒充的）', bigHits >= 1, 'hits=' + bigHits);
+  check('⑦ 8 秒窗口内没下完 ⇒ 202 pending（不是失败、也不是静默）',
+    r.status === 202 && Boolean(r.json && r.json.pending === true), JSON.stringify({ status: r.status, json: r.json }));
+  check('⑦ 202 带 jobId（客户端据此拉进度；空 jobId 等于没有状态）',
+    Boolean(r.json && r.json.jobId) && String(r.json.jobId).length > 0, JSON.stringify(r.json && { jobId: r.json.jobId }));
+  check('⑦ 202 带 status/received/total 三个可识别字段',
+    Boolean(r.json) && typeof r.json.status === 'string'
+    && typeof r.json.received === 'number' && typeof r.json.total === 'number',
+    JSON.stringify(r.json && { status: r.json.status, received: r.json.received, total: r.json.total }));
+  check('⑦ 负对照：pending 但没 jobId 的响应不算"可识别状态"',
+    !(r.json && r.json.pending === true && !r.json.jobId));
+
+  const t0 = Date.now();
+  let doneJob = null;
+  while (Date.now() - t0 < 40000) {
+    doneJob = snapAll().find((j) => j && j.url === bigUrl) || null;
+    if (doneJob && doneJob.status === 'done') break;
+    await sleep(200);
+  }
+  check('⑦ 16.6 MB 最终下完（done，不是永远 running/queued）',
+    Boolean(doneJob && doneJob.status === 'done'), doneJob && doneJob.status);
+  check('⑦ 落地字节数与站点声明一致（16.6 MB 级）',
+    Boolean(doneJob && Number(doneJob.total) > 16.6 * MB), doneJob && String(doneJob.total));
+
+  const r2 = await call(install, { method: 'POST', body: { id: 'rain-whale', url: bigUrl } });
+  check('⑦ 下完后再装 ⇒ 200 ok（读本地 zip 解压落位）',
+    r2.status === 200 && Boolean(r2.json && r2.json.ok === true), JSON.stringify({ status: r2.status, json: r2.json }));
+  check('⑦ 皮肤目录真的写出来了（皮肤中心下一次扫描就能认领）',
+    existsSync(join(dshHome, 'skins', 'rain-whale', 'skin.json')));
+
+  /* ④a 坏 zip 缓存（"已存在 zip 缓存"分支不会有可识别状态） */
+  FIXTURES['/corrupt.zip'] = makeZip([
+    { name: 'skin.json', data: JSON.stringify({ id: 'coral-skin', name: '珊瑚', version: '0.1.0', contributes: { stylesheet: 'skin.css' } }) },
+    { name: 'skin.css', data: 'c{}' },
+  ]);
+  const coralUrl = site + '/corrupt.zip';
+  const coralCache = cacheOf(coralUrl);
+  const ok1 = await call(install, { method: 'POST', body: { id: 'coral-skin', url: coralUrl } });
+  check('⑦ 基准：小包一次装好（缓存随之落盘）',
+    ok1.status === 200 && Boolean(ok1.json && ok1.json.ok) && existsSync(coralCache), JSON.stringify({ status: ok1.status, cache: existsSync(coralCache) }));
+  // 删掉已装目录 + 把缓存截成 1/3 ⇒ 这条 URL 的"已存在 zip 缓存"是个坏包。
+  rmSync(join(dshHome, 'skins', 'coral-skin'), { recursive: true, force: true });
+  const whole = readFileSync(coralCache);
+  writeFileSync(coralCache, whole.subarray(0, Math.max(64, Math.floor(whole.length / 3))));
+  const r3 = await call(install, { method: 'POST', body: { id: 'coral-skin', url: coralUrl } });
+  check('⑦ 坏缓存 ⇒ 422 bad-zip（不再把坏包当成功、也不再静默）',
+    r3.status === 422 && Boolean(r3.json && r3.json.error === 'bad-zip'), JSON.stringify({ status: r3.status, json: r3.json }));
+  check('⑦ 坏缓存**当场清掉**（cacheCleared 且文件真的没了）',
+    Boolean(r3.json && r3.json.cacheCleared === true) && !existsSync(coralCache),
+    JSON.stringify({ cleared: r3.json && r3.json.cacheCleared, exists: existsSync(coralCache) }));
+  const hitsBefore = downloadHits;
+  const r4 = await call(install, { method: 'POST', body: { id: 'coral-skin', url: coralUrl } });
+  check('⑦ 点「重试」⇒ 真的重新下载并装好（不是每次都秒失败）',
+    r4.status === 200 && Boolean(r4.json && r4.json.ok) && downloadHits > hitsBefore,
+    JSON.stringify({ status: r4.status, hits: downloadHits - hitsBefore }));
+
+  /* ④b 站点返回 HTML（200 但内容不是 zip） */
+  FIXTURES['/html.zip'] = Buffer.from('<!DOCTYPE html><html><body>login required</body></html>');
+  const htmlUrl = site + '/html.zip';
+  const r5 = await call(install, { method: 'POST', body: { id: 'html-skin', url: htmlUrl } });
+  check('⑦ 站点拿 HTML 冒充 zip ⇒ 422 not-a-zip（包结构不对，说得出原因）',
+    r5.status === 422 && Boolean(r5.json && r5.json.error === 'not-a-zip'), JSON.stringify({ status: r5.status, json: r5.json }));
+  check('⑦ 它不会被留在缓存里（否则每次重试都读同一份 HTML）', !existsSync(cacheOf(htmlUrl)));
+  const r6 = await call(install, { method: 'POST', body: { id: 'html-skin', url: htmlUrl } });
+  check('⑦ 再点一次仍然明确报错（有码、有原因，不静默卡住）',
+    r6.status === 422 && typeof (r6.json && r6.json.error) === 'string' && r6.json.error.length > 0,
+    JSON.stringify({ status: r6.status, error: r6.json && r6.json.error }));
+}
+
 server.close();
 try { rmSync(dshHome, { recursive: true, force: true }); } catch { /* ignore */ }
-
 /* ── 汇总 ────────────────────────────────────────────────────────────────── */
 let failed = 0;
 for (const x of results) {

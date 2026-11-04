@@ -36,12 +36,15 @@ function BootTabPanel() {
   const [state, setState] = React.useState(null);
   const [busy, setBusy] = React.useState("");
   const [note, setNote] = React.useState(null);
-  // 下载没有进度通道（宿主一次性 fetch 完才返回），但等待必须"看得见"：
-  // 每秒 +1 的秒表足以让用户知道它没卡死。
-  const [tick, setTick] = React.useState(0);
   // 4.23.3：卡片状态以 /folia/downloads/list 为唯一真源 —— 切页签重新挂载后，
   // 这里拉回来的 job 会让「下载中… x%」直接出现，而不是回到「下载」。
   const dl = useDownloadJobs();
+  // 4.23.4：**卡片级**状态机（四页签共用，见 src/local-first.js 的 `dlCardState`）——
+  // 点击瞬间就有「正在提交…」，随后 排队 / 进度 / 解压 / 失败原因+重试，四模块同一套。
+  const cards = useDlCards(dl);
+  // 只有这两个词属于本页签的口径。
+  const bootDlLabels = { idle: weT("下载"), done: weT("使用中"), failed: weT("重试") };
+
 
   const load = React.useCallback(async (force) => {
     try {
@@ -55,20 +58,17 @@ function BootTabPanel() {
 
   React.useEffect(() => { load(false); }, [load]);
 
-  React.useEffect(() => {
-    if (!busy) return undefined;
-    const t = setInterval(() => setTick((n) => n + 1), 1000);
-    return () => clearInterval(t);
-  }, [busy]);
-
   async function act(kind, payload, label) {
     if (busy) return;
     // 只有结构性操作（下载 / 选择 / 删除）才锁 UI；开关与参数是幂等的，锁了反而闪。
     const structural = kind === "download" || kind === "select" || kind === "remove";
+    const cardId = String((payload && payload.id) || "");
+    const isDownload = kind === "download";
     // 4.23.3：**下载走队列后不再锁整页** —— 进度落在卡片上（dlBusyLabel），锁住反而让人
     // 以为面板卡了。structural 的判据保持原样，只是在"真的 setBusy 吗"这一步把下载排除。
     if (structural && kind !== "download") setBusy(payload && payload.id ? payload.id : kind);
-    setTick(0);
+    // 4.23.4：点击瞬间就把**这张卡片**置为「正在提交…」（请求可能几十秒才回）。
+    if (isDownload && cardId) cards.begin(cardId);
     setNote(null);
     try {
       const resp = await apiPostJson("/boot/" + kind, payload || {}, { parse: "always" });
@@ -77,12 +77,19 @@ function BootTabPanel() {
         if (kind === "download") {
           // 宿主把下载交给队列并回 202 pending（jobId）：进度靠 list，落地后宿主自己再收尾。
           if (r.pending && r.jobId) {
+            // 拿到 jobId ⇒ 卡片交给队列显示，不再停在「正在提交…」（那会把真进度盖住）。
+            cards.end(cardId);
             dl.refresh();
             setNote({ ok: true, text: dlBusyLabel({ percent: 0, mode: r.mode }) });
             const done = await dlAwaitJob(r.jobId);
             if (done && done.status === "done") setNote({ ok: true, text: weT("已下载：{name}", { name: label }) });
-            else if (done && done.status !== "timeout") setNote({ ok: false, text: weT("下载失败：{name}（{why}）", { name: label, why: done.error || done.status }) });
-            else setNote({ ok: false, text: weT("下载超时：{name}", { name: label }) });
+            else if (done && done.status !== "timeout") {
+              cards.fail(cardId, done.error || done.status);
+              setNote({ ok: false, text: dlFailReason(done.error || done.status) });
+            } else {
+              cards.fail(cardId, "download-timeout");
+              setNote({ ok: false, text: dlFailReason("download-timeout") });
+            }
             await load(true);
             return;
           }
@@ -101,11 +108,17 @@ function BootTabPanel() {
         }
       } else {
         const code = (r && r.error) || "failed";
-        setNote({ ok: false, text: r && r.detail ? weT("操作失败：{code}（{detail}）", { code, detail: String(r.detail) }) : weT("操作失败：{code}", { code }) });
+        if (isDownload && cardId) cards.fail(cardId, code);
+        // 失败原因与人话文案同样走共用表（与皮肤 / 桌宠逐字一致，不再各写一套）。
+        setNote({ ok: false, text: dlFailReason(code) });
       }
     } catch (e) {
-      setNote({ ok: false, text: weT("请求失败：{msg}", { msg: (e && e.message) ? e.message : weT("网络错误") }) });
+      const why = e && e.message ? String(e.message) : "";
+      if (isDownload && cardId) cards.fail(cardId, /timeout|超时/i.test(why) ? "submit-timeout" : "network");
+      setNote({ ok: false, text: weT("请求失败：{msg}", { msg: why || weT("网络错误") }) });
     } finally {
+      // 请求返回/失败/超时 ⇒ 退出「正在提交…」（成功分支已提前 end 的话这里是空操作）。
+      if (isDownload && cardId) cards.end(cardId);
       setBusy("");
     }
   }
@@ -217,21 +230,24 @@ function BootTabPanel() {
         // 4.23.3：这一条卡片的下载 job（按 kind=boot + url 匹配）。挂载时已有 running 的，
         // 这里天然就能显示「下载中… x%」——状态不跟着组件挂载/卸载走。
         const job = dlJobForCard(dl.jobs, "boot", c.url);
-        const jobBusy = dlJobActive(job);
-        const isBusy = busy === c.id || jobBusy;
+        // 4.23.4：卡片状态由**四模块共用**的状态机决定（下载按钮的文案/禁用/失败原因+重试）。
+        // `done` 传 false：本页签"完成"的形态是**换一组按钮**（使用/删除），不是同一个按钮变字。
+        const st = cards.stateOf({ id: c.id, job, done: false, labels: bootDlLabels });
+        // running 沿用 4.23.3 的紧凑文案（`下载中… 42% · 多连接(8)`），MB/剩余时间在下面那行明细里。
+        const label = st.phase === "running" ? dlBusyLabel(job) : st.label;
+        const isBusy = busy === c.id;
         const isActive = c.id === activeId;
-        const btn = (label, onClick, disabled, primary) => React.createElement("button", {
+        const btn = (text, onClick, disabled, primary) => React.createElement("button", {
           type: "button",
           className: "we-picker__btn" + (primary ? " we-picker__btn--primary" : ""),
           style: { flex: "1 1 0", fontSize: "11.5px", padding: "4px 6px" },
           disabled: Boolean(disabled) || Boolean(busy),
           onClick,
-        }, label);
+        }, text);
         const actions = [];
         if (!c.installed) {
-          const label = jobBusy ? dlBusyLabel(job)
-            : (busy === c.id ? weT("下载中… {s}s", { s: tick }) : weT("下载"));
-          actions.push(btn(label, () => act("download", { id: c.id }, c.title), isBusy, true));
+          // 只禁**这一张**卡片（提交中/排队/在下/解压）；别的卡片在动不影响它。
+          actions.push(btn(label, () => act("download", { id: c.id }, c.title), st.disabled, true));
         } else if (!isActive) {
           actions.push(btn(weT("使用"), () => act("select", { id: c.id }, c.title), false, true));
           actions.push(btn(weT("删除"), () => act("remove", { id: c.id }, c.title), isBusy, false));
@@ -255,6 +271,13 @@ function BootTabPanel() {
             ? React.createElement("div", { style: { ...BOOT_STYLE.meta, color: "#ffd08a" } }, weT("未做 faststart，播放可能更慢"))
             : null,
           React.createElement("div", { style: { ...BOOT_STYLE.row, marginTop: "4px" } }, actions),
+          // 进度 / 原因明细：`12.3/16.6 MB · 约剩 41 秒`、`排队中：前面还有 2 个任务`、
+          // 或失败原因（红字）。失败时按钮上是「重试」，点它立刻重新提交。
+          st.detail
+            ? React.createElement("div", {
+              style: { ...BOOT_STYLE.meta, color: st.phase === "failed" ? "#ff9a9a" : undefined },
+            }, st.detail)
+            : null,
         );
       })));
   } else if (state) {
