@@ -60,6 +60,10 @@ function BootTabPanel() {
   // 4.23.4：**卡片级**状态机（四页签共用，见 src/local-first.js 的 `dlCardState`）——
   // 点击瞬间就有「正在提交…」，随后 排队 / 进度 / 解压 / 失败原因+重试，四模块同一套。
   const cards = useDlCards(dl);
+  // 4.23.14：300ms 占位要知道队列里是否已有这张卡片的 queued/running（闭包会读到点击瞬间的旧
+  // 快照 ⇒ 用 ref 跟住最新值）。
+  const jobsRef = React.useRef([]);
+  jobsRef.current = dl.jobs;
   // 只有这两个词属于本页签的口径。
   const bootDlLabels = { idle: weT("下载"), done: weT("使用中"), failed: weT("重试") };
 
@@ -125,7 +129,7 @@ function BootTabPanel() {
   }, [state, dl.jobs]);
 
 
-  async function act(kind, payload, label) {
+  async function act(kind, payload, label, ev, jobUrl) {
     if (busy) return;
     // 只有结构性操作（下载 / 选择 / 删除）才锁 UI；开关与参数是幂等的，锁了反而闪。
     const structural = kind === "download" || kind === "select" || kind === "remove";
@@ -134,11 +138,27 @@ function BootTabPanel() {
     // 4.23.3：**下载走队列后不再锁整页** —— 进度落在卡片上（dlBusyLabel），锁住反而让人
     // 以为面板卡了。structural 的判据保持原样，只是在"真的 setBusy 吗"这一步把下载排除。
     if (structural && kind !== "download") setBusy(payload && payload.id ? payload.id : kind);
-    // 4.23.4：点击瞬间就把**这张卡片**置为「正在提交…」（请求可能几十秒才回）。
-    if (isDownload && cardId) cards.begin(cardId);
-    setNote(null);
+    // 非下载类沿用旧口径：先清上一轮提示。下载类交给 dlInstallClick（它先写即时反馈）。
+    if (!isDownload) setNote(null);
     try {
-      const resp = await apiPostJson("/boot/" + kind, payload || {}, { parse: "always" });
+      let resp;
+      if (isDownload) {
+        // 4.23.14：与皮肤页签**同一个**实现 —— 第一行同步反馈（按钮「正在提交…」+ 卡片 pressed +
+        // aria-busy），再进卡片状态机，最后才发请求；300ms 没进队列就出「提交中…（正在准备）」。
+        const click = await dlInstallClick({
+          el: ev && ev.currentTarget,
+          btnText: weT("正在提交…"),
+          installed: false,
+          begin: () => { cards.begin(cardId); },
+          onSubmitting: () => { setNote({ ok: true, text: weT("正在提交…") }); },
+          onPreparing: (text) => { setNote({ ok: true, text }); },
+          jobActive: () => dlJobActive(dlJobForCard(jobsRef.current, "boot", jobUrl)),
+          submit: () => apiPostJson("/boot/download", payload || {}, { parse: "always" }),
+        });
+        resp = click.resp;
+      } else {
+        resp = await apiPostJson("/boot/" + kind, payload || {}, { parse: "always" });
+      }
       const r = (resp && resp.data) || null;
       if (resp && resp.ok && r && r.ok) {
         if (kind === "download") {
@@ -325,14 +345,15 @@ function BootTabPanel() {
         const actions = [];
         if (!c.installed) {
           // 只禁**这一张**卡片（提交中/排队/在下/解压）；别的卡片在动不影响它。
-          actions.push(btn(label, () => act("download", { id: c.id }, c.title), st.disabled, true));
+          // 4.23.14：把事件（被点的按钮）与本条 url 交给 act ⇒ 同步反馈 + 300ms 占位判定。
+          actions.push(btn(label, (ev) => act("download", { id: c.id }, c.title, ev, c.url), st.disabled, true));
         } else if (!isActive) {
           actions.push(btn(weT("使用"), () => act("select", { id: c.id }, c.title), false, true));
           actions.push(btn(weT("删除"), () => act("remove", { id: c.id }, c.title), isBusy, false));
         } else {
           actions.push(btn(weT("使用中"), () => {}, true, false));
         }
-        return React.createElement("div", { key: c.id, style: BOOT_STYLE.card },
+        return React.createElement("div", { key: c.id, className: "we-dl-card", style: BOOT_STYLE.card },
           // 封面：站点给了真正的缩略图才显示；老条目没有就留空（不显示破图）。
           c.cover
             ? React.createElement("img", {

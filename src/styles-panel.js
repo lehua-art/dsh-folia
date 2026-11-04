@@ -813,6 +813,22 @@ const CSS_PANEL = `  /* ── 吉祥物形态**3D 圆环转盘**（四次返工
     font-size: 12px; line-height: 18px; text-align: center;
   }
 
+  /* ── 4.23.14：首次点击的**同步**反馈（四类入口共用）─────────────────────────
+     真实故障：皮肤卡片「安装」第一下没有任何反馈、第二下才有反应。
+     这两条规则把 dlFirstClickFeedback() 同步加上的 class 变成**看得见**的变化：
+     .we-first-click 挂在卡片上（皮肤/开机动画/桌宠卡带 we-dl-card，壁纸库/快捷面板
+     是 we-picker__card / we-qp__item / we-qp__card），.we-first-click-btn 挂在按钮上。
+     只动 opacity/transform：不动配色，不受主题变量影响；撤销由各自的 restore()/状态机负责。 */
+  .we-first-click {
+    opacity: 0.68;
+    transform: scale(0.985);
+    transition: opacity 120ms linear, transform 120ms ease-out;
+  }
+  .we-first-click-btn { opacity: 0.8; }
+  /* 壁纸快捷面板/选择器原本就在按 pointerdown 时加这个 class（video-switch.js），
+     但 CSS 里一直没有对应规则 ⇒ 按下其实**看不见**。这一条把它补齐（同一观感）。 */
+  .we-qp__item--pressed { opacity: 0.68; }
+
 `;
 
 export { CSS_PANEL };

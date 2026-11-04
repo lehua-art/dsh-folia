@@ -315,6 +315,11 @@ const VERIFY_STEPS = [
   //    ⇒ 展示状态 + 是否可点）+ 4 条端到端（真站点替身 + 真路由 + 真队列 + 真 zip，含
   //    "宿主重启 job 表被清空"与"站点 500"两条故障注入）。对应 docs/INSTALL-FLOW.md 的防复发清单。
   step('test/verify-install-flow.mjs'),
+  // 4.23.14：**「第一下点击必然有可见变化」**（用户实测：皮肤卡片「安装」第一下没反应、第二下才有）。
+  // 判据按"用户能看到的第一帧"组织：点击同一 tick 的 pressed/aria-busy + 零网络、预检查只在
+  // installed===true 时做且 1.5s 超时后照常发请求、300ms 未进队列出「提交中…（正在准备）」占位、
+  // 四类入口（皮肤/开机动画/桌宠/壁纸）各一条 + 旧顺序负对照。对应 docs/INSTALL-FLOW.md 第 9 节。
+  step('test/verify-first-click-feedback.mjs'),
   // ㉖ 4.23.6：**整条链路**（清单→选档→下载→落位→安装→启用）的端到端回归 —— 6 个场景逐段断言 + 计时：
   //    快链路选原画/0 Range/<2s、慢链路 3 秒切 ranged:8 且吞吐 ≥2.5×、清单陈旧回落、缓存命中 0 请求、
   //    落位安装幂等、故障注入（重启/500/磁盘写失败）。数字给在 docs/DOWNLOAD-CHAIN-REPORT.md。

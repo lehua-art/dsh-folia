@@ -1,5 +1,55 @@
 # 变更记录（Changelog）
 
+### v4.23.14（2026-11-04）
+
+> 主题：**第一下就得有反应** —— 用户实测：皮肤卡片的「安装」**第一下点击没有任何反馈**，第二下才有。
+> 根因不是按钮坏了，而是"点击 → 有反应"之间排了一次网络往返（预检查），
+> 而首帧反馈又只靠 React 的一次提交；预检查走完之前，卡片明细还是空的。
+
+#### 1. 定因（本机 43129，真接口采样）
+
+| 项 | 数值 |
+|---|---|
+| `/folia/skins/list`（旧实现排在点击与反馈之间的那次预检查） | 冷 **893.4 ms / 555.7 ms**（两次冷启动），热 **17.9 / 21.3 / 40.4 / 41.9 / 43.2 / 44.0 ms** |
+| `/folia/pets/list` | 冷 **759.7 ms**，热 **171.4–178.7 ms** |
+| `/folia/boot/list` | 冷 **343.2 ms**，热 **6.0–17.4 ms** |
+| `JSON.parse` 其中最大的一份（`skins/list` 31,793 B） | **0.10 ms** ⇒ 慢在网络往返，不在解析 |
+| `dlFirstClickFeedback()`（新：同步改 DOM） | mean **0.72 µs** / p99 **4.40 µs** |
+| `dlInstallClick()` 到 `cards.begin()`（新：首帧反馈 + 状态机入口） | mean **1.35 µs** / p99 **6.20 µs** |
+| `dlCardState()` 一次（纯计算） | **0.326 µs** |
+
+结论三条（都是"顺序"问题，不是某一行写错）：
+1. `cards.begin()` 之后**立刻** `await skinInstalledNow()` ⇒ 冷启动最多 **893 ms** 的窗口里，用户看到的
+   唯一变化是 React 的一次提交；
+2. 那次提交**不是同一 tick** 的 DOM 变化（`begin()` 只排 `setSub` / `setNonce`）⇒ 冷启动/弱网下
+   第一印象就是"点了，屏幕没动"；
+3. 300 ms 后仍没有 queued/running 时卡片明细本来是空的（`已等待 N 秒` 要 3 秒才出现）⇒ 慢请求 = 静默。
+
+#### 2. 修法（四类入口共用一套）
+
+- **同步立即反馈**：点击的**第一行**就改 DOM —— 卡片 pressed、`aria-busy`、按钮「正在提交…」，
+  不 await、不发网络、不等 React 提交（`src/local-first.js` 的 `dlFirstClickFeedback()`）。
+- **预检查移出关键路径**：只有清单里该皮肤已 `installed === true` 时才做 `skinInstalledNow()`；
+  否则**直接发安装请求**。真做时也带 **1.5 s 硬超时**，超时后照常发请求（`dlInstallPrecheckPlan()` + `dlPrecheckWithTimeout()`）。
+- **300 ms 占位**：首帧反馈后 300 ms 还没进入 queued/running ⇒ 「提交中…（正在准备）」
+  （`dlPreparingHint()` + `dlCardState()` 的 submitting 明细行 + `cards.begin()` 的 300 ms 补拍）。
+- 皮肤 / 开机动画 / 桌宠的安装（下载）按钮统一走 `dlInstallClick()`；壁纸库卡片与快捷面板行
+  按下即 pressed/aria-busy，并补上 `.we-first-click` / `.we-qp__item--pressed` 的 CSS
+  ——在此之前 pressed class 加上去也**看不见**。
+- 预检查收窄后由宿主 `/skins/install` 的 `exists` 幂等分支兜住"已经装过"（不重复解压）；
+  `deduped` / `job-lost` / 30 分钟上界这三条既有的兜底核对**不变**。
+
+#### 3. 判据
+
+- 新增 `test/verify-first-click-feedback.mjs`（**28 条**，进 `verify` 硬档）：
+  点击同一 tick 的 submitting/pressed + **零网络调用**、`installed` 门两臂（true ⇒ 预检查 1 次且命中不发请求；
+  false ⇒ 0 次）、**1.5 s 超时后仍发出安装请求**、300 ms 占位、四类入口各一条，
+  以及"把「先 await 预检查再反馈」的旧顺序贴回 ⇒ 首条判据红"的运行时 + 源码**双重负对照**。
+- `docs/INSTALL-FLOW.md` 第 1/5/9 节同步更新（状态机表、客户端先查口径、F1–F5）。
+
+### v4.23.13（2026-11-04）
+> 版本号重发（4.23.12 被 npm 记为 staged 待批）。内容与 4.23.12 完全相同：首帧四段式、本机场景/网页不再被 busy 锁吞、代理渐进读返回 content-length/accept-ranges/206、300ms 缓冲提示、下完无缝切本地。
+
 ### v4.23.12（2026-11-04）
 
 > 主题：**「点了没反应」的最后两公里** —— 4.23.11 修好了死锁（点击确实生效），但未缓存的壁纸

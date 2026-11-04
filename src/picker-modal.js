@@ -44,6 +44,20 @@
   const PICKER_CARD_GAP = 8;  // .we-picker__grid 的 gap
   const PICKER_VP_FIRST = 30; // 还没量到窗口时的首帧条目数（关闭卡在内；量完立刻收窄）
 
+  /**
+   * 4.23.14：壁纸库卡片的**同步**点击反馈（"第一次点击必然有可见变化"）。
+   *
+   * 壁纸卡点击 = 应用当前壁纸 + 首次下载入口：`applySelection` 之后要等媒体准备/下载，
+   * 之前这一整段没有任何按下反馈。这里只调 `dlFirstClickFeedback`（纯 DOM：卡片 pressed +
+   * aria-busy），不 await、不发网络；卡片没有状态机来摘 pressed，所以 700ms 后自动复位。
+   */
+  function pickerPressFeedback(el) {
+    try {
+      const release = typeof dlFirstClickFeedback === "function" ? dlFirstClickFeedback(el) : null;
+      if (typeof release === "function" && typeof setTimeout === "function") setTimeout(release, 700);
+    } catch { /* 反馈是增强：失败不影响点击本身 */ }
+  }
+
   function renderPickerModal(ctx) {
     const { sel, playableList, hiddenList, cdMode, vwin } = ctx;
   // ── 库视图虚拟滚动（用户口径：**不要分页**）────────────────────
@@ -150,7 +164,9 @@
       role: "button",
       tabIndex: 0,
       title: w.title,
-      onClick: () => onPickCard(w),
+      // 4.23.14：按下即反馈（同步 DOM），onClick 第一行再补一次 —— 点击/按下之间不给静默窗口。
+      onPointerDown: (ev) => pickerPressFeedback(ev && ev.currentTarget),
+      onClick: (ev) => { pickerPressFeedback(ev && ev.currentTarget); onPickCard(w); },
       onKeyDown: cardKeyDown,
     },
     w.preview
@@ -216,7 +232,9 @@
                   tabIndex: 0,
                   title: w.title,
                   "aria-label": weT("恢复并应用 {name}", { name: w.title }),
-                  onClick: () => applySelection(w.id),
+                  // 4.23.14：与正常卡片同一套同步按下反馈（恢复=应用，也是"点了要有变化"的入口）。
+                  onPointerDown: (ev) => pickerPressFeedback(ev && ev.currentTarget),
+                  onClick: (ev) => { pickerPressFeedback(ev && ev.currentTarget); applySelection(w.id); },
                   // 键盘可达性：正常列表卡片一直有 Enter/Space 处理，
                   // 已隐藏卡片漏了 —— 补上（共享 cardKeyDown）。
                   onKeyDown: cardKeyDown,

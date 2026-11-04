@@ -52,6 +52,10 @@ function PetsTabPanel() {
   // 4.23.4：**卡片级**状态机（四页签共用，见 src/local-first.js 的 `dlCardState`）——
   // 点击瞬间就有「正在提交…」，随后 排队 / 进度 / 解压 / 失败原因+重试，四模块同一套。
   const cards = useDlCards(dl);
+  // 4.23.14：300ms 占位要知道队列里是否已有这张卡片的 queued/running（闭包会读到点击瞬间的旧
+  // 快照 ⇒ 用 ref 跟住最新值）。
+  const jobsRef = React.useRef([]);
+  jobsRef.current = dl.jobs;
   // 只有这两个词属于本页签的口径。
   const petDlLabels = { idle: weT("安装"), done: weT("已安装"), failed: weT("重试") };
 
@@ -121,7 +125,7 @@ function PetsTabPanel() {
   }, [state, dl.jobs]);
 
 
-  const act = async (kind, payload, label) => {
+  const act = async (kind, payload, label, ev, jobUrl) => {
     // 只有安装/卸载/导入这类**结构性**操作才锁 UI；开关与大小是幂等的。
     const structural = kind === "install" || kind === "remove" || kind === "import";
     const cardId = String((payload && payload.id) || "");
@@ -129,11 +133,28 @@ function PetsTabPanel() {
     // 4.23.3：安装走下载队列（payload.queue）时不锁整页 —— 进度落在卡片上，切页签回来仍在。
     const lockUi = structural && !(kind === "install" && payload && payload.queue === true);
     if (lockUi) setBusy(kind + ":" + cardId);
-    // 4.23.4：点击瞬间把**这张卡片**置为「正在提交…」（无论走不走队列，都要立刻有反应）。
-    if (isInstall && cardId) cards.begin(cardId);
-    setNote(null);
+    // 非安装类沿用旧口径：先清上一轮提示。安装类交给 dlInstallClick（它先写即时反馈）。
+    if (!isInstall) setNote(null);
     try {
-      const resp = await apiPostJson("/pets/" + kind, payload || {}, { parse: "always" });
+      let resp;
+      if (isInstall) {
+        // 4.23.14：与皮肤/开机动画**同一个**实现 —— 第一行同步反馈（按钮「正在提交…」+ 卡片
+        // pressed + aria-busy），再进卡片状态机，最后才发请求；300ms 没进队列就出「提交中…
+        // （正在准备）」。桌宠的清单接口 `/pets/list` 因此不再挡在点击与请求之间。
+        const click = await dlInstallClick({
+          el: ev && ev.currentTarget,
+          btnText: weT("正在提交…"),
+          installed: false,
+          begin: () => { cards.begin(cardId); },
+          onSubmitting: () => { setNote({ ok: true, text: weT("正在提交…") }); },
+          onPreparing: (text) => { setNote({ ok: true, text }); },
+          jobActive: () => dlJobActive(dlJobForCard(jobsRef.current, "pet", jobUrl)),
+          submit: () => apiPostJson("/pets/install", payload || {}, { parse: "always" }),
+        });
+        resp = click.resp;
+      } else {
+        resp = await apiPostJson("/pets/" + kind, payload || {}, { parse: "always" });
+      }
       const r = (resp && resp.data) || null;
       if (resp && resp.ok && r && r.ok) {
         if (kind === "install") {
@@ -358,7 +379,7 @@ function PetsTabPanel() {
         const st = cards.stateOf({ id: s.id, job, done: false, labels: petDlLabels });
         // running 沿用 4.23.3 的紧凑文案（`下载中… 42% · 多连接(8)`），MB/剩余时间在下面那行明细里。
         const label = st.phase === "running" ? dlBusyLabel(job) : st.label;
-        return React.createElement("div", { key: "site:" + s.id, style: PET_STYLE.card },
+        return React.createElement("div", { key: "site:" + s.id, className: "we-dl-card", style: PET_STYLE.card },
           s.cover
             ? React.createElement("img", {
               src: s.cover, alt: "", loading: "lazy", decoding: "async",
@@ -370,7 +391,8 @@ function PetsTabPanel() {
           React.createElement("div", { style: PET_STYLE.meta }, petFmtBytes(s.bytes)),
           React.createElement("div", { style: PET_STYLE.row },
             // 只禁**这一张**卡片（提交中/排队/在下/解压）；别的卡片在动不影响它。
-            btn(label, () => act("install", { id: s.id, queue: true }, s.title || s.id), st.disabled)),
+            // 4.23.14：事件与本条 url 一并交给 act ⇒ 同步反馈 + 300ms 占位判定。
+            btn(label, (ev) => act("install", { id: s.id, queue: true }, s.title || s.id, ev, s.url), st.disabled)),
           // 进度 / 原因明细：`12.3/16.6 MB · 约剩 41 秒`、`排队中：前面还有 2 个任务`、
           // 或失败原因（红字）。失败时按钮上是「重试」，点它立刻重新提交。
           st.detail

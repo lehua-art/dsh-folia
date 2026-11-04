@@ -390,8 +390,10 @@ async function main() {
     // 缓存族归一化 / 双元素池 / 切换状态机 / 点击反馈 / switchLatencyMs 度量）挂一硬档，
     // 4.23.12 抬到 **114/127**：首帧四段式与终态保证（`test/verify-first-frame.mjs`，
     // 代理头 content-length/accept-ranges/206 + 300ms 缓冲提示 + last-click-wins）挂一硬档，
+    // 4.23.14 抬到 **115/128**：首击反馈（`test/verify-first-click-feedback.mjs`，
+    // 同步 pressed/aria-busy + 预检查只在 installed===true 且 1.5s 超时 + 300ms 占位 + 四类入口）挂一硬档。
     //（按本文件既有纪律：地板 = 实测步数，抬本身即证据；下面的负对照保证"删一步即红"）。
-    const CHAIN_FLOOR = { verify: 114, docs: 6, smoke: 6, all: 127 };
+    const CHAIN_FLOOR = { verify: 115, docs: 6, smoke: 6, all: 128 };
     /** 地板表与 GROUPS 的对齐体检：键名必须与**组名**逐一对齐（纯函数 ⇒ 负对照可直接喂）。 */
     const floorGaps = (groups, floors) => groups.map(([, g]) => g).filter((g) => !Number.isInteger(floors[g]));
     const problems = floorGaps(GROUPS, CHAIN_FLOOR).map((g) => '地板表缺组 ' + g

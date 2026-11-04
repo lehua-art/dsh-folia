@@ -732,10 +732,16 @@ function dlCardState(inp) {
   // ② 点了、请求还没回来、也还没有 job 可看 ⇒ 立刻置灰 +「正在提交…」。
   //    这一格是"点了没反应"的直接解药：它出现在点击的同一帧。
   if (o.sub && String(o.sub.id || "") === String(o.id || "")) {
-    const waited = Math.max(0, Math.round((now - (Number(o.sub.at) || now)) / 1000));
-    if (waited * 1000 >= timeout) return fail('submit-timeout');
-    return make(DL_PHASES.SUBMITTING, weT("正在提交…"),
-      waited >= 3 ? weT("已等待 {s} 秒", { s: waited }) : "", true, false, "");
+    const elapsed = Math.max(0, now - (Number(o.sub.at) || now));
+    const waited = Math.round(elapsed / 1000);
+    if (elapsed >= timeout) return fail('submit-timeout');
+    // 4.23.14：首帧反馈之后 **300ms** 还没有 queued/running ⇒ 出「提交中…（正在准备）」占位。
+    // 为什么必须有：预检查/请求在冷启动或弱网下可以是几百毫秒到几秒，而旧实现这一格只有空
+    // 明细行（`已等待 N 秒` 要等到 3 秒才出现）⇒ 用户看到的就是"点了没反应"。
+    const detail = waited >= 3
+      ? weT("已等待 {s} 秒", { s: waited })
+      : (elapsed >= DL_FIRST_CLICK_PLACEHOLDER_MS ? weT("提交中…（正在准备）") : "");
+    return make(DL_PHASES.SUBMITTING, weT("正在提交…"), detail, true, false, "");
   }
   // ②b 本卡片有一次**明确的失败**（提交失败 / 自动补装失败）⇒ 立刻给原因 +「重试」。
   //
@@ -816,6 +822,237 @@ function dlAwaitJob(jobId, timeoutMs) {
     };
     tick();
   });
+}
+
+/* ── 「第一下就必须有反应」（4.23.14）────────────────────────────────────────
+ *
+ * 真实故障（用户实测）：皮肤卡片的「安装」**第一下点击没有任何反馈**，第二下才有反应。
+ *
+ * 定因（三条，都能测）：
+ *   ① 旧顺序是 `cards.begin(id)` 后**立刻** `await skinInstalledNow(id)` —— 一次
+ *      `/folia/skins/list` 往返。本机实测：冷启动 **555.7 ms**、热态 **41.9–44.0 ms**
+ *      （5 次采样，见交付报告）。可这期间用户能看到的**唯一**变化是 React 的一次提交。
+ *   ② 那一次提交不是"同一 tick"的 DOM 变化：`begin()` 只是排了 `setSub` / `setNonce`，
+ *      要等 React 在事件回调让出后重渲染、浏览器再画一帧。请求再慢一点（冷启动/弱网），
+ *      用户的第一印象就是"我点了，但屏幕没动"。
+ *   ③ 300ms 后仍没有 queued/running 时，卡片明细行本来就是空的（`已等待 N 秒` 要到 3 秒
+ *      才出现）⇒ 慢请求 = 完全静默。
+ *
+ * 三条修法（四类入口共用，见下面三个函数 + `dlInstallClick`）：
+ *   · `dlFirstClickFeedback()`：点击的**第一行**就改 DOM（卡片 pressed / `aria-busy` /
+ *     按钮文案「正在提交…」），不 await、不发网络、不依赖 React 提交；
+ *   · `dlInstallPrecheckPlan()`：预检查**只在清单说已 installed===true** 时才做（其余情况
+ *     直接发安装请求）；真做时也走 `dlPrecheckWithTimeout()`，**1.5s 超时后照常发请求**；
+ *   · `DL_FIRST_CLICK_PLACEHOLDER_MS`（300ms）后仍未进入队列 ⇒ 出「提交中…（正在准备）」。
+ */
+const DL_PRECHECK_TIMEOUT_MS = 1500;
+const DL_FIRST_CLICK_PLACEHOLDER_MS = 300;
+
+/**
+ * 点击瞬间的**纯视觉**反馈：卡片 pressed + `aria-busy` + 按钮文案（可选）。
+ *
+ * 只碰 DOM：没有 await、没有网络、没有 React 提交 —— 所以第一处视觉变化与点击同一个 tick。
+ * 返回 `restore()`（幂等）：撤掉本次加上的 class / aria-busy。**不撤文案与 disabled**：
+ * 那两项随后由 React 的重渲染接管（若在这里恢复，会把 React 刚写上的新文案/新禁用态盖回去）。
+ *
+ * @param {any} el   被点的元素（事件里的 `currentTarget` 即可；也可以是卡片本身）
+ * @param {string} [text] 按钮要立即变成的文案（不传就只做 pressed / aria-busy）
+ * @returns {null | (() => void)}
+ */
+function dlFirstClickFeedback(el, text) {
+  const node = (el && typeof el === "object") ? el : null;
+  if (!node) return null;
+  const saved = { node, card: null, cardCls: false, aria: null, hasAria: false, btn: null, btnCls: false, btnTextNode: null, btnText: null, btnDisabled: false };
+  try {
+    // 卡片级 pressed：从按钮往上找**这张卡**（皮肤/开机动画/桌宠卡带 we-dl-card；
+    // 壁纸库/快捷面板是 we-picker__card / we-qp__item / we-qp__card）。
+    let card = null;
+    try {
+      if (typeof node.closest === "function") card = node.closest(".we-dl-card, .we-picker__card, .we-qp__item, .we-qp__card");
+    } catch { card = null; }
+    if (!card && node.classList && typeof node.classList.contains === "function") {
+      for (const cls of ["we-dl-card", "we-picker__card", "we-qp__item", "we-qp__card"]) {
+        if (node.classList.contains(cls)) { card = node; break; }
+      }
+    }
+    const target = card || node;
+    if (target.classList && typeof target.classList.add === "function") {
+      target.classList.add("we-first-click");
+      saved.card = target;
+      saved.cardCls = true;
+    }
+    if (typeof node.setAttribute === "function") {
+      saved.hasAria = true;
+      saved.aria = typeof node.getAttribute === "function" ? node.getAttribute("aria-busy") : null;
+      node.setAttribute("aria-busy", "true");
+    }
+    // 按钮：如果被点的就是按钮，直接用它；否则在卡片里找第一颗按钮。
+    let btn = null;
+    try {
+      if (String(node.tagName || "").toUpperCase() === "BUTTON") btn = node;
+      else if (typeof node.querySelector === "function") btn = node.querySelector("button");
+    } catch { btn = null; }
+    if (btn) {
+      saved.btn = btn;
+      saved.btnDisabled = Boolean(btn.disabled);
+      if (typeof text === "string" && text) {
+        const first = btn.firstChild;
+        // ⚠️ 必须改**React 持有的那个文本节点**（firstChild.nodeValue），不能用 textContent：
+        // 后者会把整颗文本节点换掉，React 之后更新的是旧节点 ⇒ 文案会永远卡在「正在提交…」。
+        if (first && first.nodeType === 3 && typeof first.nodeValue === "string") {
+          saved.btnTextNode = first;
+          saved.btnText = first.nodeValue;
+          first.nodeValue = text;
+        } else if (typeof btn.textContent === "string") {
+          btn.textContent = text;
+        }
+      }
+      if (btn.classList && typeof btn.classList.add === "function") {
+        btn.classList.add("we-first-click-btn");
+        saved.btnCls = true;
+      }
+      btn.disabled = true;
+    }
+  } catch { return null; }
+  let restored = false;
+  return function restore() {
+    if (restored) return;
+    restored = true;
+    try { if (saved.card && saved.cardCls && saved.card.classList && saved.card.classList.remove) saved.card.classList.remove("we-first-click"); } catch { /* ignore */ }
+    try {
+      if (saved.hasAria) {
+        if (saved.aria == null) { if (typeof saved.node.removeAttribute === "function") saved.node.removeAttribute("aria-busy"); }
+        else if (typeof saved.node.setAttribute === "function") saved.node.setAttribute("aria-busy", saved.aria);
+      }
+    } catch { /* ignore */ }
+    try { if (saved.btn && saved.btnCls && saved.btn.classList && saved.btn.classList.remove) saved.btn.classList.remove("we-first-click-btn"); } catch { /* ignore */ }
+    // 不恢复 `btnTextNode.nodeValue` / `btn.disabled`：React 随后会用真实状态覆盖它们，
+    // 在这里抢着写回去反而会盖掉「已安装 / 重试 / 已禁用」这些新事实。
+  };
+}
+
+/**
+ * 预检查**要不要做**（纯函数，负对照直接喂）。
+ *
+ * 口径（4.23.14）：只有清单已经说这套 **installed === true** 时才做 —— 那种情况下"再发一次
+ * 安装请求"确实可能把刚装好的目录删了重写。清单说没装（绝大多数首次点击）时**不做**：
+ * 那一次 `/skins/list` 往返正是第一击"没反应"的来源，而宿主 `/skins/install` 自己对
+ * `exists` 是幂等的（目录已有 skin.json 直接回 `exists:true`），没有必须前置查的理由。
+ *
+ * @param {boolean} installed
+ * @returns {{ precheck: boolean }}
+ */
+function dlInstallPrecheckPlan(installed) {
+  return { precheck: installed === true };
+}
+
+/**
+ * 带**硬超时**的预检查。返回 `'hit' | 'miss' | 'timeout'`（timeout 之后调用方**照常发请求**）。
+ * `timers` 只为测试注入（默认全局 setTimeout/clearTimeout）；生产路径不传。
+ */
+function dlPrecheckWithTimeout(fn, timeoutMs, timers) {
+  const ms = Math.max(0, Number(timeoutMs) || DL_PRECHECK_TIMEOUT_MS);
+  if (typeof fn !== "function") return Promise.resolve("miss");
+  const t = timers || {};
+  const setT = typeof t.setTimeout === "function" ? t.setTimeout : setTimeout;
+  const clearT = typeof t.clearTimeout === "function" ? t.clearTimeout : clearTimeout;
+  return new Promise((resolve) => {
+    let done = false;
+    let timer = null;
+    const finish = (verdict) => {
+      if (done) return;
+      done = true;
+      if (timer !== null) { try { clearT(timer); } catch { /* ignore */ } }
+      resolve(verdict);
+    };
+    try { timer = setT(() => finish("timeout"), ms); } catch { timer = null; }
+    Promise.resolve()
+      .then(() => fn())
+      .then((v) => finish(v === true ? "hit" : "miss"))
+      .catch(() => finish("miss"));
+  });
+}
+
+/**
+ * 「提交中…（正在准备）」占位的**唯一判断**：首帧反馈后 300ms，仍没有 queued/running ⇒ 出这句。
+ * @param {{waitedMs?:number, jobActive?:boolean}} [o]
+ * @returns {string} 占位文案（空串 = 不显示）
+ */
+function dlPreparingHint(o) {
+  const x = o || {};
+  if (x.jobActive === true) return "";
+  const waited = Math.max(0, Number(x.waitedMs) || 0);
+  if (waited < DL_FIRST_CLICK_PLACEHOLDER_MS) return "";
+  return weT("提交中…（正在准备）");
+}
+
+/**
+ * **安装/下载按钮的统一点击流程**（皮肤 / 开机动画 / 桌宠共用一个实现）。
+ *
+ * 顺序是判据，不是风格：**先同步视觉反馈** → 再交给卡片状态机（submitting）→ 再预检查
+ * （只在 `installed === true` 时）→ 最后才发请求。把"先 await 预检查再反馈"写回来，第一击
+ * 就又会静默（`test/verify-first-click-feedback.mjs` 的负对照钉着这一点）。
+ *
+ * @param {object} o
+ * @param {any} [o.el]        被点的元素（`ev.currentTarget`）
+ * @param {string} [o.btnText] 按钮立即变成的文案（缺省「正在提交…」）
+ * @param {boolean} [o.installed] 清单里是否已装（决定要不要预检查）
+ * @param {() => void} [o.begin]  卡片状态机入口（`cards.begin(id)`）
+ * @param {() => void} [o.onSubmitting] 立即写一句提示（可选）
+ * @param {(text:string) => void} [o.onPreparing] 300ms 占位（可选）
+ * @param {() => boolean} [o.jobActive]  300ms 时队列里已有本卡片的 queued/running 吗
+ * @param {() => Promise<boolean>} [o.precheck] 预检查（只在 installed===true 时调用）
+ * @param {number} [o.precheckMs] 预检查超时（默认 1.5s）
+ * @param {() => Promise<any>} [o.submit] 真正的安装/下载请求
+ * @param {object} [o.timers] 测试注入的定时器
+ * @returns {Promise<{precheck:string, skipped:boolean, resp:any, placeholder:string, startedAt:number}>}
+ */
+async function dlInstallClick(o) {
+  const x = o || {};
+  const timers = x.timers || {};
+  const setT = typeof timers.setTimeout === "function" ? timers.setTimeout : setTimeout;
+  const clearT = typeof timers.clearTimeout === "function" ? timers.clearTimeout : clearTimeout;
+  const startedAt = Date.now();
+  // ① **同步**视觉反馈：第一行，纯 DOM，不 await、不网络。
+  const restore = dlFirstClickFeedback(x.el, typeof x.btnText === "string" ? x.btnText : weT("正在提交…"));
+  // ② 卡片状态机：submitting（React 的提交在下一次让出时，晚于上面那一行）。
+  if (typeof x.begin === "function") { try { x.begin(); } catch { /* 状态层失败不挡住提交 */ } }
+  if (typeof x.onSubmitting === "function") { try { x.onSubmitting(); } catch { /* 提示失败不影响提交 */ } }
+  let settled = false;
+  let placeholderText = "";
+  let timer = null;
+  try {
+    // ③ 300ms 还没进入 queued/running ⇒ 出占位（慢请求不许静默）。
+    try {
+      timer = setT(() => {
+        if (settled) return;
+        let jobActive;
+        try { jobActive = typeof x.jobActive === "function" ? x.jobActive() === true : false; } catch { jobActive = false; }
+        // 这一枪本来就是 300ms 那一拍 ⇒ 用「至少 300ms」参与判断：测试换可控定时器时时间不会真的走，
+        // 而生产路径上 Date.now()-startedAt 也必然 ≥ 300（定时器不会提前触发）。
+        const hint = dlPreparingHint({ waitedMs: Math.max(Date.now() - startedAt, DL_FIRST_CLICK_PLACEHOLDER_MS), jobActive });
+        if (!hint) return;
+        placeholderText = hint;
+        try { if (typeof x.onPreparing === "function") x.onPreparing(hint); } catch { /* ignore */ }
+      }, DL_FIRST_CLICK_PLACEHOLDER_MS);
+    } catch { timer = null; }
+    // ④ 预检查（只有清单说已装才做；1.5s 超时后照常发请求）。
+    const plan = dlInstallPrecheckPlan(x.installed);
+    let precheck = "skipped";
+    if (plan.precheck) {
+      precheck = await dlPrecheckWithTimeout(x.precheck, x.precheckMs, timers);
+      if (precheck === "hit") {
+        return { precheck, skipped: true, resp: null, placeholder: placeholderText, startedAt };
+      }
+    }
+    // ⑤ 真正的请求。
+    const resp = typeof x.submit === "function" ? await x.submit() : null;
+    return { precheck, skipped: false, resp, placeholder: placeholderText, startedAt };
+  } finally {
+    settled = true;
+    if (timer !== null) { try { clearT(timer); } catch { /* ignore */ } }
+    try { if (typeof restore === "function") restore(); } catch { /* ignore */ }
+  }
 }
 
 /**
@@ -984,6 +1221,13 @@ function useDlCards(dl) {
         return n;
       });
       setSub({ id: k, at: Date.now() });
+      // 4.23.14：让「提交中…（正在准备）」在**300ms**准时出现。常驻秒表是 1 秒一拍，
+      // 单靠它最快也要 ~1s；这里补一拍，与 `dlInstallClick` 的占位是同一个常量、同一句话。
+      setNowMs(Date.now());
+      try {
+        const timer = setTimeout(() => setNowMs(Date.now()), DL_FIRST_CLICK_PLACEHOLDER_MS);
+        if (timer && typeof timer.unref === "function") timer.unref();
+      } catch { /* 定时器失败不影响提交 */ }
       api.refresh();
     },
     /** 请求返回（成功/失败/超时）：退出 submitting。 */

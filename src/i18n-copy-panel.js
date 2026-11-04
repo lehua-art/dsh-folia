@@ -546,6 +546,8 @@ const WE_I18N_EN_PANEL = {
   // 由 src/local-first.js 的 `dlCardState()`（纯函数，四个页签共用）产出；
   // `idle` / `done` 两个词仍由各页签自己给（安装 / 下载 / 使用中 / 已安装）。
   "正在提交…": "Submitting…",
+  // 4.23.14：首帧反馈后 300ms 仍未进入 queued/running 的**占位**（避免慢请求静默）。
+  "提交中…（正在准备）": "Submitting… (preparing)",
   "已等待 {s} 秒": "Waiting {s}s",
   "解压/落位中…": "Extracting…",
   // ── 「下载已完成但安装没落地」的自愈（4.23.6）──────────────────────────────

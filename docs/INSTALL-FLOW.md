@@ -18,7 +18,7 @@
 | 状态 | 触发条件（输入） | 按钮文案 | 明细行 | 可点 | 用例 |
 |---|---|---|---|---|---|
 | `idle` | 没有 job、未安装、没有失败记录 | 安装 | — | ✅ | **A1** |
-| `submitting` | 本卡片有点击记录（`sub.begin` 写入）且还没有 job | 正在提交… | 已等待 N 秒（≥3 秒才显示） | ❌ | **A2**、**A13** |
+| `submitting` | 本卡片有点击记录（`sub.begin` 写入）且还没有 job | 正在提交… | 「提交中…（正在准备）」（**≥300ms**）→ 已等待 N 秒（≥3 秒） | ❌ | **A2**、**A13**、第 9 节 |
 | `queued` | job 存在且 `status=queued` | 排队中：前面还有 N 个 | 同左 | ❌ | **A3** |
 | `running` | job `status=running` | 下载中… x% | `a/b MB · 约剩 N 秒`（样本不足不给秒数） | ❌ | **A4**、**A14** |
 | `installing` | job `status=done` 且本机未落地，且**未超过落地上界** | 解压/落位中… | — | ❌ | **A5**、**E2** |
@@ -105,7 +105,7 @@
 | 层 | 做法 | 用例 |
 |---|---|---|
 | 宿主栅栏 | `/skins/install` 在"zip 已就绪 → 写盘完成"这段占 `installGateTry(id)`（内存 Map，TTL **2 分钟**）；命中回 `{ok:true,pending:true,deduped:true}`，**不重复解压**；落位失败立即释放（否则「重试」被自己挡住）；成功标记 `done`（卸载后马上重装不会被挡住）。栅栏**不覆盖下载阶段**（那属于队列，同 URL 幂等）。 | **A15** |
-| 客户端先查 | 发安装请求**之前**先查 `/skins/list`：已经装好 ⇒ `markOk` + 刷新，**根本不发请求**。 | **A16 / A18** |
+| 客户端先查（4.23.14 收窄） | **只有清单已经说 `installed === true`** 时才查 `/skins/list`：已经装好 ⇒ `markOk` + 刷新、**根本不发请求**；清单说没装（绝大多数首次点击）⇒ **不查**，直接发安装请求。真要查时也带 **1.5s 硬超时**，超时后照常发请求 —— 不再让一次列表往返挡在"点击 → 有反应"之间。 | **A16 / A18**、第 9 节 |
 | 成功即 toBe | 任何 `200/2xx`（含 `exists:true`）⇒ `cards.markOk()` **立刻**变「已安装」，不经过 `installing`；并紧跟一次 `load(true)`。 | **A16 / A18** |
 | `deduped` | 既不当失败、也不假装完成：保持有上界的当前格（`installing`），刷新清单；若那边已装好就 `markOk`。 | **A17** |
 | 归一口径 | `skinInstalledMatch()`：**目录名 / `skin.json.id` / catalog id** 任一命中即已安装（含 `skin-` 前缀归一）。 | **A19** |
@@ -152,3 +152,32 @@ node test/pets-http.mjs
   3. **任务丢失**（jobId 连续 5 次查不到）⇒ `failed` +「重试」，不再无限轮询；
   4. 判失败前**先核 `installed`**；本地没有对应 job 的残留卡片**回落 `idle`**；
   5. 安装成功/失败日志从 `info` 提到 `warn`，带 `id / 耗时 / 结果 / 错误码`（默认终端只出 error+warn）。
+
+---
+
+## 9. 第一击必须有可见变化（4.23.14）
+
+真实故障（用户实测）：皮肤卡片的「安装」**第一下点击没有任何反馈**，第二下才有反应。定因三条：
+
+1. 旧顺序是 `cards.begin(id)` 后**立刻** `await skinInstalledNow(id)` —— 一次 `/folia/skins/list`
+   往返。本机实测冷启动 **555.7 ms**、热态 **41.9–44.0 ms**（5 次采样）；这段时间里用户能看到的
+   唯一变化是 React 的一次提交；
+2. 那一次提交**不是同一 tick** 的 DOM 变化（`begin()` 只排 `setSub` / `setNonce`）⇒ 冷启动/弱网下
+   看起来就是"我点了，屏幕没动"；
+3. 300ms 后仍没有 queued/running 时，卡片明细行本来是空的（`已等待 N 秒` 要 3 秒才出现）⇒ 慢请求 = 静默。
+
+四类入口（皮肤 / 开机动画 / 桌宠 / 壁纸）现在共用 `src/local-first.js` 的三个地基 + 一个流程：
+
+| 地基 | 做什么 |
+|---|---|
+| `dlFirstClickFeedback(el, text)` | 点击**第一行**同步改 DOM：卡片 pressed + `aria-busy` + 按钮「正在提交…」；不 await、不发网络、不依赖 React 提交 |
+| `dlInstallPrecheckPlan(installed)` | 预检查的唯一门：只有 `installed === true` 才查；`dlPrecheckWithTimeout()` 另带 **1.5s** 硬超时 |
+| `dlPreparingHint({ waitedMs, jobActive })` | 首帧反馈后 **300ms** 仍未进入队列 ⇒ 「提交中…（正在准备）」 |
+| `dlInstallClick(opts)` | 上面三者的组合流程：同步反馈 → `cards.begin` → 预检查 → 发请求；`el/installed/begin/submit` 由页签喂 |
+
+壁纸侧的"下载/应用"入口是壁纸库卡片与快捷面板行（按下即 `pressed`），并补齐了
+`.we-first-click` / `.we-qp__item--pressed` 的 CSS —— 在此之前 pressed class 加上去也**看不见**。
+
+判据：`test/verify-first-click-feedback.mjs`（28 条，进 verify 链）：
+点击同一 tick 的 submitting/pressed + 零网络、`installed` 门两臂、1.5s 超时后仍发请求、
+300ms 占位、四类入口各一条、以及"把旧顺序贴回 ⇒ 首条判据红"的运行时 + 源码双重负对照。

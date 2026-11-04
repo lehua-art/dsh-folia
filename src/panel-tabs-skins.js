@@ -79,6 +79,11 @@ function SkinsTabPanel() {
   // 4.23.4：**卡片级**状态机（四页签共用，见 src/local-first.js 的 `dlCardState`）——
   // idle→submitting→queued→running→installing→done，失败带原因 +「重试」。
   const cards = useDlCards(dl);
+  // 4.23.14：300ms 占位要知道"队列里是不是已经有这张卡片的 queued/running"。
+  // 直接用渲染闭包里的 `dl.jobs` 会读到**点击那一刻**的旧快照（定时器触发时不会重渲染），
+  // 所以用一个 ref 跟住最新值（与 busyRef 同一手法）。
+  const jobsRef = React.useRef([]);
+  jobsRef.current = dl.jobs;
   // 状态机里只有两个词是"本模块自己的口径"：空闲时按什么、完成后叫什么。
   // 其余（正在提交… / 排队中：前面还有 N 个 / 下载中… x% / 解压/落位中… / 重试 / 失败原因）
   // 全部来自共用函数，四个页签逐字一致。
@@ -232,7 +237,7 @@ function SkinsTabPanel() {
     // 依赖只放"清单"与"队列快照"：两者变了才需要重新判断该不该补装。
   }, [state, dl.jobs]);
 
-  const act = async (kind, payload, label) => {
+  const act = async (kind, payload, label, ev) => {
     // 结构性操作才锁整块 UI；`activate` 是幂等的、而且要让人能连点换皮肤，所以不锁。
     const structural = kind === "install" || kind === "remove";
     const cardId = String((payload && payload.id) || "");
@@ -245,18 +250,9 @@ function SkinsTabPanel() {
     // 界面什么都不发生 —— 这就是用户报的「鲸鱼娘·雨夜 点了没反应」的直接形态。
     // 现在安装的可见性由**这张卡片自己**的 submitting/queued/running 承担（只禁它自己）。
     if (busyKey && !isInstall) { setBusy(busyKey); busyRef.current = busyKey; }
-    if (isInstall && cardId) cards.begin(cardId);
-    setNote(null);
+    // 非安装类操作沿用旧口径：先把上一轮的提示清掉。安装类**不清** —— 见下面 dlInstallClick。
+    if (!isInstall) setNote(null);
     try {
-      // 4.23.6：**先问列表，再发请求** —— 已经装好就别再触发一次解压。
-      // 这是"装了两遍"的客户端半边：202 轮询到 done 会再打一次安装，而宿主那边
-      // `scheduleFinishInstall()` 也会打一次；两条路都不问现状的话就会把刚装好的目录删掉重写。
-      if (isInstall && cardId && await skinInstalledNow(cardId)) {
-        cards.markOk(cardId);
-        setNote({ ok: true, text: weT("已装过：{name}", { name: label || "" }) });
-        await load(true);
-        return;
-      }
       if (kind === "activate") {
         const wantId = (payload && payload.id) || null;
         // ⚠️ 这里写入的必须是**皮肤中心自己认识的 id**（= skin.json 里的原始 id），
@@ -316,7 +312,41 @@ function SkinsTabPanel() {
         return;
       }
 
-      const resp = await apiPostJson("/skins/" + kind, payload || {}, { parse: "always" });
+      /**
+       * 4.23.14：安装的**第一行**是同步视觉反馈（`dlInstallClick` 里先改 DOM 再发请求）。
+       *
+       * 旧顺序（`cards.begin` → `await skinInstalledNow`）在冷启动时那次 `/skins/list` 要
+       * **555.7 ms**（热态 41.9–44.0 ms，实测 5 采样）：这段时间用户只等 React 的一次提交，
+       * 卡片明细还是空的 ⇒ 第一击像"没反应"。现在：
+       *   · 反馈与点击同一个 tick（pressed / aria-busy / 按钮「正在提交…」）；
+       *   · 预检查**只在清单已 installed===true** 时做，且 1.5s 超时后照常发请求；
+       *   · 300ms 还没进入 queued/running ⇒ 提示行先出「提交中…（正在准备）」。
+       */
+      let resp;
+      if (isInstall) {
+        const click = await dlInstallClick({
+          el: ev && ev.currentTarget,
+          btnText: weT("正在提交…"),
+          installed: Boolean(payload && payload.installed === true),
+          begin: () => { cards.begin(cardId); },
+          onSubmitting: () => { setNote({ ok: true, text: weT("正在提交…") }); },
+          onPreparing: (text) => { setNote({ ok: true, text }); },
+          jobActive: () => dlJobActive(dlJobForCard(jobsRef.current, "skin", payload && payload.url)),
+          precheck: () => skinInstalledNow(cardId),
+          precheckMs: DL_PRECHECK_TIMEOUT_MS,
+          submit: () => apiPostJson("/skins/install", payload || {}, { parse: "always" }),
+        });
+        // 清单已装且预检查命中：一次网络都不发（这是唯一允许"先查再发"的分支）。
+        if (click.skipped) {
+          cards.markOk(cardId);
+          setNote({ ok: true, text: weT("已装过：{name}", { name: label || "" }) });
+          await load(true);
+          return;
+        }
+        resp = click.resp;
+      } else {
+        resp = await apiPostJson("/skins/" + kind, payload || {}, { parse: "always" });
+      }
       const r = (resp && resp.data) || null;
       // 4.23.6：宿主说"同一套**正在装**"（`scheduleFinishInstall` 的自调用与客户端 202 轮询撞上了）。
       // 这不是失败、也**不是完成**：保持当前卡片状态（后面的 90 秒上界兜底），只把清单刷新一遍 ——
@@ -759,7 +789,8 @@ function SkinsTabPanel() {
         // 而皮肤中心只认 skin.json 里的原始 id ⇒ 写之前必须换成**本机那个 id**，
         // 否则它的 activePostHandler 会回 404 skin-not-found（实测报错 skin-center-404）。
         const localId = localIdOf(s);
-        return React.createElement("div", { key: s.id, style: SKIN_STYLE.card },
+        // 4.23.14：`we-dl-card` 是同步反馈的**卡片级**锚点（pressed 态挂它，见 styles-panel.js）。
+        return React.createElement("div", { key: s.id, className: "we-dl-card", style: SKIN_STYLE.card },
           s.thumbUrl
             ? React.createElement("div", {
               style: { ...SKIN_STYLE.thumb, backgroundImage: "url(" + JSON.stringify(s.thumbUrl) + ")" },
@@ -795,7 +826,9 @@ function SkinsTabPanel() {
                 disabled: st.disabled,
                 title: st.phase === "failed" ? st.reason
                   : (skinCenter === "absent" ? weT("先装皮肤中心，否则皮肤装好也没法启用") : undefined),
-                onClick: () => act("install", { id: s.id, url: s.url }, s.title),
+                // 4.23.14：把被点的元素交给 act ⇒ 第一行就能同步做视觉反馈。`installed` 随行带给
+                // 预检查门：只有清单说已装时才允许先查（否则直接发安装请求）。
+                onClick: (ev) => act("install", { id: s.id, url: s.url, installed: Boolean(s.installed) }, s.title, ev),
               }, label),
           ),
           // 进度 / 原因明细：`12.3/16.6 MB · 约剩 41 秒`、`排队中：前面还有 2 个任务`、
