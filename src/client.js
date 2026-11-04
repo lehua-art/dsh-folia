@@ -4028,7 +4028,8 @@ const onFontResetAll = () => {
  */
 // 标签筛选的实现住在 `src/tag-facets.js`（纯函数族，可被守卫直接 import 断言）：
 // `tagOptionsFromFacets` / `tagQueryOf` / `tagPickedFromSelectEvent` / `readTagFilter` / `writeTagFilter`。
-// 这里只留**装配**：选项现算、已选从持久化读、变化时重新请求清单。const onRefresh = () => loadInventory({ tag: tagQueryOf(readTagFilter()) });
+// 这里只留**装配**：选项现算、已选从持久化读、变化时重新请求清单。
+const onRefresh = () => loadInventory({ tag: tagQueryOf(readTagFilter()) });
 // Filter changes: persist + re-validate so wallpapers outside the selected
 // categories drop out of the grid/rotation immediately.
 const onRatingFilterChange = (e) => {

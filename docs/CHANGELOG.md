@@ -1,5 +1,43 @@
 # 变更记录（Changelog）
 
+### v4.23.10（2026-11-04）
+
+> 主题：**修复 4.23.9 的一处致命编辑事故** —— 请以本版为准，不要用 4.23.9。
+
+#### 1. 发生了什么
+
+4.23.9 里我用一段脚本清理重复定义时，把目录注释和紧随其后的声明**拼到了同一行**：
+
+```js
+// 这里只留**装配**：…… 变化时重新请求清单。const onRefresh = () => loadInventory({ … });
+```
+
+`//` 把 `const onRefresh = …` 整句吞进注释 ⇒ 该标识符在运行时**未定义**。
+壁纸选择器渲染时引用它 ⇒ `ReferenceError: onRefresh is not defined` ⇒ **面板的「刷新」按钮那一块整片打不开**。
+
+#### 2. 为什么没被拦住（如实说明）
+
+- `npm run verify` 里 `verify-client` / `verify-i18n` **本来就在基线红**（见 `KNOWN-ISSUES.md` KI-1/KI-2），
+  我按"只保证自己引入的违规为 0"执行，于是**没有把整条 verify 链的绿当成发版前置**。
+- `verify-static`（ESLint）**没抓到**：注释里出现的标识符不是"未定义变量"，静态检查天然看不到。
+- 我是在**发版之后的 `run-audit`** 里才看到 7 条 `ReferenceError: onRefresh is not defined`
+  （`verify-picker-model` / `verify-picker-props` / `verify-picker-upload` /
+  `verify-playback-controls` / `verify-transcode-state` / `live-frame-backfill-smoke`）。
+- 教训（已落进流程）：**发版前置必须包含 `run-audit`，不能只看 `verify-static`** ——
+  audit 会真的把客户端跑起来，这类"被注释吞掉"的错它一抓一个准。
+
+#### 3. 修法
+
+`src/client.js` 把该行拆回两行（注释一行、`const onRefresh = …` 一行）。
+行为与 4.23.9 **设计意图完全一致**，只是让那句声明重新成为代码。
+
+#### 4. 判据
+
+- `verify-picker-model` / `verify-playback-controls` / `verify-transcode-state`
+  （以及 audit 里报错的其余三条）**全部回到绿**。
+- `verify-static` 绿；`verify-guard-map` 已按新扫描面重生成（197 模块 / 127 守卫）。
+- 守卫链步数不变（113/126），`verify-filters-dynamic` 仍 24/24。
+
 ### v4.23.9（2026-11-04）
 
 > 主题：**面板「标签」筛选改为动态** —— 选项不再写死，而是来自清单响应里站点聚合的
