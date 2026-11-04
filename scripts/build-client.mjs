@@ -435,6 +435,17 @@ const INLINE_MODULES = [
     markers: ['function localFirstApply(', 'function setLocalFirstNote(', 'function lfPoll('],
   },
   {
+    // **壁纸缓存进度**（4.23.17）：卡片底部小进度条 +「缓存中 62%」/「已缓存」/「重试」，
+    // 标题栏同一份视图。排在 `src/local-first.js` **之后**：视图直接复用它的
+    // `dlJobActive` / `dlQueueDetail` / `dlProgressDetail` / `dlFailReason` 与
+    // `useDownloadJobs()`（同一个轮询器，1.5s、无活跃 job 停表）—— 不新建第二套轮询。
+    // 排在 `src/picker-modal.js` / `src/quick-panel.js` **之前**：两个渲染点按名字用它。
+    file: 'src/wallpaper-progress.js',
+    why: '壁纸缓存进度：/downloads/list 真源 → 卡片/标题栏视图（进度 / 已缓存 / 排队 / 失败重试），按卡订阅、不整列表重渲染',
+    markers: ['function wpJobForItem(', 'function wpStateOf(', 'function wpViewOf(',
+      'function WpJobsBridge(', 'function WpCardProgress(', 'function useWallpaperProgress('],
+  },
+  {
     // 标签筛选的纯函数族（4.23.9）：facets → 下拉分组 / OR 参数 / 持久化。
     // 纯函数、零依赖 ⇒ test/verify-filters-dynamic.mjs 直接 import 本文件断言。
     file: 'src/tag-facets.js',

@@ -1,5 +1,55 @@
 # 变更记录（Changelog）
 
+### v4.23.17（2026-11-04）
+
+> 主题：**「点了壁纸不显示」的真因不是网络，而是"哈希来源"分叉** —— 选档决定下 1080p 变体，
+> 校验却用原画的 `sha256`（两个对象、两个哈希）。本机 4.23.16 实测 15 条 job 全
+> `hash-mismatch / received=0`。同时补上用户要的缓存进度可见性，并把三类事故的防线写进门禁。
+
+#### 1. 变体哈希来源（P0，单一真相源）
+
+- `lib/variant-pick.js` 新增 **`resolveMediaExpectation(item, chosen)`**：`(url, bytes, sha256, source)`
+  的**唯一**产出点，三件套来自**同一个对象**（原画用原画的、变体用变体的）。
+- 四个宿主入队点全部改经它取值：`/downloads/add`、`/downloads/add`（skins/boot/pets 三个页签的
+  队列入口在各自路由里）、`src/local-first.js` 客户端只转发**清单事实**（`manifestSha256` +
+  `variants[]`），不再替宿主决定校验来源。
+- `normalizeVariants` 保留变体自己的 `sha256`（此前被丢掉 ⇒ 变体档只能拿原画哈希）。
+- 新增运行时不变式 **`assertExpectation`**：期望 url 命中 `variants[]` 但哈希等于原画的 ⇒
+  当场 `hash-source-mismatch`（附中文人话），不再慢慢 mismatch。
+- job 持久化 **`expectSha / expectBytes / hashSource`** 并写进 `/downloads/list`，事后可审计；
+  "没有期望哈希 ⇒ 只走长度/区间两层"这条**必须打日志**（不许静默跳过校验）。
+
+#### 2. ENOENT 自愈（本地文件被外部清理）
+
+- `.part` / 成品被缓存管理器或手工删掉后，旧实现把 `ENOENT` 当普通失败（job 停在 failed）。
+  现在：清残留 + **重新排队**（当前模式），**连续两次**才 `file-vanished`（有明确文案）。
+- `finishRanged` 不再把 ENOENT 当"多连接路径失败"回落单流（那会假装成功）。
+- `downloads.json` 里 `status=done` 但成品不存在 ⇒ 载入即重置为 `queued`（旧状态平滑升级；
+  缺 `priority/mode/chosenVariant/expectSha` 等旧字段一律回落默认值）。
+
+#### 3. 壁纸缓存进度可见（用户需求）
+
+- 壁纸库卡片：未缓存且在下 ⇒ 底部小进度条 + 「缓存中 62%」；已缓存 ⇒ 小角标「已缓存」；
+  失败 ⇒ 原因 +「重试」；没有 job 且未缓存 ⇒ 什么都不画。
+- 顶部当前壁纸标题栏：在下 ⇒ 「缓存中 62%（12.3/20.0 MB · 约剩 8 秒）」；**下完这一行消失**
+  （回落到原来的"缓存命中 / 首次下载 / 平均速度"）；失败同样给原因 +「重试」。
+- 切走再切回：已下好 ⇒ 不显示进度、只说「已缓存」；没下好 ⇒ **接着显示当前真实进度**
+  （值来自 `/downloads/list`，不是本地计时器；`test/verify-wallpaper-progress.mjs` 有负对照）。
+- 性能：进度只改**对应那张卡**（按卡订阅 + 签名去重），不整列表重渲染；轮询复用既有的
+  `useDownloadJobs()`（1.5s / 无活跃 job 停表），**没有第二套轮询**。
+- 族命中：原画与 1080p 变体算同一族（复用 inventory 的 `localReady`），任一下好即「已缓存」。
+
+#### 4. 测试与门禁（防复发）
+
+- 新增三条硬档（进 `verify` 链）：`test/verify-hash-source.mjs`（源码扫描 + 8 组矩阵 + 负对照）、
+  `test/verify-variant-hash.mjs`（真 HTTP 源 + 真路由 + 真队列；变体哈希 / ENOENT / 旧 JSON 升级）、
+  `test/verify-wallpaper-progress.mjs`（两处进度 / 切回真实值 / 单卡渲染 / 负对照）。
+- 收口 4.23.15 遗留的守卫更新（`verify-cache-manager` / `verify-transcode-state` /
+  `verify-guard-map` 与 `docs/GUARD-MAP.md`），`run-audit` 恢复 0 失败。
+- 新增 `docs/POSTMORTEM-2026-11-04.md`（三类事故的根因/发现/修复/防线），
+  `docs/RELEASE-GUARD.md` 增补三条硬门槛：run-audit 失败 0 / 数据来源变更配矩阵测试 /
+  测试禁止写真实 home。
+
 ### v4.23.16（2026-11-04）
 > 版本号重发（4.23.15 被 npm 记为 **staged 待批**，且那一份构建早于本轮最后的改动）。内容与 4.23.15 的**最终代码**完全相同：降帧优先的决策树、本地副本自愈、救援转码、静态帧兜底、测试隔离护栏、无效媒体不入库。
 

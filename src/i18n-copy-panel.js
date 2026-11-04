@@ -542,6 +542,13 @@ const WE_I18N_EN_PANEL = {
   "下载中… {p}% · 多连接({n})": "Downloading… {p}% · {n} connections",
   "正在下载（皮肤包）{p}%（{a}/{b} MB）": "Downloading skin pack: {p}% ({a}/{b} MB)",
 
+  // ── 壁纸缓存进度（4.23.17）────────────────────────────────────────────────
+  // 卡片：`缓存中 62%`（短，塞得进 92px 卡片底部）；标题栏：`缓存中 62%（12.3/20.0 MB · 约剩 8 秒）`
+  // ——`{detail}` 由既有的 `dlProgressDetail` 给（同一张表，不在这里再造一种"已下/总量"写法）。
+  "缓存中 {p}%": "Caching {p}%",
+  "缓存中 {p}%（{detail}）": "Caching {p}% ({detail})",
+
+
   // ── 四模块统一的卡片状态机（4.23.4）────────────────────────────────────
   // 由 src/local-first.js 的 `dlCardState()`（纯函数，四个页签共用）产出；
   // `idle` / `done` 两个词仍由各页签自己给（安装 / 下载 / 使用中 / 已安装）。
@@ -555,6 +562,11 @@ const WE_I18N_EN_PANEL = {
   //   ① 超时之后**结果**（失败原因，卡片上的红字 +「重试」）；
   //   ② 挂载自愈**过程**（自动补装/自动收尾 + 它们的结果）。
   "下载已完成但安装未落地，点「重试」": "The download finished but the install never landed — press Retry",
+  // 4.23.17：本地文件被外部清理（连续两次 ENOENT）——不是站点/链路问题，重试会重新下。
+  "下载途中本地文件被清理掉了（连续两次），点「重试」会重新下载": "Local files were cleaned up during the download (twice in a row) — press Retry to download again",
+  // 4.23.17（P0-6）：哈希来源错配（变体 URL 拿了原画哈希）——与"传输内容不一致"分开说。
+  "下载地址与校验哈希不是同一个文件（原画/变体的哈希搞混了），点「重试」会按正确的那一档重新下载":
+    "The download URL and its checksum point to different files (original vs 1080p variant got mixed up) — Retry downloads the correct one",
   "下载已完成但没落地，正在自动补装：{name}": "The download finished but never landed — installing it now: {name}",
   "下载已完成，已自动补装：{name} —— 点「应用」就能切换": "The download finished and was installed automatically: {name} — press Apply to switch to it",
   "下载已完成，已自动补装：{name}": "The download finished and was installed automatically: {name}",

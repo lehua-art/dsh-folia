@@ -111,6 +111,10 @@
           "data-we-cards": sel.pickerLayout,
           "aria-label": weT("选择壁纸"),
         },
+          // 4.23.17：队列 → 进度存储的桥。**只在这里挂一次**：库视图开着才有卡片要进度，
+          // 关掉即卸载（`useDownloadJobs` 卸载即清定时器；没有活跃 job 时它自己也会停表）。
+          // 返回 null ⇒ 不产生任何 DOM，模态框「标记等价」golden 逐字不变。
+          React.createElement(WpJobsBridge, { key: "we-wp-jobs" }),
           renderPickerModalHead(ctx),
           !draft && renderPickerModalTabs(ctx, draft),
           sel.modalView === "hidden" && !draft
@@ -198,6 +202,11 @@
           title: weT("隐藏此壁纸（可在「已隐藏」中恢复）"),
           onClick: (e) => { e.stopPropagation(); hideWallpapers([w.id]); },
         }, weT("隐藏")),
+    // 4.23.17：**这一张的缓存进度**（未缓存且在下 ⇒ 底部小进度条 +「缓存中 62%」；
+    // 已缓存 ⇒ 小角标「已缓存」，不显示百分比；失败 ⇒ 原因 +「重试」；都没有 ⇒ null）。
+    // 单独一个组件：进度轮询只重渲染这一张卡，不带走整张列表（见 src/wallpaper-progress.js）。
+    // 无内容时返回 null ⇒ 卡片标记序列不变（verify-client 的「标记等价」golden 逐字不变）。
+    React.createElement(WpCardProgress, { key: "we-wp", item: w }),
     );
   }
 

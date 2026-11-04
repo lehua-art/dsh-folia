@@ -647,6 +647,55 @@ const CSS_PANEL = `  /* ── 吉祥物形态**3D 圆环转盘**（四次返工
   .we-picker__card--hidden .we-picker__card-title {
     background: linear-gradient(transparent, rgba(0, 0, 0, 0.78));
   }
+  /* ── 壁纸缓存进度（4.23.17）─────────────────────────────────────────────────
+     卡片固定 92px（CD 架档是 aspect-ratio），标题条永久占底部 ~18px ⇒ 进度条压在
+     标题条**上方**（bottom:20px），不给卡片加高（加高会改网格几何 / 虚拟滚动算式）。
+     无内容时这些节点根本不渲染（组件返回 null），所以标记序列 golden 不受影响。 */
+  .we-wp-progress {
+    position: absolute; left: 6px; right: 6px; bottom: 20px; z-index: 2;
+    pointer-events: none;
+  }
+  .we-wp-progress__label {
+    display: block; margin-bottom: 2px;
+    font-size: 0.62em; line-height: 1.4; color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  }
+  .we-wp-progress__rail {
+    display: block; height: 3px; border-radius: 2px;
+    background: rgba(255, 255, 255, 0.28); overflow: hidden;
+  }
+  .we-wp-progress__fill {
+    display: block; height: 100%; border-radius: 2px;
+    background: var(--we-accent, #4f8cff);
+    transition: width 300ms var(--we-ease, ease);
+  }
+  .we-wp-queued, .we-wp-cached {
+    position: absolute; left: 6px; bottom: 20px; z-index: 2;
+    padding: 1px 6px; border-radius: 4px;
+    font-size: 0.62em; line-height: 1.6; color: #fff;
+    pointer-events: none;
+  }
+  .we-wp-cached { background: rgba(20, 120, 80, 0.85); }
+  .we-wp-queued { background: rgba(0, 0, 0, 0.6); }
+  .we-wp-failed {
+    position: absolute; left: 4px; right: 4px; bottom: 20px; z-index: 2;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .we-wp-failed__why {
+    flex: 1; min-width: 0;
+    font-size: 0.6em; line-height: 1.3; color: #ffd7d7;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+    overflow: hidden; display: -webkit-box;
+    -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  }
+  .we-wp-failed__retry {
+    flex: none; padding: 1px 6px; border: 0; border-radius: 4px; cursor: pointer;
+    font-size: 0.62em; line-height: 1.6; color: #fff;
+    background: rgba(190, 50, 50, 0.9);
+  }
+  /* 标题栏那一行（当前壁纸下方）：进度/排队/失败共用；已缓存或无 job 时不渲染。 */
+  .we-wp-title { display: flex; align-items: center; gap: 6px; }
+  .we-wp-title__why { flex: 1; min-width: 0; }
   /* Batch-action bar. */
   .we-picker__batch-bar {
     padding: 4px 6px; border-radius: 6px;

@@ -176,10 +176,12 @@ function lfAddItem(item, url, priority) {
   if (Number(it.width) > 0) entry.width = Number(it.width);
   if (Number(it.height) > 0) entry.height = Number(it.height);
   if (Number(it.fps) > 0) entry.fps = Number(it.fps);
-  // 4.23.7：站点清单给的 sha256（部分条目为空）随条目带给队列 —— 下载完成后按它验内容。
-  // 空串不发（宿主侧同样只认 64 位十六进制），免得把"没给"写成"给了个空的"。
+  // 4.23.17（P0-6）：清单给的哈希**不是**"这一条要用的哈希"，只是**清单事实**。
+  // 真正决定校验用哪个哈希的是宿主那一处 `resolveMediaExpectation(item, chosen)`（选原画用原画
+  // 的、选 1080p 用变体的）。所以字段名故意不叫 `sha256`：客户端不参与校验来源的决策，
+  // 只把清单原样带过去（`variants[]` 里的 sha256 也一起带）。旧宿主也认 `sha256`，升级期不崩。
   const sha = String(it.sha256 || "").trim().toLowerCase();
-  if (/^[0-9a-f]{64}$/.test(sha)) entry.sha256 = sha;
+  if (/^[0-9a-f]{64}$/.test(sha)) entry.manifestSha256 = sha;
   if (lfPreferOriginal(it.id)) entry.quality = "original";
   return entry;
 }
@@ -643,6 +645,12 @@ function dlFailReason(code) {
     'job-lost': weT("下载任务已丢失，点「重试」"),
     'download-failed': weT("下载失败（站点未返回文件），请稍后重试"),
     'download-timeout': weT("下载超时（已下部分会保留，再点「安装」可续传）"),
+    // 4.23.17：本地临时/成品文件被外部清理（缓存管理器 / 手工删）——连续两次都这样才报这个。
+    // 文案必须说清"不是站点的问题、重试会重新下"：否则用户会以为站点挂了。
+    'file-vanished': weT("下载途中本地文件被清理掉了（连续两次），点「重试」会重新下载"),
+    // 4.23.17（P0-6）：期望值与 URL 不自洽（变体 URL 却拿了原画哈希）。这是**我们自己的**
+    // 哈希来源错配，不是"传输传坏了"——必须与 hash-mismatch 分开说，否则排障方向就是错的。
+    'hash-source-mismatch': weT("下载地址与校验哈希不是同一个文件（原画/变体的哈希搞混了），点「重试」会按正确的那一档重新下载"),
     'http-404': weT("站点上没有这个文件（404，可能正在补传/已被删除）"),
     'http-403': weT("站点拒绝访问这个文件（403，权限或签名问题）"),
     'http-500': weT("站点服务器错误（HTTP 500），不是本地问题，请稍后重试"),

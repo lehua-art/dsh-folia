@@ -76,6 +76,25 @@ curl.exe -sS "https://registry.npmjs.org/dsh-folia/<version>?cb=$(Get-Date -Form
 #    验收工具：D:\folia-recover\check-site-skins.py（问题=0）
 ```
 
+## 四之二、4.23.17 起的三条**硬门槛**（缺一条不发版）
+
+这三条是 2026-11-04 三类事故（多连接静默损坏 / 变体哈希来源错误 / 测试污染真实 library）
+逐条换来的，写进门禁、不靠记性：
+
+| # | 硬门槛 | 判据（真跑的那条） | 事故 |
+|---|---|---|---|
+| G1 | **`node test/run-audit.mjs` 失败必须 0** | 全仓 `test/*.mjs` 逐个真跑；只有 PASS / RETIRED 两种绿，FAIL 一律挡住发版 | 4.23.16 有 1 条真红（guard-map 元守卫表过期）却差点被当成"只是文档"放过 |
+| G2 | **任何"数据来源"变更必须配矩阵测试** | 例：`test/verify-hash-source.mjs` 的 `{原画,变体}×{sha 有,无}×{bytes 一致,不一致}` 全组合 + 负对照（旧写法贴回必须红）；`test/verify-variant-hash.mjs` 用真 HTTP 源 + 真路由 + 真队列跑行为 | 变体下载用了原画的 `sha256` ⇒ 15 条 job 全 `hash-mismatch`，用户看到"点了壁纸不显示" |
+| G3 | **测试禁止写真实 home** | 一律 `isolateTestHome()` / 显式临时 `home`；`test/verify-test-isolation.mjs` 静态面 + 行为面双判据 | 上一轮把 30 个合成占位视频写进了用户 `%APPDATA%\dsh-desktop\harness\library\wallpaper`，用户看到的所有"浏览器无法解码"都是这些假文件 |
+
+配套纪律（同一次事故）：
+
+- **单一真相源**：`(url, bytes, sha256)` 只允许 `resolveMediaExpectation(item, chosen)` 产出；
+  入队点出现 `sha256: item.sha256` 即判红（`test/verify-hash-source.mjs` 的源码扫描）。
+- **不许静默跳过校验**：没有期望哈希 ⇒ 宿主 `log` 一句（`no sha256 expectation …`），
+  `/downloads/list` 带 `expectSha / expectBytes / hashSource`，事后可审计。
+- **本地文件被外部清理不是失败**：`ENOENT` 先清残留 + 重排（连续两次才 `file-vanished`）。
+
 ## 五、这次事故的具体教训（写进判据，不靠记性）
 
 1. **失败的下载任务必须能被重试**：`add()` 对 failed/cancelled 的 job 要重置为 queued，

@@ -509,8 +509,12 @@ section('F. 面板：五层用量 + 五个按钮 + 二次确认 + toast');
   if (!err) {
     const labels = buttonLabels(tree);
     const need = ['清空媒体', '清空站点媒体', '清空皮肤包', '清空已装皮肤…', '清空 Electron 缓存', '一键清理（不含皮肤）'];
-    check('F2 五个清理按钮都在（这一节共 8 枚按钮：含缓存位置的「更改」与本段的「刷新」）',
-      need.every((l) => labels.includes(l)) && labels.length === 8, labels.join(' / '));
+    // 4.23.15：这一节多了两枚按钮 —— 本地媒体自检的「刷新」与「校验并修复本地媒体」。
+    // 判据跟着改：按钮**多**是新增能力，但少了任何一枚清理按钮都是回归。
+    check('F2 五个清理按钮都在（这一节共 10 枚按钮：更改 / 刷新×2 / 校验并修复 + 六码清理）',
+      need.every((l) => labels.includes(l))
+      && labels.length === 10
+      && labels.includes('校验并修复本地媒体'), labels.join(' / '));
     const txt = textOf(tree);
     check('F3 用量行给出各层体积与文件数 + 合计（面板真的把读数画出来了）',
       /3\.00 GB/.test(txt) && /2\.00 KB/.test(txt) && /27/.test(txt) && /缓存管理/.test(txt),
@@ -572,8 +576,10 @@ section('F. 面板：五层用量 + 五个按钮 + 二次确认 + toast');
   check('F14 客户端只发目标名（路径不经过客户端）',
     /apiPostJson\(CACHE_CLEAR_URL, \{ targets: list \}/.test(clientSrc)
     && !/apiPostJson\(CACHE_CLEAR_URL, \{[^}]*path/.test(clientSrc));
-  check('F15 进「系统」页签才拉用量（不跟轮询走）',
-    /activeTab === "system"\) loadCacheUsage\(\)/.test(clientSrc));
+  check('F15 进「系统」页签才拉用量（不跟轮询走；4.23.15 同一次也拉本地媒体账本）',
+    /activeTab !== "system"\) return;/.test(clientSrc)
+    && /loadCacheUsage\(\);/.test(clientSrc)
+    && /loadMediaHealth\(\);/.test(clientSrc));
   const dict = readFileSync(join(root, 'src', 'i18n-copy-panel.js'), 'utf8');
   const needDict = ['缓存管理', '已清理 {name}：释放 {size}（{n} 个文件）', '需重启 DSH', '一键清理（不含皮肤）'];
   check('F16 新增文案都进了英文词表（零漏译不靠"以后再说"）',

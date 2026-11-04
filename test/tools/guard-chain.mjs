@@ -33,7 +33,8 @@ export const CHAIN_KEYS = { verify: 'verify', docs: 'verify:docs', smoke: 'smoke
  */
 // 4.23.14：verify 多一条硬档（首击反馈：test/verify-first-click-feedback.mjs）⇒ 24→25、29→30。
 // 4.23.15：再两条硬档（本地副本自愈 / 测试隔离护栏）⇒ 25→27、30→32。
-export const TIER_FLOOR = { verify: 27, docs: 0, smoke: 5, all: 32 };
+// 4.23.17：再三条硬档（哈希来源单一真相源 / 变体哈希+ENOENT 行为 / 壁纸缓存进度）⇒ 27→30、32→35。
+export const TIER_FLOOR = { verify: 30, docs: 0, smoke: 5, all: 35 };
 
 /** 读某一组的 `--list-json`。runner 起不来 / 输出不是 JSON ⇒ 抛（调用方转成判据失败）。 */
 export function readChain(group) {

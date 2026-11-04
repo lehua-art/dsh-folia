@@ -393,7 +393,11 @@ async function main() {
     // 4.23.14 抬到 **115/128**：首击反馈（`test/verify-first-click-feedback.mjs`，
     // 同步 pressed/aria-busy + 预检查只在 installed===true 且 1.5s 超时 + 300ms 占位 + 四类入口）挂一硬档。
     //（按本文件既有纪律：地板 = 实测步数，抬本身即证据；下面的负对照保证"删一步即红"）。
-    const CHAIN_FLOOR = { verify: 117, docs: 6, smoke: 6, all: 130 };
+    // 4.23.17 抬到 **120/133**：哈希来源单一真相源 / 变体哈希+ENOENT 行为 / 壁纸缓存进度
+    // 三条硬档（`test/verify-hash-source.mjs` · `test/verify-variant-hash.mjs` ·
+    // `test/verify-wallpaper-progress.mjs`）。
+    //（按本文件既有纪律：地板 = 实测步数，抬本身即证据；下面的负对照保证"删一步即红"）。
+    const CHAIN_FLOOR = { verify: 120, docs: 6, smoke: 6, all: 133 };
     /** 地板表与 GROUPS 的对齐体检：键名必须与**组名**逐一对齐（纯函数 ⇒ 负对照可直接喂）。 */
     const floorGaps = (groups, floors) => groups.map(([, g]) => g).filter((g) => !Number.isInteger(floors[g]));
     const problems = floorGaps(GROUPS, CHAIN_FLOOR).map((g) => '地板表缺组 ' + g

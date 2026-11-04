@@ -340,6 +340,18 @@ const VERIFY_STEPS = [
   //    强制原画 / 非法 url）+ `/downloads/add` 真的按选档入队 + `job.chosenVariant` 出现在
   //    `/downloads/list` + inventory 透传 `variants`。站点还没上线该字段时的回退（原画）也在其中。
   step('test/verify-variants.mjs'),
+  // 4.23.17（P0-6）：**哈希来源的单一真相源**。真实事故：选档决定下 1080p 变体，校验却用
+  // 原画的 sha256 ⇒ 15 条 job 全 hash-mismatch（用户看到"点了壁纸不显示"）。
+  // 判据：源码扫描（入队点不许直接取 item.sha256，白名单在文件头）+ {原画,变体}×{sha 有,无}×
+  // {bytes 一致,不一致} 矩阵 + 三条负对照（旧写法 / resolve 退化 / 丢变体 sha）。
+  step('test/verify-hash-source.mjs'),
+  // 4.23.17：变体哈希**行为**（真 HTTP 源 + 真路由 + 真队列：变体+变体哈希 ⇒ done；变体+原画
+  // 哈希 ⇒ hash-mismatch 负对照）、ENOENT 自愈（.part 被外部清 ⇒ 重排并 done；连续两次 ⇒
+  // file-vanished）、旧 downloads.json 升级（done 但成品缺失 ⇒ 重置 / 缺字段不崩）。
+  step('test/verify-variant-hash.mjs'),
+  // 4.23.17：壁纸缓存进度（首次点击后「缓存中 62%」，下完「已缓存」，切走再切回接着显示真实
+  // 进度；卡片与顶部标题栏两处一致；只通知变化的卡；负对照=把"切回来从 0 开始"贴回即红）。
+  step('test/verify-wallpaper-progress.mjs'),
   step('test/pets-layer.mjs'),
 ];
 

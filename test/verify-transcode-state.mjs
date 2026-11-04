@@ -40,7 +40,8 @@ const results = [];
   // 判据提成命名函数，让**阳性（真源码）与阴性（诱饵）走同一条判据**：拿测试自己刚写下的
   // 两个字面量互 `contains`（A3）对任何实现都真，零鉴别力。
   const swFallbackIn = (text) => text.includes("libx264: ['-preset', 'veryfast', '-crf', '20']")
-    && text.includes("for (const enc of ['av1_nvenc', 'h264_nvenc', 'libx264'])");
+    // 4.23.15：编码器清单被参数化（救援转码只要 H.264），默认清单仍是这三档。
+    && text.includes("['av1_nvenc', 'h264_nvenc', 'libx264']");
   check('转码：NVENC 专属 preset 已从公共参数移出（旧 base 形态不存在且 p1 只在 ENC_TUNE）',
     !oldBaseForm && p1OnlyInEncTune);
   check('转码：质量参数按编码器拆分（ENC_TUNE）', encTune);

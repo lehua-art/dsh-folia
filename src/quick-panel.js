@@ -419,8 +419,11 @@
    * 读宿主 `/folia/site-media-stats`（4.15.3 起存在）：命中/未命中/平均吞吐/缓存是否可写。
    * 三条纪律：拿不到就**什么都不显示**；每 15 秒最多取一次；任何异常都吞掉（不许影响面板）。
    */
-  function QpCacheHint() {
+  function QpCacheHint(props) {
     const [info, setInfo] = React.useState(null);
+    // 4.23.17：**当前这张壁纸的缓存进度**（`/downloads/list` 真源，经 src/wallpaper-progress.js）。
+    // 钩子必须无条件调用（Rules of Hooks）：下面只有"画不画"是分支。
+    const wp = useWallpaperProgress(props && props.item);
     React.useEffect(() => {
       let alive = true;
       let timer = null;
@@ -440,6 +443,10 @@
         if (timer !== null) { try { window.clearInterval(timer); } catch { /* ignore */ } }
       };
     }, []);
+    // 正在缓存 / 排队 / 失败 ⇒ 这一行就是**进度**（「缓存中 62%（12.3/20 MB · 约剩 8 秒）」）。
+    // 下完（cached）或没有 job ⇒ 返回 null，回落到原来那行"缓存命中 / 首次下载 / 平均速度"。
+    const titleLine = wpTitleRender(wp, props && props.item);
+    if (titleLine) return titleLine;
     if (!info) return null;
     const hits = Number(info.hits) || 0;
     const misses = Number(info.misses) || 0;
@@ -543,7 +550,8 @@
         sel.videoError && React.createElement("div", { className: "we-picker__current-error" }, sel.videoError),
         // 缓存与速度的**自述**（④）：用户不用开 F12 也能知道"这次是首次下载还是命中缓存"。
         // 数据来自宿主 `/folia/site-media-stats`；拿不到就**什么都不显示**（绝不因此报错）。
-        React.createElement(QpCacheHint, null),
+        // 4.23.17：正在缓存时这一行换成「缓存中 62%（12.3/20 MB · 约剩 8 秒）」，下完回落原文案。
+        React.createElement(QpCacheHint, { item: current }),
       ),
       React.createElement("div", { className: "we-qp__current-actions" },
         // ⚠️ **不变量：这一行只放日常操作**（暂停 / 播放 · 刷新 · 清除；场景与网页壁纸再加
@@ -1035,6 +1043,9 @@
         };
 
     return React.createElement("div", { className: "we-qp we-qp--" + dock },
+      // 4.23.17：队列 → 进度存储的桥（返回 null，不产生 DOM）。轮询复用 `useDownloadJobs()`，
+      // 不新建第二套；没有活跃 job 时它自己停表。
+      React.createElement(WpJobsBridge, { key: "we-wp-jobs" }),
       qpRenderCurrent(sel, current, playbackLive),
       qpRenderRotation(sel, groups, playable),
       qpRenderTabs(qpTab, switchQpTab),
