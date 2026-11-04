@@ -434,6 +434,10 @@ function syncLayers() {
     disposeOutgoingLayer(node, outgoing, switchTr, startFade);
     const canvas = node.querySelector("canvas.we-media--canvas");
     const video = node.querySelector("video");
+    // 切换手感（4.23.8）：把"这一层真的上屏了"告诉切换状态机 —— 它据此
+    // ① 记下**在屏的那个池元素**（之后换源一律避开它，不变量 ①：在屏换源 = 纯色帧），
+    // ② 排掉帧探测（<24fps 持续 2s ⇒ 提示建议切 1080p）。
+    if (video) { try { weSwitchPublish(video, {}); } catch { /* 度量是增强，绝不影响建层 */ } }
     // 画布兜底色（见本文件上方的 refreshUnderlayColor / scheduleUnderlaySample）：
     // 幂等，同一次挂载只排一次取样；换壁纸即作废上一张的结果。
     refreshUnderlayColor();
@@ -484,6 +488,12 @@ function syncLayers() {
       // 播放态收敛（#84）：意图 → 元素真实状态，失败时回写 store 让「播放」
       // 按钮回来（见 applyVideoPlayback）。
       applyVideoPlayback(video);
+      // 切换手感（4.23.8）：首帧真的在手上（HAVE_CURRENT_DATA 及以上）⇒ 本次切换收口，
+      // 记一条 switchLatencyMs（点击 → 首帧可见）。`< 2` 时不做任何事：内容闸门会等到
+      // 有画面前不放行新层，旧壁纸继续留屏，滞后由计时器那条腿兜底。
+      if (Number(video.readyState) >= 2) {
+        try { weSwitchPlayed(video); } catch { /* 度量是增强 */ }
+      }
       // Keep the rate in sync on every layer sync (covers rate changes while
       // the same wallpaper keeps playing — instant, no media reload).
       try { if (video.playbackRate !== selection.playbackRate) video.playbackRate = selection.playbackRate; } catch { /* ignore */ }

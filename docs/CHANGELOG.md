@@ -1,5 +1,139 @@
 # 变更记录（Changelog）
 
+### v4.23.8（2026-11-04）
+
+> 主题：**已缓存壁纸的切换卡顿** —— 用户实测「点已下载好的壁纸会卡一下才播，而 Wallpaper Engine
+> 切换很流畅」。这一版把那条主观描述拆成**两条可度量的成本**（元素重建 / 缓存族不命中），
+> 分别修掉，并把「点击之后每一段都要有可见变化」做成可断言的一等需求。
+>
+> ⚠️ **本版包含 v4.23.7 的全部内容**（v4.23.7 已进 git，其 npm 发布当时卡在 staged 待批）。
+> 若你只装最新版，4.23.7 的下载完整性修复同样在内。
+
+#### 1. 五条成因：逐条核实（**不是逐条都成立**）
+
+| # | 成因 | 结论 |
+|---|---|---|
+| ① | 切换时 `<video>` 被卸载重建 ⇒ 解码器重建 | **成立**（结构性，恒在） |
+| ② | `src` 指向代理 URL，即使文件在本地也走一次 HTTP + 中继 | **成立**（条件性） |
+| ③ | 没有 `preload="auto"`、也没预热解码 | **部分成立** |
+| ④ | 切换瞬间旧画面被清 ⇒ 黑屏感 | **基本不成立**（既有内容闸门已挡住） |
+| ⑤ | 原画与 1080p 是两个 URL ⇒ 缓存不命中 | **成立**（离群最大） |
+
+- **① 成立。** `src/live-layer.js` 的 `layerWantKey()` 把 `selection.url` 算进层键 ⇒ 换一张视频壁纸
+  键必变 ⇒ 旧层让出 `LAYER_ID` ⇒ `obtainLayerNode()` 新建层 ⇒ `buildVideoMedia()` 新建 `<video>`。
+  于 是 资源选择 → 取 moov → 解复用器初始化 → **首帧解码** 整段都压在点击的关键路径上。
+  唯一的复用后门 `consumePreparedMedia()` 对视频档**是关着的**：`src/media-prep.js` 的
+  `prepareWallpaper()` 对 `w.type === "video"` 故意直接 `onReady()`（怕双解码、怕观感变成
+  「GIF→静图→正片」）。
+- **② 成立。** `applySelection()` 用 `w.mediaProxy || w.media`；`mediaProxy` 在 `inventory.js` 里
+  二选一 —— 命中本地就是 `/folia/local-media/`（读盘），**未命中**才是 `/folia/site-media/` 中继。
+  所以"走不走代理"完全取决于命中判定，而命中判定正是 ⑤ 的问题。
+- **③ 部分成立（必须如实写）。** `preload="auto"` **早就显式设了**（`video-layer.js` 建层那段，
+  还带注释解释 moov 在文件尾部）；预热机制**也早就有**（`warmVideoUrl` / `consumeWarmVideo` /
+  `warmVideoForPointer`）。真正缺的是：预热**只到 `HAVE_METADATA`**（`preload="metadata"`、
+  `autoplay=false`、**绝不 `play()`**）⇒ **首帧解码仍在关键路径上**。修法因此不是"加 preload"，
+  而是"把预热推到首帧已解码"。
+- **④ 基本不成立。** 内容闸门（`disposeOutgoingLayer` → `armLayerContentReveal`）在**新层没有
+  画面时不拆旧层**；`VIDEO_STALL_GIVE_UP_MS = 15s` 到点也只留旧壁纸、绝不铺层底色；换张壁纸
+  还有交叉淡化。⇒ 正常路径**不会黑**。用户的"卡一下"=旧壁纸多留 0.5–2s **且没有任何反馈**，
+  观感等同"点了没生效"—— 这正对应第 3 节的点击反馈，与性能是同一个问题的两面。
+- **⑤ 成立。** `lib/routes/downloads.js` 的 `libraryDest(kind, slug, ext)` 用**最终 URL 的 basename**
+  做散列：原画 `x.mp4` 与 1080p `x-1080p.mp4` ⇒ 两条独立缓存。`localCopyFor()` 又只按**问的那条
+  URL** 重算 dest ⇒ 下了 1080p **不会**让原画 URL 变 `local:true` ⇒ 清单判 `local:false` ⇒
+  `mediaProxy` 回落代理 ⇒ **已经下好的壁纸点下去还要走一次中继**，甚至重新入队。
+
+#### 2. 修法 A：播放器层——**常驻双元素池**（成因 ①）
+
+新模块 `src/video-switch.js`：一对**长生命周期**的 `<video>`（`we-pool-1` / `we-pool-2`，
+`el.dataset.wePlayerId`），**永不再 `createElement("video")`**。
+
+- 可见的那个在屏上；另一个**不在屏上**，`preload="auto"` + muted 播起来，预热下一张并
+  **等到首帧已解码**（`requestVideoFrameCallback`，退化 `loadeddata/canplay`）。
+- 切换时把预热好的元素**整体搬进新层**（同文档 reparent `<video>` **不重载** —— iframe 才会），
+  交叉淡入 **200ms**（`WE_SWITCH_FADE_MS`，需求区间 150–250ms 取中值），旧元素淡出**之后**
+  才回到池里当"下一个备用"。
+- **为什么不照字面"复用同一个 `<video>` 改 src"**：仓库有明文不变量——在**已上屏**的元素上换源
+  会清掉当前帧、屏上只剩层底色（`video-layer.js` 的 `layerStillPending()` 注释、以及
+  `test/verify-transcode-state.mjs` 盯着的换源条件）。那是为修「纯色帧」回归加的。
+  所以本版的做法是**换元素、不换 src**：元素身份仍然稳定（池内复用），解码器连续，
+  且"换源"永远只发生在**不在屏上**的那个池元素上。
+- **"第二个解码器"怎么被池化解决**：旧代码把预热停在 metadata 就是为了不引进第二个 4K 解码器。
+  池容量恒为 **2**（`WE_SWITCH_POOL_SIZE`）—— 交叉淡化期本来就会同时存在"旧 + 新"两个解码器，
+  池化**没有增加峰值**，只是把"新建"换成"复用"；预热元素 muted，旧元素淡出后 src 才被换掉。
+- **需求 A5（禁止重复 load）**：`weSwitchArm()` 判定"这条地址已经装在这个元素上"（`__weUrl` 或
+  `el.src` 任一相等）⇒ **不重设 src、不 `load()`**，只补 `play()` 与首帧预热。
+
+#### 3. 修法 B：点击反馈——每个阶段都有可见变化（≤ 50ms）
+
+- **按下即响应**：`quick-panel.js` 的卡片加 `onPointerDown` —— 同步给卡片加
+  `we-qp__item--pressed` 并置 `aria-busy="true"`，同时记 `clickFeedbackMs`
+  （点击 → 第一处视觉变化，实测 < 1ms）。**不等任何请求**。
+- **切换状态机**：`idle → priming → preloading → swapping → playing`；1.5s 未达可播 ⇒
+  `buffering`（面板显示「正在缓冲 x%」而不是留空白/旧壁纸）；失败 ⇒ `failed` + 原因 + 「重试」
+  （**绝不静默**）。键盘 / 滚轮 / 「下一张」全部走**同一条** `weSwitchBegin()`，不另写一套。
+- **连点防护（需求 G7）**：切换进行中再点别的卡 ⇒ **只保留最后一个**并 toast「正在切换，请稍候」。
+  为什么不静默忽略：用户最后点的就是他真正想看的。
+- **视觉兜底与状态机解耦**：`WE_SWITCH_PRESS_MS`（1200ms）只负责摘 `pressed` / `aria-busy`，
+  **不结算切换** —— 早期把两者绑在一起，1.2s 的视觉兜底会抢在 1.5s 的缓冲阈值之前把上下文
+  结算掉，于是「正在缓冲」永远来不及出现。这是本版实测出来的一个次序缺陷，判据见
+  `test/verify-switch-smooth.mjs` 的 C4。
+
+#### 4. 修法 C：缓存族归一化（成因 ⑤，离群最大）
+
+- 新模块 `lib/switch-cache-family.js`：`familyKeyOf()` 把文件名末尾的**清晰度/编码后缀**
+  （`-1080p` / `-4k` / `-hevc` …，可叠加）剥掉，得到"内容族"键；`pickFamilyCopy()` 从队列快照里
+  挑同族且已落地的那一条。**先精确、后同族** —— 用户点了原画就优先给原画，画质不打折。
+- `lib/routes/downloads.js` 新增 `localFamilyCopyFor()`；`inventory.js` 的条目增加
+  **`localReady`（族级）**，并让 `mediaProxy` / `localDownload` 都用它（命中即
+  `/folia/local-media/<job>`，**不再回落站点代理**）。`local`（精确）语义保持不变 ——
+  「能直接读本地吗」与「恰好下了这一条吗」是两件事。
+- 面板用 `localReady` 显示「已缓存」角标；`src/local-first.js` 在 `localReady` 为真时
+  **不再入队**（原画已落地时切 1080p ⇒ `/downloads/add` 计数 +0）。
+- 保守性：只剥清晰度/编码后缀。剥过头会把两张**不同**的壁纸并成一族，那比原缺陷更糟 ——
+  负对照见判据 A4/A5；认不出的 token 形态 basename 退化成精确匹配（行为与放宽前逐字节等价）。
+
+#### 5. 修法 D：预取 2 张（成因 ③ 的"下一张"那半）
+
+`lfPrefetchNext()` 从"预取 1 张、任意下一项"改成 **按列表顺序取前 2 张**、顺序即优先级
+（第 1 张是紧邻的下一张）：之前只预取 1 张，于是"下一张 → 再点一下"的第二下必然落在冷源上。
+族级已落地（`localReady`）的跳过，不白占预取名额。
+
+#### 6. 度量：`switchLatencyMs` / `clickFeedbackMs`（可观测，别再靠感觉）
+
+每完成一次切换记一条，**同时**打 `console.log("[folia-switch] …")` 与
+`POST /folia/diag/switch-stats`；宿主留**最近 20 条**，`GET /folia/diag/switch-stats` 读回
+（含 `summary` 的 `n/avg/max`）。四个字段：
+
+| 字段 | 定义 |
+|---|---|
+| `switchLatencyMs` | 点击 → 首帧可见 |
+| `clickFeedbackMs` | 点击 → 第一处视觉变化 |
+| `cacheFamilyHit` | 本次是否走缓存族命中 |
+| `is1080p` | 是否 1080p 变体 |
+
+`cacheFamilyHit` 是**区分成因 ① 与 ②/⑤ 的唯一字段**：同样 300ms，`false` 指向"在等网络"，
+`true` 指向"在等解码"。另加**掉帧提示**：`requestVideoFrameCallback` 统计 < 24fps 持续 2s ⇒
+置结论，面板提示「建议切换 1080p」。
+
+#### 7. 判据
+
+- 新增 `test/verify-switch-smooth.mjs`（**38 条**，硬档）：缓存族归一化 11 条（含 4 条负对照）、
+  双元素池 / 状态机 / 点击反馈 / 连点 / 度量 22 条、结构判据 5 条。
+  含真实回归：**B3**（同 src 不重复 load）、**C4**（1.5s 缓冲提示，抓出了 1.2s 视觉兜底抢先
+  结算的次序缺陷）、**C9**（连点只切最后一张）、**C13**（全程只 2 个池元素，无解码器泄漏）。
+- 守卫链 `npm run verify` 112 步（`CHAIN_FLOOR` 112/125 与 `test/fixtures/verify-chain.json`
+  同步重冻）。
+- 新增 [`WALLPAPER-SWITCH-PERF.md`](WALLPAPER-SWITCH-PERF.md)：切换时序图（改前/改后）、
+  双缓冲与预热策略、`switchLatencyMs` 口径与示例、已知边界（4K 解码 / 首帧预热不是零成本 /
+  Edge 镜像画布那条腿）。
+
+#### 8. 升级提示
+
+`package.json` 4.23.7 → 4.23.8。宿主半（`lib/routes/diag.js`、`lib/routes/downloads.js`、
+`lib/routes/inventory.js`、`lib/switch-cache-family.js`）与客户端半（`src/video-switch.js`、
+`src/video-layer.js`、`src/live-layer.js`、`src/quick-panel.js`、`src/local-first.js`）**都有改动**
+⇒ **要重启 `dsh web`**。新增路由 `/folia/diag/switch-stats`（`ROUTE-INDEX.md` 已重生成）。
+
 ### v4.23.7（2026-11-04）
 
 > 主题：**多连接下载的静默损坏（P0）** —— 拼出来的文件长度对、内容错，job 还报 `done`。

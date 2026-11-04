@@ -1,4 +1,4 @@
-/**
+﻿/**
  * local-first.js — **站点资源先下载到本地，再从本地播放**（点击即下载，连点即并发）。
  *
  * 为什么要有这一层：站点壁纸原本是"边下边播"（浏览器直接从远端流），于是
@@ -102,7 +102,10 @@ function localFirstApply(id, opts) {
   (async () => {
     const item = await lfFindItem(id);
     if (!item || !item.mediaProxy) return;      // 非站点条目：交给原路径
-    if (item.local === true) return;            // 已在本地
+    // **族级命中就够**（4.23.8 / 成因 ⑤）：原画或 1080p 任一档已落地 ⇒ 播放走
+    // `/folia/local-media/`，不必再入队。只认 `local`（精确）会让「下的是 1080p、
+    // 播的是原画」这一族每次都白排一次下载 —— 那正是用户说的"已下载好还卡"。
+    if (item.localReady === true || item.local === true) return;
     const label = String(item.title || id);
     if (LF_STATE.inflight.has(id)) { lfSay(`正在下载到本地：${label}`, true); return; }
     let job = null;
@@ -224,6 +227,13 @@ const LF_PREFETCH = {
   busy: false,      // 是否有预取请求在飞
   seen: new Set(),  // 已预取过的 id（避免来回 hover 反复打宿主的 downloads/add）
 };
+/**
+ * 每次预取的张数（4.23.8 / 需求 C8）。**2** 而不是 1：
+ * 之前只预取 1 张，于是"下一张 → 再点一下下一张"的第二下必然落在冷源上；
+ * 取 2 张把这条链也盖住，代价只是多一个 low 优先级任务（不抢用户点击的槽）。
+ * 顺序即优先级：第 1 张是**紧邻的下一张**，第 2 张才是再下一张。
+ */
+const LF_PREFETCH_COUNT = 2;
 
 function lfCancelPrefetch() {
   if (LF_PREFETCH.timer) { try { clearTimeout(LF_PREFETCH.timer); } catch { /* ignore */ } }
@@ -257,27 +267,42 @@ async function lfPrefetchNext(afterId, playingId) {
       if (i >= 0) { pool = p; at = i; break; }
     }
     if (!pool) return;
-    let next = null;
-    for (let k = at + 1; k < pool.length && k <= at + 6; k += 1) {
+    // **按列表顺序取前 2 张**（4.23.8 / 需求 C8）：顺序即优先级 —— 第 1 张就是"下一张"。
+    // 跳过：非站点条目 / 族级已落地（`localReady`，已缓存的不必预取）/ 正在播的那张 /
+    // 本次会话已经预取过的。
+    const picks = [];
+    for (let k = at + 1; k < pool.length && k <= at + 8 && picks.length < LF_PREFETCH_COUNT; k += 1) {
       const cand = pool[k];
-      if (!cand || !cand.mediaProxy || cand.local === true) continue;
+      if (!cand || !cand.mediaProxy) continue;
+      if (cand.localReady === true || cand.local === true) continue;
       if (playingId && String(cand.id) === playingId) continue;
-      next = cand;
-      break;
+      if (LF_PREFETCH.seen.has(String(cand.id))) continue;
+      picks.push(cand);
     }
-    if (!next) return;
-    const nextId = String(next.id);
-    if (LF_PREFETCH.seen.has(nextId)) return;
+    if (!picks.length) return;
     // 已有 job（排队/在跑/已完成）⇒ 宿主侧本来就会去重，这里先问一次列表是为了
-    // **不白占一次"预取名额"**，也让 `seen` 只在真的发出去时才记账。
+    // **不白占预取名额**，也让 `seen` 只在真的发出去时才记账。
+    let jobs = [];
     try {
       const resp = await apiJson("/downloads/list");
       const doc = (resp && resp.data) || resp || {};
-      const jobs = Array.isArray(doc.jobs) ? doc.jobs : [];
-      if (jobs.some((j) => j && j.url === next.media && j.status !== "failed" && j.status !== "cancelled")) return;
+      jobs = Array.isArray(doc.jobs) ? doc.jobs : [];
     } catch { return; }
-    LF_PREFETCH.seen.add(nextId);
-    await apiPostJson("/downloads/add", { items: [{ kind: "wallpaper", url: next.media, priority: "low" }] }, { parse: "always" });
+    const fresh = picks.filter((c) => !jobs.some((j) => j
+      && j.url === c.media && j.status !== "failed" && j.status !== "cancelled"));
+    if (!fresh.length) return;
+    for (const c of fresh) LF_PREFETCH.seen.add(String(c.id));
+    // 第 1 张就是"**下一张**"（顺序即优先级）。单张走既有那条口径（priority=low，
+    // 不抢用户点击的 high）；只有真的取到 2 张时才批量发一次 —— 宿主 `/downloads/add`
+    // 本来就收数组，2 张 = 2 个 low 任务，不会变成 high。
+    const next = fresh[0];
+    if (fresh.length === 1) {
+      await apiPostJson("/downloads/add", { items: [{ kind: "wallpaper", url: next.media, priority: "low" }] }, { parse: "always" });
+      return;
+    }
+    await apiPostJson("/downloads/add", {
+      items: fresh.map((c) => ({ kind: "wallpaper", url: c.media, priority: "low" })),
+    }, { parse: "always" });
   } finally {
     LF_PREFETCH.busy = false;
   }

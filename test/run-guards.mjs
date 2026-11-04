@@ -119,6 +119,9 @@ const VERIFY_STEPS = [
   step('test/verify-windows-caption.mjs'),
   step('test/verify-transcode-state.mjs'),
   step('test/verify-playback-controls.mjs'),
+  // 4.23.8：已缓存壁纸的切换手感 —— 缓存族归一化 / 双元素池（元素身份）/
+  // 切换状态机 / 点击反馈 / switchLatencyMs 与 clickFeedbackMs 度量。
+  step('test/verify-switch-smooth.mjs'),
   step('test/verify-scene.mjs'),
   step('test/verify-scene-frame-master.mjs'),
   step('test/verify-scene-live.mjs'),

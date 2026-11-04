@@ -435,6 +435,18 @@ const INLINE_MODULES = [
     markers: ['function localFirstApply(', 'function setLocalFirstNote(', 'function lfPoll('],
   },
   {
+    // **已缓存壁纸的切换手感**（4.23.8）：常驻双元素池（恒 2 个 <video>，永不再新建）
+    // + 预热到首帧 + 点击反馈 + switchLatencyMs 度量。
+    // 排在 `src/media-prep.js` **之前**：`buildVideoMedia` 与卡片点击都要按名字调它。
+    // 不放进 `src/live-layer*.js` 一族：那两个族的域是"实时渲染（iframe/scene）"，
+    // 视频档从来不进那条管线（见 video-layer.js 文件头）。
+    file: 'src/video-switch.js',
+    why: '壁纸切换手感：双元素池 / 首帧预热 / 点击反馈 / switchLatencyMs 与 clickFeedbackMs 度量',
+    markers: ['const WE_SWITCH_FADE_MS = ', 'const WE_SWITCH_POOL_SIZE = ',
+      'function weSwitchPoolPick(', 'function weSwitchBegin(', 'function weSwitchRecord(',
+      'function weSwitchQueuePick('],
+  },
+  {
     file: 'src/media-prep.js',
     why: '选中项落地：预准备（预挂载 + 探测 + 超时记账）→ buildMedia → applySelection',
     markers: ['function beginRotationPrepare(', 'function prepareWallpaper(', 'const prepareLiveTimeouts = ',

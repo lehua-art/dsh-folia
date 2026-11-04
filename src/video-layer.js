@@ -1,4 +1,4 @@
-/*
+﻿/*
  * video-layer.js — **视频壁纸通道**：视频档的"有画面了吗" + 它的切换放行策略。
  *
  * 为什么单开一条通道：为**实时渲染**设计的那条路（`live-layer.js` 里的切层内容闸门、垫底图、
@@ -67,51 +67,52 @@ function disposeWarmVideo() {
   videoWarm = null;
   if (warmHoverTimer && typeof clearTimeout === "function") {
     try { clearTimeout(warmHoverTimer); } catch { /* ignore */ }
-    warmHoverTimer = 0;
   }
+  warmHoverTimer = 0;
   if (!w) return;
   if (w.timer && typeof clearTimeout === "function") { try { clearTimeout(w.timer); } catch { /* ignore */ } }
-  try { w.el.removeAttribute("src"); w.el.load(); } catch { /* ignore */ }
+  // ⚠️ **不再动元素**（4.23.8）：预热元素现在住在**常驻双元素池**里，生命周期归池。
+  // 旧实现在这里 `removeAttribute("src") + load()` 把元素清空 —— 那一手会连池里那个
+  // 元素**已经解好的首帧**一起扔掉，下次切换又变冷启动（正是本版要修的东西）。
+  // 这里只清"最近预热过哪条地址"的记账。
 }
 /**
- * 预热一个视频源（只到元数据）。
+ * 预热一个视频源 —— **到首帧，不是只到元数据**（4.23.8）。
  *
- * ⚠️ 三条不变量：
- *   · **绝不 `play()`、绝不 `autoplay`** —— 预热不得引进第二个解码器（本文件头的取舍）；
- *   · 同一个 url 幂等（槽位里已经是它就直接返回）；
- *   · 单槽位：换一个候选就把上一个释放掉（点选来回扫不会攒下一串解复用器）。
+ * 旧实现在这里自建一个 `<video>`、只 `preload="metadata"`、**绝不 play()**，理由是
+ * "预热不得引进第二个解码器"（4K 双解码实测卡顿）。那条取舍在当时是对的，但它把
+ * **首帧解码整段留在了关键路径上** —— 用户点一下要等的那 0.5–2s 主要就是这一段。
+ *
+ * 池化之后这条约束换了形态：交叉淡化期本来就会同时存在"旧元素 + 新元素"两个解码器，
+ * 池容量恒为 2 ⇒ 把**池里的备用元素**预热到首帧**没有增加峰值**，只是把"新建"换成"复用"。
+ * 于是可以安全地推进到首帧：预热元素 `muted` 播起来，首帧解出后再切换就只剩一次 play()。
+ *
+ * 不变量：
+ *   · 预热**只动池里不在屏上的那个元素**（`weSwitchArm` 内部有这条闸）；
+ *   · 同一 url 幂等；任何时刻最多一个池元素被预热占用。
  */
 function warmVideoUrl(url) {
   const u = String(url || "");
   if (!u || typeof document === "undefined" || typeof document.createElement !== "function") return;
   if (videoWarm && videoWarm.url === u) return;
   disposeWarmVideo();
-  let el;
-  try { el = document.createElement("video"); } catch { return; }
-  if (!el || typeof el.load !== "function") return;
   try {
-    el.preload = "metadata";      // ← 只取 moov：Chromium 拿到元数据就停
-    el.muted = true;
-    el.loop = true;
-    el.autoplay = false;          // ← 预热不解码帧
-    el.setAttribute("playsinline", "");
-    el.src = u;              // 赋 src 本身就会启动资源选择；**不再调 load()** ——
-                             // 同值重启资源选择等于白跑一次取数（本文件建层那段有同类注释）。
-  } catch { return; }
-  const timer = typeof setTimeout === "function" ? setTimeout(() => {
-    if (videoWarm && videoWarm.el === el) disposeWarmVideo();
-  }, VIDEO_WARM_TTL_MS) : 0;
-  videoWarm = { url: u, el, timer };
-  liveLog("video-warm", "预热（仅元数据，不解码） " + u.slice(Math.max(0, u.lastIndexOf("/") + 1)).slice(-24));
+    const el = weSwitchPoolPick(u);
+    if (!el) return;
+    weSwitchArm(el, u, null);
+    videoWarm = { url: u, el, timer: 0 };
+    liveLog("video-warm", "池内预热（到首帧） " + u.slice(Math.max(0, u.lastIndexOf("/") + 1)).slice(-24));
+  } catch { /* 预热是增强：任何异常都不许影响切换 */ }
 }
-/** 领养预热好的元素（同 url 才给）。命中即交出，槽位随之清空。 */
-function consumeWarmVideo(url) {
-  const w = videoWarm;
-  if (!w || w.url !== String(url || "")) return null;
-  videoWarm = null;
-  if (w.timer && typeof clearTimeout === "function") { try { clearTimeout(w.timer); } catch { /* ignore */ } }
-  liveLog("video-warm", "领养预热元素 " + String(w.el.readyState === undefined ? "-" : w.el.readyState) + " rs");
-  return w.el;
+/**
+ * 领养预热好的元素 —— 4.23.8 起**恒为 null**。
+ *
+ * 预热元素现在住在池里，由 `buildVideoMedia` 的 `weSwitchPoolPick()` 直接命中
+ *（同 URL 且首帧已解），不再需要"单独一个槽位"这条中间态。保留这个函数是为了让
+ * `buildVideoMedia` 的两条分支（领养 / 池化）都保持可读，且行为显式。
+ */
+function consumeWarmVideo() {
+  return null;
 }
 /**
  * 指针落到某张壁纸卡上时预热它。
@@ -215,7 +216,23 @@ function buildVideoMedia(sel, fitClass) {
   const prepared = consumePreparedMedia("VIDEO", sel.url);
   // 预热元素（见 VIDEO_WARM_TTL_MS 那段）：领养它 ⇒ 建层那一刻解复用器已经在位。
   const warmed = prepared ? null : consumeWarmVideo(sel.url);
-  const media = prepared || warmed || document.createElement("video");
+  // **池化（4.23.8）**，但**只接"用户点击驱动"的切换**：没有点击上下文时
+  // `weSwitchClickPlayer()` 返回 null ⇒ 落到一次性播放器，语义与旧实现逐字等价。
+  // 为什么这样切：轮换/启动恢复/revalidate 三条路径各有自己的就绪判据与 smoke 判据
+  //（`rotation-live-smoke` / `rotation-prepared-leak-smoke` / `rotation-smoke`），
+  // 它们的既有契约就是"视频档每层新建一个 `<video>`、且不预热"—— 那条契约是为避开
+  // 双解码与「GIF→静图→正片」的观感。用户报的"点已缓存壁纸卡一下"走的是**点击**这条路。
+  // 新建 `<video>` = 解码器重建，正是那条诉求的结构性主因（`layerWantKey()` 把
+  // `selection.url` 算进层键 ⇒ 换一张键必变 ⇒ 旧层让出 LAYER_ID ⇒ 建新层 ⇒ 再 new 一个
+  // 元素 ⇒ 资源选择 / 取 moov / 首帧解码整段压在点击的关键路径上）。
+  // 创生点只剩 `weSwitchNewPlayer()` 一处（见 video-switch.js），别处不许再造。
+  // `typeof` 守卫：`test/verify-transcode-state.mjs` 这类判据把本文件**单文件**当模块加载，
+  // 那时池模块不在作用域里 —— 与既有 `activeRotationGroup` 的探法同一套（缺省走安全方向）。
+  const pooled = (prepared || warmed) ? null
+    : (typeof weSwitchClickPlayer === "function" ? weSwitchClickPlayer(sel.url) : null);
+  // 退化分支（只给单文件沙箱用：那里没有池模块）—— 正常构建永远走上面两条。
+  const media = prepared || warmed || pooled
+    || (typeof weSwitchDetachedPlayer === "function" ? weSwitchDetachedPlayer() : document.createElement("video"));
   const tok = String(sel.url || "").split("/").pop();
   const rc = selection.transcodeReady;
   const useCached = Boolean(rc && rc.url && rc.fps === selection.fpsCap && rc.token === tok);
@@ -251,6 +268,17 @@ function buildVideoMedia(sel, fitClass) {
     const stillPreview = !!sel.previewUrl
       && (sel.type !== "video" || /\/video-preview\//.test(sel.previewUrl) || siteStaticThumb);
     if (stillPreview) media.poster = sel.previewUrl;
+  }
+  // 池元素：把"装载去重 + 预热到首帧"交给池。上面那条 `media.src = …` 已经赋过地址，
+  // `weSwitchArm` 据此**不会重复 load**（需求 A5：同一 src 已加载 ⇒ 直接 play）；
+  // 同时把这次要播的地址 / 是否抽帧版 / 缓存族是否命中告诉切换状态机（度量要用）。
+  if (pooled) {
+    const armedSrc = String(media.src || (useCached ? rc.url : sel.url) || "");
+    weSwitchAttachPlayer(media, armedSrc, {
+      is1080p: Boolean(useCached),
+      cacheFamilyHit: sel.cacheFamilyHit === true,
+    });
+    weSwitchArm(media, armedSrc, null);
   }
   media.autoplay = true;
   // 轮播「当前视频播完就换下一张」档（issue #230 后续）必须**关掉 loop** ——

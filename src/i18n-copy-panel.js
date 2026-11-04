@@ -432,6 +432,13 @@ const WE_I18N_EN_PANEL = {
   "站点上还没有桌宠。": "No pets on the site yet.",
   "站点不可达": "Site unreachable",
   "预览尺寸": "Preview-size",
+  // ── 4.23.8 壁纸切换：点击反馈 / 已缓存角标 ──
+  // 「已缓存」是**族级**结论（原画或 1080p 任一档已落地），所以英文不做 "downloaded"
+  // 那种"确指这一条"的措辞 —— 那一层语义由 `local`（精确）承担，只在排障里用。
+  "已缓存": "Cached",
+  "已在本地缓存（原画或 1080p 任一档已落地），点它不必等网络":
+    "Cached locally (original or 1080p variant is already on disk) — no network wait",
+  "正在切换，请稍候": "Switching, please wait",
 
   // ── 第二轮补词：来源筛选 / 页签引导条 / 桌宠提示 / 模型名（专有名词不译，但必须在册）──
   "开机动画": "Boot animation",

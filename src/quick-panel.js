@@ -287,7 +287,25 @@
       tabIndex: 0,
       "aria-selected": w.id === sel.id ? "true" : "false",
       title: w.title,
-      onClick: () => applySelection(w.id, { fromManual: true }),
+      // **按下即反馈**（4.23.8 / 需求 G1）：只做同步 DOM，不等任何请求 —— 第一处视觉
+      // 变化必须在 50ms 内出现，否则用户会以为"没点上"。`weSwitchBegin` 顺带记下
+      // clickFeedbackMs（点击 → 第一处视觉变化），收尾时摘下 pressed 与 aria-busy。
+      onPointerDown: (ev) => {
+        try { weSwitchBegin(ev && ev.currentTarget); } catch { /* 反馈是增强 */ }
+        // 视频壁纸的提交前预热也借这一枪（按下到抬手是白捡的窗口）。
+        try { warmVideoForPointer(ev, true); } catch { /* 预热是增强 */ }
+      },
+      onClick: () => {
+        // 连点防护（G7）：切换进行中再点别的卡 ⇒ **只保留最后一个**，并当面说明。
+        // 为什么不静默忽略：用户最后点的就是他真正想看的，全丢掉等于让他再点一次。
+        try {
+          if (weSwitchQueuePick(w.id, () => applySelection(w.id, { fromManual: true }))) {
+            try { lfSay(weT("正在切换，请稍候"), true); } catch { /* ignore */ }
+            return;
+          }
+        } catch { /* 队列是增强 */ }
+        applySelection(w.id, { fromManual: true });
+      },
       onKeyDown: cardKeyDown,
       // 预取：悬停 300ms ⇒ 把**后面第一张**站点条目按 low 优先级拉一份到本地
       // （见 src/local-first.js 的 lfSchedulePrefetch）。它只占 wallpaper 自己的槽，
@@ -304,6 +322,15 @@
             })
           : null),
       React.createElement("span", { className: "we-qp__item-title" }, w.title),
+      // 「已缓存」角标（需求 B7 / 成因 ⑤）：判据是**族级** `localReady` —— 原画或 1080p
+      // 任一档已落地都算"点下去不用等网络"。这是用户唯一能看到的"为什么这张会快"，
+      // 也是排障时区分「在等解码」与「在等网络」的那一眼。
+      w.localReady === true
+        ? React.createElement("span", {
+            className: "we-qp__item-cached",
+            title: weT("已在本地缓存（原画或 1080p 任一档已落地），点它不必等网络"),
+          }, weT("已缓存"))
+        : null,
       w.id === sel.id
         ? React.createElement("span", { className: "we-qp__item-badge" }, weT("当前"))
         : React.createElement("span", { className: "we-qp__item-type" }, CARD_TYPE_LABELS[w.type] || weT("壁纸")),
@@ -434,7 +461,20 @@
       tabIndex: 0,
       "aria-selected": w.id === sel.id ? "true" : "false",
       title: w.title,
-      onClick: () => applySelection(w.id, { fromManual: true }),
+      // 与列表行**同一套**点击反馈 / 连点防护（需求 G6：不许另写一套）。
+      onPointerDown: (ev) => {
+        try { weSwitchBegin(ev && ev.currentTarget); } catch { /* 反馈是增强 */ }
+        try { warmVideoForPointer(ev, true); } catch { /* 预热是增强 */ }
+      },
+      onClick: () => {
+        try {
+          if (weSwitchQueuePick(w.id, () => applySelection(w.id, { fromManual: true }))) {
+            try { lfSay(weT("正在切换，请稍候"), true); } catch { /* ignore */ }
+            return;
+          }
+        } catch { /* 队列是增强 */ }
+        applySelection(w.id, { fromManual: true });
+      },
       onKeyDown: cardKeyDown,
       // 卡片档与列表行同一套预取触发器（见 qpRenderRow / src/local-first.js）。
       onMouseEnter: () => { try { lfSchedulePrefetch(w.id, sel.id); } catch { /* 预取是增强 */ } },

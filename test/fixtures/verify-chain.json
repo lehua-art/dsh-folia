@@ -63,6 +63,14 @@
         {
           "kind": "guard",
           "npm": null,
+          "file": "test/verify-switch-smooth.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
           "file": "test/verify-scene.mjs",
           "args": [],
           "tier": "hard",
@@ -1069,6 +1077,14 @@
           "kind": "guard",
           "npm": null,
           "file": "test/verify-playback-controls.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-switch-smooth.mjs",
           "args": [],
           "tier": "hard",
           "probe": false
