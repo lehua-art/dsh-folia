@@ -383,11 +383,16 @@ function SkinsTabPanel() {
          */
         const queueText = (job) => {
           if (!(job && job.status === "queued")) return "";
+          // 4.23.18：优先 `queuedAhead`（0 基、只数同 kind + 同优先级档）；旧宿主回落 queuePos。
+          const ahead = job.queuedAhead;
+          if (ahead != null && Number.isFinite(Number(ahead)) && Number(ahead) >= 0) {
+            return weT("排队中：前面还有 {n} 个任务", { n: Number(ahead) });
+          }
           const pos = Number(job.queuePos) || 0;
           if (pos <= 0) return label2 ? weT("排队中：{name}", { name: label2 }) : weT("排队中");
           return weT("排队中：前面还有 {n} 个任务", { n: pos - 1 });
         };
-        setNote({ ok: true, text: queueText({ status: r.status, queuePos: r.queuePos })
+        setNote({ ok: true, text: queueText({ status: r.status, queuePos: r.queuePos, queuedAhead: r.queuedAhead })
           || weT("正在下载：{name} 0%", { name: label2 }) });
         const started = Date.now();
         /** 最近 3 秒的 received 采样：只用来算"约剩 N 秒"，样本不足就不显示。 */

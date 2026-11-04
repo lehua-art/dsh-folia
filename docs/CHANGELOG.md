@@ -1,5 +1,67 @@
 # 变更记录（Changelog）
 
+### v4.23.18（2026-11-04）
+
+> 主题：**当前在看的壁纸必须排第一，启动不许再批量入队**。用户实测：标题栏「排队中：前面还有
+> 50 个任务」，当前壁纸排在 31 条 `priority=low` 之后。定因有两条：4.23.17 的
+> 「done 但成品缺失 ⇒ 重置为 queued」在启动时把**所有**非 done 记录（done-缺失 / failed /
+> running / queued）都折成 queued 一起 pump；而当前在播那张仍是 low、标题栏又从**全局**
+> 队列位置（含别的 kind / 别的优先级档）算 N。另修一条升级迁移：4.23.17 之前创建的 failed
+> job 还带着"变体 URL + 原画哈希"的错误期望，点「重试」会继续 `hash-mismatch`。
+
+#### 1. 当前在播 / 当前选中 = 最高优先级（P0）
+
+- 用户点击 ⇒ `/downloads/add` 带 `priority:"high"`（`src/local-first.js` 的 `localFirstApply`）；
+  宿主侧给 job 记一枚 **`boostSeq`**（提权序号），`queuedOrder` 按
+  `(优先级, boostSeq 大→小, at, seq)` 排序 ⇒ 点谁谁就在**队首**（不是"排在其它 high 的 at 后面"）。
+- **当前在播**（启动恢复 / 轮播 / revalidate / 点击）走 `lfPromoteCurrent()`：若这张还没落地，
+  同样以 high 入队 / 提权；已 high 的保持 high 直到 done，不会被后续 low 预取降级。
+- 标题栏「排队中：前面还有 N 个」改读 **`queuedAhead`**：**0 基**、只数
+  **同 kind + 同优先级档**里真实排在它前面的任务（`lib/download-queue.js` 的
+  `compareQueueOrder` / `queueAheadOf`，纯函数、测试可用假队列断言）。`queuePos`（全局 1 基）
+  保留给旧客户端/排障。
+
+#### 2. 启动重置限流（不再批量入队）
+
+- 新增 job 状态 **`pending`**（记录在、成品不在、**未缓存**）：不参与调度、不占队列位、无进度条。
+- `load()` 只在 `status=done` **且成品文件真的存在**时恢复 `done`；其余：
+  `done` 但成品缺失 / 上次 `running` / 上次 `queued` / 已是 `pending` ⇒ **pending**；
+  `failed` / `cancelled` **保留原状态**（失败原因要给人看）。
+- 只有三条路径会把 pending 变回 queued：① 用户点击 ② 当前在播 ③ 预取（下一张 / hover，
+  最多 2 个 low）。清空 library 后重启 **`queuedCount=0`**（`test/verify-queue-priority.mjs` 构造 30 条 done-缺失）。
+- 面板卡片上 pending 显示「未缓存」（无进度条）；点击后才变「排队中」/「缓存中 x%」。
+
+#### 3. 队列可运维
+
+- `/folia/downloads/list` 新增标量汇总：**`byPriority`**（high/normal/low 各自
+  queued/running/pending/done/failed/cancelled/total）、**`queuedCount`**、`pendingCount`、`paused`、`migration`。
+- 新增 `POST /folia/downloads/pause {paused}`：暂停全部下载（不再取新任务；正在跑的 abort 回
+  queued，`.part` 保留、恢复后续传）。`paused` 落盘，跨重启保持。
+- 新增 `POST /folia/downloads/clear-queued`：把 `queued` 且**未开始**的标成 `pending`；
+  running / done / failed 一律不动。
+- 面板「系统 → 缓存位置 → 缓存管理」新增三枚按钮：**「暂停全部下载 / 继续全部下载」、
+  「清空未开始队列」、刷新**，并显示当前「排队 N 个 · 未缓存 M 个」。
+
+#### 4. 升级迁移：旧 job 的错误期望值（4.23.17 之前创建）
+
+- 启动时一次性扫描所有 job：`hashSource` 缺失 / `expectBytes=0` / URL 命中变体但
+  `hashSource=original` / `expectSha` 与清单不一致 ⇒ 用 `resolveMediaExpectation` **重算**。
+  清单来源是站点清单磁盘缓存（`~/.dsh-folia/cache/site-items.json`，**不联网、不阻塞**）；
+  查不到 ⇒ 跳过该条，不猜哈希。
+- `failed` 且错误是 `hash-mismatch*` 的 ⇒ 迁移后**自动重试一次**（queued，`hashRetry` 重置）；
+  其它状态只修字段不改状态（done 不因"元数据旧"被重下，pending 不因迁移被入队）。
+- 幂等：修好后四项与清单一致 ⇒ 再次运行 `migrated=0`；迁移条数写宿主日志并随
+  `/downloads/list` 的 `migration` 下发。
+- 本机 4.23.17 实测的 10 条「变体 URL + 原画哈希 + expectBytes=0」failed job 即此形态。
+
+#### 5. 门禁
+
+- 新增 `test/verify-queue-priority.mjs`（硬档，进 `verify` 链）：点击提权到队首 / 在播保持 high /
+  启动 30 条 done-缺失 ⇒ 全 pending 且 queuedCount=0 / 预取最多 2 且 low / 「前面还有 N 个」与
+  假队列顺序一致（含跨 kind 不串号）/ 清空未开始只动 queued / 暂停与恢复 /
+  迁移（构造 4.23.16 形态坏 job ⇒ 修成变体 sha ⇒ 真源下载 done / 幂等 / 清单不可达跳过 /
+  去掉迁移的负对照）。
+
 ### v4.23.17（2026-11-04）
 
 > 主题：**「点了壁纸不显示」的真因不是网络，而是"哈希来源"分叉** —— 选档决定下 1080p 变体，

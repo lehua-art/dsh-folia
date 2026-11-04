@@ -547,6 +547,9 @@ const WE_I18N_EN_PANEL = {
   // ——`{detail}` 由既有的 `dlProgressDetail` 给（同一张表，不在这里再造一种"已下/总量"写法）。
   "缓存中 {p}%": "Caching {p}%",
   "缓存中 {p}%（{detail}）": "Caching {p}% ({detail})",
+  // 4.23.18：pending = 记录在、成品不在、**没有排队**（启动不批量入队）。没有进度条。
+  "未缓存": "Not cached",
+  "未缓存（点它才开始下载）": "Not cached (click it to start downloading)",
 
 
   // ── 四模块统一的卡片状态机（4.23.4）────────────────────────────────────
@@ -646,6 +649,22 @@ const WE_I18N_EN_PANEL = {
   "清理失败：{error}": "Cleanup failed: {error}",
   "已清理 {name}：释放 {size}（{n} 个文件）": "Cleared {name}: released {size} ({n} files)",
   "已清理 {name}：释放 {size}（{n} 个文件）；{failed} 个文件被占用，重启 DSH 后彻底生效": "Cleared {name}: released {size} ({n} files); {failed} file(s) in use will be removed after restarting DSH",
+
+  // ── 4.23.18「下载队列运维」（系统 → 缓存管理 → 下载队列）──────────────────────
+  "下载队列": "Download queue",
+  "排队 {q} 个 · 未缓存 {p} 个": "{q} queued · {p} not cached",
+  "暂停全部下载": "Pause all downloads",
+  "继续全部下载": "Resume all downloads",
+  "清空未开始队列": "Clear queued (not started)",
+  "已暂停全部下载：正在下载的任务会先停下，恢复后从已下载部分续传": "Paused all downloads: running tasks stop first and resume from the downloaded part",
+  "已恢复下载": "Downloads resumed",
+  "已把 {n} 个未开始任务标记为未缓存（点壁纸时会重新排队）": "Marked {n} not-yet-started task(s) as not cached (clicking a wallpaper queues it again)",
+  "没有未开始的任务可清空": "No not-yet-started tasks to clear",
+  "恢复取任务：之前暂停的任务会从已下载部分续传": "Resume taking tasks; paused tasks continue from the downloaded part",
+  "不再取新任务；正在下的会先停下（已下载的部分保留，恢复后续传）": "Stop taking new tasks; running ones stop first (downloaded parts are kept and resume later)",
+  "把排队中、还没开始的任务标记为未缓存；正在下和已完成的不动": "Mark queued, not-yet-started tasks as not cached; running and finished tasks are untouched",
+  "重新读取队列读数（只读，不触发下载）": "Re-read queue status (read-only, does not start downloads)",
+  "操作失败：{error}": "Operation failed: {error}",
 
   // ── 4.23.15「本地副本自愈」（播放失败 → 验内容 → 重下 / 换档 / 转码）───────────────
   // 这三句是**给用户看的结论**，不是日志：它们回答"我刚点的那张为什么没出来、现在在干什么"。

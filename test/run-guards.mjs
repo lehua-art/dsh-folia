@@ -352,6 +352,12 @@ const VERIFY_STEPS = [
   // 4.23.17：壁纸缓存进度（首次点击后「缓存中 62%」，下完「已缓存」，切走再切回接着显示真实
   // 进度；卡片与顶部标题栏两处一致；只通知变化的卡；负对照=把"切回来从 0 开始"贴回即红）。
   step('test/verify-wallpaper-progress.mjs'),
+  // 4.23.18：**队列优先级 / 启动限流 / 运维 / 旧 job 迁移**。用户实测：当前在看的壁纸排在
+  // 31 条 low 之后（启动批量重置）；标题栏 N 来自全局 queuePos（跨 kind 串号）；4.23.17 之前
+  // 的 failed job 还带着"变体 URL + 原画哈希"的错误期望。本守卫覆盖：点击/在播 high + 队首、
+  // 30 条 done-缺失 ⇒ 全 pending（queuedCount=0）、预取 2 个且 low、N=queuedAhead（假队列含
+  // 跨 kind）、清空未开始、暂停/恢复、升级迁移（真源下载 done / 幂等 / 清单不可达 / 变异负对照）。
+  step('test/verify-queue-priority.mjs'),
   step('test/pets-layer.mjs'),
 ];
 

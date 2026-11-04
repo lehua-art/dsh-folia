@@ -18,6 +18,8 @@
 const LF_STATE = {
   inflight: new Map(),   // id → { timer }
   note: null,            // (text, ok) => void，由 client.js 注入
+  // 4.23.18：非点击的"当前在播提权"节流（id → 上次 promote 的毫秒时间戳）。
+  promoteAt: new Map(),
 };
 
 /** client.js 注入：把提示写进面板（与其它页签同一条提示位）。 */
@@ -98,30 +100,54 @@ function lfPoll(jobId, item, label) {
 function localFirstApply(id, opts) {
   if (opts && opts.skipLocalFirst) return false;
   if (!id) return false;
+  /**
+   * `opts.silent`（4.23.18）：**非点击**路径（启动恢复 / 轮播 / revalidate）的"当前在播 = high"。
+   * 与点击路径共用同一段入队逻辑，但不写提示、不挂进度轮询 —— 否则每次 revalidate 都会
+   * 刷一行「正在下载到本地」。
+   */
+  const silent = Boolean(opts && opts.silent);
   // 异步完成，这里只能是"先入队再返回"。所有 await 都在内部，不阻塞调用方。
   (async () => {
-    const item = await lfFindItem(id);
+    // 调用方已经拿着 inventory 条目时（`opts.item`）直接用 —— 不再打一次 `/inventory`。
+    // 这条对"上传成功 → 自动选中新条目"很关键：上传 handler 自己已经重拉过一次库存，
+    // 这里再查一次会让「恰好一次重拉」变成两次（test/verify-picker-upload 的实测判据）。
+    const provided = opts && opts.item && typeof opts.item === "object" ? opts.item : null;
+    const item = provided || await lfFindItem(id);
     if (!item || !item.mediaProxy) return;      // 非站点条目：交给原路径
     // **族级命中就够**（4.23.8 / 成因 ⑤）：原画或 1080p 任一档已落地 ⇒ 播放走
     // `/folia/local-media/`，不必再入队。只认 `local`（精确）会让「下的是 1080p、
     // 播的是原画」这一族每次都白排一次下载 —— 那正是用户说的"已下载好还卡"。
     if (item.localReady === true || item.local === true) return;
     const label = String(item.title || id);
-    if (LF_STATE.inflight.has(id)) { lfSay(`正在下载到本地：${label}`, true); return; }
+    if (LF_STATE.inflight.has(id)) {
+      if (!silent) lfSay(`正在下载到本地：${label}`, true);
+      return;
+    }
+    // 非点击的"当前在播"：同一张 5 秒内只提一次（启动恢复 + revalidate 常连着来）。
+    if (silent) {
+      const now = Date.now();
+      const last = Number(LF_STATE.promoteAt.get(id)) || 0;
+      if (now - last < 5000) return;
+      LF_STATE.promoteAt.set(id, now);
+    }
     let job = null;
     try {
+      // 4.23.18：**用户点击 = 最高优先级**。此前这里是 "low"，于是用户点的那张排在
+      // 31 个后台预取后面（标题栏"前面还有 50 个"的直接体感）。点击是唯一"我就要现在看"
+      // 的信号 ⇒ high + 宿主侧提权到队首（见 lib/download-queue.js 的 boostSeq）。
       const resp = await apiPostJson("/downloads/add", {
-        items: [lfAddItem(item, item.media, "low")],
+        items: [lfAddItem(item, item.media, "high")],
       }, { parse: "always" });
       const items = (resp && resp.data && Array.isArray(resp.data.items)) ? resp.data.items : [];
       job = items[0] && items[0].job ? items[0].job : null;
       // 4.23.4：宿主可能**替我们选了 1080p 变体**（清单/设置/慢链路）。这不是失败 ——
       // 但要让人看得见：小标 + 一句说明（`chosenVariant` 来自宿主的同一个纯函数）。
-      if (job && items[0] && items[0].chosenVariant === "1080p") {
+      if (!silent && job && items[0] && items[0].chosenVariant === "1080p") {
         lfSay(`已按 1080p 变体下载：${label}（省流量；可在面板点「用原画」改回）`, true);
       }
     } catch { /* 入队失败：下面回退直连 */ }
     if (!job || !job.id) return;   // 下载链路不可用（老宿主 / 路由没注册）⇒ 静默跳过，播放照旧
+    if (silent) return;            // 在播提权只要"入队/high"，进度由卡片的订阅负责
     lfSay(`正在下载到本地：${label}`, true);
     lfPoll(job.id, item, label);
   })();
@@ -295,8 +321,11 @@ async function lfPrefetchNext(afterId, playingId) {
       const doc = (resp && resp.data) || resp || {};
       jobs = Array.isArray(doc.jobs) ? doc.jobs : [];
     } catch { return; }
+    // 4.23.18：`pending`（启动时未缓存、没自动入队）**不算已在队列**——预取正是允许把
+    // 它变回 low 的三条路径之一。queued / running / done 才算"已经有了"，不白占预取名额。
+    const taken = new Set(["queued", "running", "done"]);
     const fresh = picks.filter((c) => !jobs.some((j) => j
-      && j.url === c.media && j.status !== "failed" && j.status !== "cancelled"));
+      && j.url === c.media && taken.has(String(j.status || ""))));
     if (!fresh.length) return;
     for (const c of fresh) LF_PREFETCH.seen.add(String(c.id));
     // 第 1 张就是"**下一张**"（顺序即优先级）。单张走既有那条口径（priority=low，
@@ -675,8 +704,18 @@ function dlFailReason(code) {
   return weT("下载/安装失败：{code}", { code: c });
 }
 
-/** job 的排队位置：1 基 `queuePos` ⇒「前面还有 N 个」（N = queuePos - 1）。未知时只说"排队中"。 */
+/**
+ * job 的排队位置 ⇒「前面还有 N 个」。
+ *
+ * 4.23.18：优先读 `queuedAhead`（0 基，**只数同 kind + 同优先级档**）。旧宿主 / 合成夹具
+ * 没有这个字段时才回落 `queuePos`（全局 1 基）—— 两种宿主都能显示，不会因为升级期字段
+ * 缺席而变成"排队中"三个字。
+ */
 function dlQueueDetail(job) {
+  const ahead = job && job.queuedAhead;
+  if (ahead != null && Number.isFinite(Number(ahead)) && Number(ahead) >= 0) {
+    return weT("排队中：前面还有 {n} 个任务", { n: Number(ahead) });
+  }
   const pos = Number(job && job.queuePos) || 0;
   if (pos > 0) return weT("排队中：前面还有 {n} 个任务", { n: pos - 1 });
   return weT("排队中");

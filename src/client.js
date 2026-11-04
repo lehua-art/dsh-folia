@@ -408,6 +408,15 @@ const selection = {
   mediaHealth: null,
   mediaVerifyBusy: "",
   mediaVerifyNote: "",
+  // 「下载队列运维」（4.23.18，transient）：`GET /folia/downloads/list` 的标量汇总
+  // （paused / queuedCount / pendingCount）+ 操作在途 + 结果提示。与 cacheUsage 同口径：
+  // 不落盘，进「系统」页签重新读一次即可。
+  queuePaused: false,
+  queueBusy: "",
+  queueQueuedCount: 0,
+  queuePendingCount: 0,
+  queueNote: "",
+  queueError: "",
   // 本地优先/自愈的一句提示（信息类；失败类走 videoError 的红色行）。
   mediaNote: "",
   // WE 官方资源路径编辑器（transient）：开态 + 草稿路径 + 上次错误。
@@ -1723,6 +1732,81 @@ async function verifyLocalMedia() {
     }));
   }
   setTransient("mediaVerifyBusy", "");
+  emit();
+}
+
+/* ── 下载队列运维（4.23.18）：暂停全部 / 清空未开始 ───────────────────────────
+ *
+ * 用户报的问题：当前在看的那张排在 31+ 个 low 任务后面。队列本身已经修了（点击 = high +
+ * 队首 / 启动不批量入队），但"运维面"也得给用户两条路：
+ *   · 暂停全部下载 —— 弱网/只想看当前这张时，先把后台队列停住（已开始的会 abort 回 queued，
+ *     `.part` 保留，恢复后从已下载字节续传）；
+ *   · 清空未开始队列 —— 把 `queued` 标成 `pending`（未缓存），不碰正在下 / 已完成。
+ * 客户端只发动作与画读数，队列语义全在宿主 `lib/download-queue.js`。
+ */
+const DOWNLOADS_LIST_URL = "/folia/downloads/list";
+const DOWNLOADS_PAUSE_URL = "/folia/downloads/pause";
+const DOWNLOADS_CLEAR_QUEUED_URL = "/folia/downloads/clear-queued";
+
+/** 拉一次队列标量汇总（只读；进「系统」页签与每次操作后各一次）。 */
+async function loadQueueStatus() {
+  try {
+    const res = await apiJson(DOWNLOADS_LIST_URL);
+    const doc = (res && res.data) || res || {};
+    setTransient("queuePaused", doc.paused === true);
+    setTransient("queueQueuedCount", Number(doc.queuedCount) || 0);
+    setTransient("queuePendingCount", Number(doc.pendingCount) || 0);
+  } catch { /* 老宿主没有这些字段：按钮照常可点，只是读数未知 */ }
+}
+
+/** 「暂停全部下载 / 继续全部下载」。 */
+async function toggleDownloadPause() {
+  if (selection.queueBusy) return;
+  const want = !selection.queuePaused;
+  setTransient("queueBusy", "pause");
+  setTransient("queueError", "");
+  setTransient("queueNote", "");
+  emit();
+  try {
+    const res = await apiPostJson(DOWNLOADS_PAUSE_URL, { paused: want }, { parse: "always" });
+    if (!res.ok) throw new Error(hostFailureReason(res));
+    const d = (res && res.data) || {};
+    setTransient("queuePaused", d.paused === true);
+    setTransient("queueNote", want
+      ? weT("已暂停全部下载：正在下载的任务会先停下，恢复后从已下载部分续传")
+      : weT("已恢复下载"));
+    await loadQueueStatus();
+  } catch (err) {
+    setTransient("queueError", weT("操作失败：{error}", {
+      error: String((err && err.message) || err || ""),
+    }));
+  }
+  setTransient("queueBusy", "");
+  emit();
+}
+
+/** 「清空未开始队列」：queued → pending（未缓存），running/done 不动。 */
+async function clearQueuedDownloads() {
+  if (selection.queueBusy) return;
+  setTransient("queueBusy", "clear");
+  setTransient("queueError", "");
+  setTransient("queueNote", "");
+  emit();
+  try {
+    const res = await apiPostJson(DOWNLOADS_CLEAR_QUEUED_URL, {}, { parse: "always" });
+    if (!res.ok) throw new Error(hostFailureReason(res));
+    const d = (res && res.data) || {};
+    const n = Number(d.cleared) || 0;
+    setTransient("queueNote", n
+      ? weT("已把 {n} 个未开始任务标记为未缓存（点壁纸时会重新排队）", { n })
+      : weT("没有未开始的任务可清空"));
+    await loadQueueStatus();
+  } catch (err) {
+    setTransient("queueError", weT("操作失败：{error}", {
+      error: String((err && err.message) || err || ""),
+    }));
+  }
+  setTransient("queueBusy", "");
   emit();
 }
 
@@ -4725,6 +4809,8 @@ function WallpaperPicker() {
     if (activeTab !== "system") return;
     loadCacheUsage();
     loadMediaHealth();
+    // 4.23.18：下载队列的标量汇总（暂停态 / 排队数 / 未缓存数）—— 只读，进页签读一次。
+    loadQueueStatus();
   }, [activeTab]);
 
   // 页签安全（ADR-0013 D3①）：可见页签表变了（组件行状态随 inventory 轮询回到本地）而当前
@@ -5006,6 +5092,9 @@ function WallpaperPicker() {
         onRefreshCacheUsage: loadCacheUsage, armedConfirm: sel.armedConfirm, onDisarmConfirm: disarmConfirm,
         // 4.23.15「本地媒体自检」：账本刷新 / 全量校验并修复（= 启动采样那套判据的全量版）。
         onVerifyMedia: verifyLocalMedia, onRefreshMediaHealth: loadMediaHealth,
+        // 4.23.18「队列运维」：暂停全部 / 清空未开始（宿主队列的运维开关）。
+        onToggleQueuePause: toggleDownloadPause, onClearQueuedDownloads: clearQueuedDownloads,
+        onRefreshQueueStatus: loadQueueStatus,
       }),
     );
     return renderWallpaperTab({

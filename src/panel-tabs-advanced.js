@@ -266,6 +266,12 @@
   function renderCacheManagerBlock(ctx) {
     const { sel, onClearCache, onClearCacheSkins, onRefreshCacheUsage, armedConfirm, onDisarmConfirm } = ctx;
     const { onVerifyMedia, onRefreshMediaHealth } = ctx;
+    // 4.23.18「队列运维」：暂停全部 / 清空未开始（处理器由 client.js 注入，见 renderAdvancedTab 的 ctx）。
+    const { onToggleQueuePause, onClearQueuedDownloads, onRefreshQueueStatus } = ctx;
+    const queuePaused = Boolean(sel && sel.queuePaused);
+    const queueBusy = Boolean(sel && sel.queueBusy);
+    const queueQueued = Math.max(0, Number(sel && sel.queueQueuedCount) || 0);
+    const queuePending = Math.max(0, Number(sel && sel.queuePendingCount) || 0);
     const usage = sel && sel.cacheUsage;
     const items = (usage && Array.isArray(usage.items)) ? usage.items : [];
     const rowOf = (t) => items.find((x) => x && x.target === t) || null;
@@ -339,6 +345,38 @@
           onClick: () => { try { onRefreshMediaHealth(); } catch { /* ignore */ } },
         }, weT("刷新")),
       ),
+      // ── 4.23.18「队列运维」：两枚按钮 + 读数 ────────────────────────────────
+      // 为什么放在缓存区：它们回答的是"缓存什么时候下、现在在占多少带宽"，与缓存位置同一节；
+      // 同时**不新开** `we-picker__section`（「系统」页签的节序列是 verify-scene-live 的硬锚）。
+      React.createElement("div", { className: "we-picker__row", key: "queue-ops" },
+        React.createElement("span", { className: "we-picker__hint we-picker__label" }, weT("下载队列")),
+        React.createElement("span", { className: "we-picker__uploads-path" },
+          weT("排队 {q} 个 · 未缓存 {p} 个", { q: queueQueued, p: queuePending })),
+        React.createElement("button", {
+          key: "queue-pause", type: "button", className: "we-picker__btn",
+          disabled: queueBusy,
+          title: queuePaused
+            ? weT("恢复取任务：之前暂停的任务会从已下载部分续传")
+            : weT("不再取新任务；正在下的会先停下（已下载的部分保留，恢复后续传）"),
+          onClick: () => { try { onToggleQueuePause(); } catch { /* ignore */ } },
+        }, queuePaused ? weT("继续全部下载") : weT("暂停全部下载")),
+        React.createElement("button", {
+          key: "queue-clear", type: "button", className: "we-picker__btn",
+          disabled: queueBusy || queueQueued === 0,
+          title: weT("把排队中、还没开始的任务标记为未缓存；正在下和已完成的不动"),
+          onClick: () => { try { onClearQueuedDownloads(); } catch { /* ignore */ } },
+        }, weT("清空未开始队列")),
+        React.createElement("button", {
+          key: "queue-refresh", type: "button", className: "we-picker__btn",
+          disabled: queueBusy,
+          title: weT("重新读取队列读数（只读，不触发下载）"),
+          onClick: () => { try { onRefreshQueueStatus(); } catch { /* ignore */ } },
+        }, weT("刷新")),
+      ),
+      sel && sel.queueNote
+        && React.createElement("div", { className: "we-picker__hint", key: "queue-note" }, sel.queueNote),
+      sel && sel.queueError
+        && React.createElement("div", { className: "we-picker__error", key: "queue-err" }, sel.queueError),
       React.createElement("div", { className: "we-picker__row", key: "cache-mgr-actions" },
         btn("clear-library", weT("清空媒体"), ["library"], weT("删除已下载的壁纸 / 开机动画 / 桌宠（可重新下载）")),
         btn("clear-site-media", weT("清空站点媒体"), ["site-media"]),

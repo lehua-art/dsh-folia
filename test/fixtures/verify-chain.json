@@ -965,6 +965,14 @@
         {
           "kind": "guard",
           "npm": null,
+          "file": "test/verify-queue-priority.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
           "file": "test/pets-layer.mjs",
           "args": [],
           "tier": "hard",
@@ -2043,6 +2051,14 @@
           "kind": "guard",
           "npm": null,
           "file": "test/verify-wallpaper-progress.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-queue-priority.mjs",
           "args": [],
           "tier": "hard",
           "probe": false

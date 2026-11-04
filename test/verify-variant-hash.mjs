@@ -23,7 +23,7 @@
  *   ④ `normalizeVariants` 必须原样保留变体的 sha256（丢掉它 = 客户端只能拿原画哈希）；
  *   ⑤ ENOENT（`.part` 被外部删）⇒ job 变 queued 并**最终 done**（不是 failed）；
  *   ⑥ 连续两次 ENOENT ⇒ failed 且原因是 `file-vanished`（有明确人话，不是裸 ENOENT）；
- *   ⑦ `status=done` 但成品不存在（旧 downloads.json / 外部清理）⇒ 载入即重置为 queued；
+ *   ⑦ `status=done` 但成品不存在（旧 downloads.json / 外部清理）⇒ 载入即重置为 **pending**（4.23.18：未缓存、不自动入队）；
  *   ⑧ 旧 downloads.json（缺 priority / mode / chosenVariant / enoentRetries）平滑升级不崩。
  *
  * 隔离 home：全程 `%TEMP%\folia-test-variant-hash-*`（`isolateTestHome` + 显式 `home`），
@@ -337,7 +337,7 @@ const VAR_URL = site.origin + '/orig.1080p.mp4';
   }
 }
 
-/* ══ ⑥ 旧状态升级：done 但成品缺失（含旧字段全缺）⇒ 载入即重置为 queued ═══════ */
+/* ══ ⑥ 旧状态升级：done 但成品缺失（含旧字段全缺）⇒ 载入即重置为 pending（4.23.18）═ */
 {
   const { createDownloadQueue } = await import('../lib/download-queue.js');
   const home = mkdtempSync(join(tmpdir(), 'folia-test-upgrade-'));
@@ -355,8 +355,8 @@ const VAR_URL = site.origin + '/orig.1080p.mp4';
     const q = createDownloadQueue({ home });
     const row = q.snapshot().find((j) => j.id === 'legacy-done-missing');
     check('⑥ 旧 downloads.json 能读（缺字段不崩）', Boolean(row), row ? 'ok' : 'missing');
-    check('⑥ done 但成品不存在 ⇒ 载入后**不再**是 done（重置为排队并重新开始）',
-      Boolean(row && row.status !== 'done' && row.received === 0),
+    check('⑥ done 但成品不存在 ⇒ 载入后**不再**是 done（4.23.18 起是 pending，不自动入队）',
+      Boolean(row && row.status === 'pending' && row.received === 0),
       JSON.stringify(row && { status: row.status, received: row.received }));
     check('⑥ 旧字段缺失 ⇒ 回落 priority=normal / mode=single / chosenVariant=original',
       Boolean(row && row.priority === 'normal' && row.mode === 'single' && row.chosenVariant === 'original'),

@@ -425,9 +425,18 @@ try { rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
     check('⑮ 旧任务被恢复为 normal（不崩、也不是全员 high）',
       snap0.length === 2 && snap0.every((j) => j.priority === 'normal'),
       snap0.map((j) => j.priority).join(','));
+    // 4.23.18：启动**不再批量入队** —— 旧 queued 变 pending（未缓存）、旧 failed 保留失败原因。
+    check('⑮ 4.23.18 启动不自动入队：旧 queued ⇒ pending、旧 failed 原样保留',
+      snap0.length === 2
+      && snap0.find((j) => j.id === 'old-1')?.status === 'pending'
+      && snap0.find((j) => j.id === 'old-2')?.status === 'failed',
+      snap0.map((j) => j.id + ':' + j.status).join(','));
+    // 用户点它们（点击 = high）⇒ 才入队，且仍能下完（旧条目不是死档）。
+    q.add({ url: base + '/media/legacy1.mp4', dest: join(homeOld, 'lib', 'legacy1.mp4'), kind: 'skin', priority: 'high' });
+    q.add({ url: base + '/media/legacy2.mp4', dest: join(homeOld, 'lib', 'legacy2.mp4'), kind: 'wallpaper', priority: 'high' });
     await waitAll(q, 20000);
     const snap1 = q.snapshot();
-    check('⑮ 恢复后仍能继续下（旧条目不是死档）',
+    check('⑮ 点击后仍能继续下（旧条目不是死档）',
       snap1.filter((j) => j.status === 'done').length === 2
       && existsSync(join(homeOld, 'lib', 'legacy1.mp4')),
       snap1.map((j) => j.status).join(','));

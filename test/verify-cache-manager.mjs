@@ -510,11 +510,14 @@ section('F. 面板：五层用量 + 五个按钮 + 二次确认 + toast');
     const labels = buttonLabels(tree);
     const need = ['清空媒体', '清空站点媒体', '清空皮肤包', '清空已装皮肤…', '清空 Electron 缓存', '一键清理（不含皮肤）'];
     // 4.23.15：这一节多了两枚按钮 —— 本地媒体自检的「刷新」与「校验并修复本地媒体」。
+    // 4.23.18：又多三枚队列运维按钮 ——「暂停全部下载」「清空未开始队列」「刷新」。
     // 判据跟着改：按钮**多**是新增能力，但少了任何一枚清理按钮都是回归。
-    check('F2 五个清理按钮都在（这一节共 10 枚按钮：更改 / 刷新×2 / 校验并修复 + 六码清理）',
+    check('F2 五个清理按钮都在（这一节共 13 枚按钮：更改 / 刷新×3 / 校验并修复 + 队列运维×2 + 六码清理）',
       need.every((l) => labels.includes(l))
-      && labels.length === 10
-      && labels.includes('校验并修复本地媒体'), labels.join(' / '));
+      && labels.length === 13
+      && labels.includes('校验并修复本地媒体')
+      && labels.includes('暂停全部下载')
+      && labels.includes('清空未开始队列'), labels.join(' / '));
     const txt = textOf(tree);
     check('F3 用量行给出各层体积与文件数 + 合计（面板真的把读数画出来了）',
       /3\.00 GB/.test(txt) && /2\.00 KB/.test(txt) && /27/.test(txt) && /缓存管理/.test(txt),

@@ -426,6 +426,20 @@ function applySelection(id, opts) {
   if (id && opts && opts.fromManual && typeof localFirstApply === "function") {
     try { localFirstApply(id); } catch { /* 下载链路不可用不影响本次播放 */ }
   }
+  // 4.23.18：**当前在播 = 最高优先级**（含启动恢复 / 轮播 / revalidate 这类非点击路径）。
+  // 点击路径已由 localFirstApply 入队 high；这里补"在播那张若已有 job，保持 high 直到 done"。
+  // ⚠️ 只在**选中项真的变了**时提权：同 id 的 revalidate（inventory 重拉 / 上传后刷新）
+  // 不该再打一次 `/inventory` 去查条目 —— 那会让"上传成功恰好一次重拉"变成两次
+  // （test/verify-picker-upload.mjs 的判据实测抓到了这一点）。
+  if (id && !(opts && opts.fromManual) && selection.id !== id
+      && typeof localFirstApply === "function") {
+    // 从**已在内存里的 inventory** 拿条目，别为提权再发一次 `/inventory`（上传成功那条链
+    // 自己已经重拉过一次；再查一次就是"恰好一次"判据变红的原因）。
+    const list = (selection.inventory && Array.isArray(selection.inventory.wallpapers))
+      ? selection.inventory.wallpapers : [];
+    const hit = list.find((x) => x && String(x.id) === String(id)) || null;
+    try { localFirstApply(id, { silent: true, item: hit || undefined }); } catch { /* 提权失败不影响本次播放 */ }
+  }
   reportClientDiag("apply", "id=" + String(id || "").slice(0, 40));
   // 手动切换/清除/revalidate：取消进行中的轮换准备（staged/探测元素全部
   // 释放），并丢弃任何滞留的就绪元素。轮换提交（fromRotation）例外 ——

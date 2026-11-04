@@ -118,6 +118,11 @@ function wpStateOf(item, jobs) {
   const status = String((job && job.status) || "");
   if (status === "running") return { phase: "running", job, percent: wpPercentOf(job), cached };
   if (status === "queued") return { phase: "queued", job, percent: 0, cached };
+  // 4.23.18：`pending` = 记录在、成品不在、**没有排队**（启动时不再批量入队）。
+  // UI 只说「未缓存」，没有进度条；点它 / 预取 / 当前在播才会重新入队。
+  if (status === "pending") {
+    return cached ? { phase: "cached", job: null, percent: 100 } : { phase: "pending", job, percent: 0, cached };
+  }
   // 已缓存优先于 done/failed：族里另一档已经落地 ⇒ 不再报"这条失败"的噪音。
   if (cached) return { phase: "cached", job: null, percent: 100 };
   if (status === "done") return { phase: "cached", job, percent: 100 };
@@ -177,6 +182,10 @@ function wpViewOf(item, jobs, etaSec) {
   if (s.phase === "queued") {
     const text = dlQueueDetail(s.job);
     return { phase: "queued", percent: 0, card: text, title: text };
+  }
+  // 4.23.18：未缓存（pending）—— 卡片只给一个静态小标，**不画进度条、不报排队位置**。
+  if (s.phase === "pending") {
+    return { phase: "pending", percent: 0, card: weT("未缓存"), title: null };
   }
   if (s.phase === "cached") {
     return { phase: "cached", percent: 100, card: weT("已缓存"), title: null };
@@ -314,6 +323,12 @@ function wpCardRender(view, item) {
   if (view.phase === "queued") {
     return React.createElement("span", {
       className: "we-wp-queued", "data-we-wp": "queued", title: view.card,
+    }, view.card);
+  }
+  if (view.phase === "pending") {
+    // 4.23.18：未缓存 = 静态小标（没有进度条）。点卡片会以 high 入队，变成「排队中」。
+    return React.createElement("span", {
+      className: "we-wp-pending", "data-we-wp": "pending", title: weT("未缓存（点它才开始下载）"),
     }, view.card);
   }
   if (view.phase === "cached") {
