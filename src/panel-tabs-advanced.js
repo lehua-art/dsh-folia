@@ -134,6 +134,10 @@
           onClick: onStartEditCacheDir,
         }, weT("更改")),
       ),
+      // 4.23.19：本地副本对账摘要（本地可用 / 下载中 / 待下载 / 上次对账）—— 一行，只读。
+      // 用户问"为什么这张还要走网络"时，这一行就是答案（不是"已缓存"角标的二义性）。
+      sel.queueMediaSummary
+        && React.createElement("div", { className: "we-picker__hint" }, sel.queueMediaSummary),
       // 目录浏览器开着时草稿行让位（地址栏就在浏览器里，两行输入框互相打架）；
       // 选中后浏览器收起、草稿行带着填好的路径回来，保存/迁移语义不变。
       sel.editingCacheDir && !browse && React.createElement("div", { className: "we-picker__row" },
@@ -378,7 +382,8 @@
       sel && sel.queueError
         && React.createElement("div", { className: "we-picker__error", key: "queue-err" }, sel.queueError),
       React.createElement("div", { className: "we-picker__row", key: "cache-mgr-actions" },
-        btn("clear-library", weT("清空媒体"), ["library"], weT("删除已下载的壁纸 / 开机动画 / 桌宠（可重新下载）")),
+        btn("clear-library", weT("清空媒体"), ["library"],
+          weT("删除已下载的壁纸 / 开机动画 / 桌宠（可重新下载）；会同时重置下载记录，之后需重新下载")),
         btn("clear-site-media", weT("清空站点媒体"), ["site-media"]),
         btn("clear-skins-zip", weT("清空皮肤包"), ["skins-zip"]),
         // 破坏性：清掉 = 皮肤中心那边的皮肤全部卸载。两段式（上膛 → 确认）。
@@ -411,6 +416,9 @@
           onClick: () => { try { onVerifyMedia(); } catch { /* ignore */ } },
         }, verifying ? weT("校验中…") : weT("校验并修复本地媒体")),
       ),
+      // 4.23.19（P0）：把"清空媒体会重置下载记录"写在按钮旁边（用户正是没看到这句才踩坑）。
+      React.createElement("div", { className: "we-picker__hint", key: "cache-media-reset-note" },
+        weT("清空媒体会同时重置下载记录，之后需重新下载。")),
       sel && sel.mediaVerifyNote
         && React.createElement("div", { className: "we-picker__hint", key: "media-verify-note" }, sel.mediaVerifyNote),
       sel && sel.cacheNote

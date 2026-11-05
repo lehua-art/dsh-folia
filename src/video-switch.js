@@ -909,11 +909,15 @@ function weSwitchBeginLocalWatch(ctx) {
       .then((res) => {
         const doc = (res && res.data) || res || {};
         const jobs = Array.isArray(doc.jobs) ? doc.jobs : [];
+        // 4.23.19：**只有"完整且有效"的本地副本才切**。`done` 只说明落盘动作结束，
+        // 盘上那份可能已被外部清掉（4.23.18 的 done-缺失）⇒ 切过去就是一次 404。
+        // 宿主 `/downloads/list` 每行现在带 `fileExists` / `fileValid`（来自对账器）。
         const job = jobs.find((j) => j && String(j.url || "") === String(o.originUrl)
-          && String(j.status || "") === "done");
+          && String(j.status || "") === "done" && j.fileValid !== false);
         if (!job || !job.id) return;
         weSwitchStopLocalWatch();
-        weSwitchHandoverLocal("/folia/local-media/" + encodeURIComponent(String(job.id)));
+        // 4.23.19：本地播放地址的唯一拼法在 `src/media-state.js`（`msLocalMediaUrl`）。
+        weSwitchHandoverLocal(msLocalMediaUrl(job.id));
       })
       .catch(() => { /* 网络抖动：下一拍再试 */ });
   };
@@ -1008,6 +1012,8 @@ function weSwitchFinishLocalSwap(to, from, parent) {
   }
   // 切到本地 = 这一张从此"已缓存"：复用缓存族标记，面板角标与度量同一口径。
   try { liveLog("local-handover", "已切到本地副本（后续切换走磁盘）"); } catch { /* ignore */ }
+  // 4.23.19：把播放源写回 selection（面板「当前播放源」与诊断读它；切换已完成，不再是 proxy）。
+  try { if (selection && typeof selection === "object") { selection.playSrc = "local"; selection.url = String((to && to.__weUrl) || selection.url || ""); } } catch { /* ignore */ }
 }
 export {
   WE_SWITCH_FADE_MS, WE_SWITCH_BUFFER_HINT_MS, WE_SWITCH_STATS_MAX,

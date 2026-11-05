@@ -1278,6 +1278,63 @@ async function lfAwaitHealJobP(jobId, onTick) {
   }
 }
 
+/* ── 本地副本 404 的**代播兜底**（4.23.19，P0）────────────────────────────────
+ *
+ * 事故链（用户按我们给的「清空媒体」步骤复现）：清掉 `library/` 里的成品后，job 仍是
+ * `status=done` ⇒ 客户端以为"已缓存" ⇒ 播 `/folia/local-media/<id>` ⇒ 宿主 404 ⇒
+ * `<video>` 报 `MEDIA_ERR_SRC_NOT_SUPPORTED`（code 4）⇒ 界面显示"浏览器无法解码这段视频"。
+ *
+ * 这一层只做一件事：**认出这个 URL 是本地副本，并给出站点代理地址**；真正的重挂与
+ * 复位由 `src/client.js` 的播放错误处理器调用（它才拿得到在屏 `<video>` 与 selection）。
+ */
+/** `/folia/local-media/<jobId>` → jobId（其它 URL ⇒ 空串）。 */
+function lfLocalMediaJobId(url) {
+  const m = /\/local-media\/([^/?#]+)/.exec(String(url || ""));
+  if (!m) return "";
+  try { return decodeURIComponent(m[1]); } catch { return m[1]; }
+}
+
+/**
+ * 本地副本 URL → 可代播的站点地址；不是 local-media / 没有代理 ⇒ 空串。
+ * 顺序：`mediaProxy`（宿主缓存代理，失败会 302 回原站）> `media`（原始站点地址）。
+ * 任何仍然指向 `/local-media/` 的候选都跳过，避免"换了个 URL 还是 404"。
+ */
+function lfLocalMediaProxyFor(item, url) {
+  const u = String(url || "");
+  if (!u.includes("/local-media/")) return "";
+  const w = item || {};
+  const candidates = [w.mediaProxy, w.media, w.originUrl];
+  for (const cand of candidates) {
+    const c = String(cand || "").trim();
+    if (!c || c === u || c.includes("/local-media/")) continue;
+    return c;
+  }
+  return "";
+}
+
+/**
+ * 把在屏 `<video>` 切到站点代理并**复位 job**（`POST /downloads/requeue`），返回新地址。
+ * 不抛：这条路径是"播放已经坏了"之后的兜底，不能反过来把界面弄崩。
+ * 调用方负责清 `videoError` / 写提示 / 只重试一次（避免 404→代理也坏时的死循环）。
+ */
+function lfLocalMediaFallback(el, jobId, url, item) {
+  const proxy = lfLocalMediaProxyFor(item, url);
+  if (!proxy || !el) return "";
+  try {
+    el.src = proxy;
+    if (typeof el.load === "function") el.load();
+    const p = typeof el.play === "function" ? el.play() : null;
+    if (p && typeof p.catch === "function") p.catch(() => { /* 自动播放被拒：可见后 syncLayers 补 */ });
+  } catch { /* 元素不可用：仍然返回 proxy，让调用方走同一套提示 */ }
+  const id = String(jobId || "") || lfLocalMediaJobId(url);
+  if (id) {
+    try {
+      apiPostJson("/downloads/requeue", { id }, { parse: "always" }).catch(() => {});
+    } catch { /* 复位失败：宿主 /local-media 的 404 自愈仍会兜 */ }
+  }
+  return proxy;
+}
+
 /**
  * **播放失败自愈的客户端入口**（`<video>` 报 error → 这里）。
  *
@@ -1327,7 +1384,8 @@ async function lfHealPlayback(fail) {
         lfHealSay(t, false);
         return { verdict: "failed", message: t, mounted: false };
       }
-      const url = res.url || (res.jobId ? "/folia/local-media/" + encodeURIComponent(String(res.jobId)) : "");
+      // 4.23.19：本地播放地址的唯一拼法在 `src/media-state.js`（`msLocalMediaUrl`）。
+      const url = res.url || (res.jobId ? msLocalMediaUrl(res.jobId) : "");
       const done = Boolean(url && mount && mount(url));
       lfHealSay(withLabel(message), true);
       return { verdict, message: (res && res.mode === "fps") ? weT("已切换到 30fps 副本（原画 60fps 超出本机解码能力，分辨率不变）") : message, mounted: done };

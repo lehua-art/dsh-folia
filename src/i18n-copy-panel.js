@@ -649,6 +649,19 @@ const WE_I18N_EN_PANEL = {
   "清理失败：{error}": "Cleanup failed: {error}",
   "已清理 {name}：释放 {size}（{n} 个文件）": "Cleared {name}: released {size} ({n} files)",
   "已清理 {name}：释放 {size}（{n} 个文件）；{failed} 个文件被占用，重启 DSH 后彻底生效": "Cleared {name}: released {size} ({n} files); {failed} file(s) in use will be removed after restarting DSH",
+  // 4.23.19（P0）：清空媒体同时重置下载记录（否则"清完再点同一张"会拿 404 的本地地址播）。
+  "已清理 {name}：释放 {size}（{n} 个文件）· 重置 {jobs} 条下载记录": "Cleared {name}: released {size} ({n} files) · reset {jobs} download record(s)",
+  "已清理 {name}：释放 {size}（{n} 个文件）· 重置 {jobs} 条下载记录；{failed} 个文件被占用，重启 DSH 后彻底生效": "Cleared {name}: released {size} ({n} files) · reset {jobs} download record(s); {failed} file(s) in use will be removed after restarting DSH",
+  "清空媒体会同时重置下载记录，之后需重新下载。": "Clearing media also resets download records; they will need to be downloaded again.",
+  "删除已下载的壁纸 / 开机动画 / 桌宠（可重新下载）；会同时重置下载记录，之后需重新下载": "Delete downloaded wallpapers / boot animations / pets (they can be downloaded again); download records are reset too and will need re-downloading",
+  // 4.23.19（P0）：本地副本 404 的代播兜底（绝不显示成"无法解码"）。
+  // 文案按**判据**分流（见 docs/MEDIA-LIFECYCLE.md 的失败文案矩阵）：
+  //   丢了 ⇒「已丢失，正在重新下载」；坏了 ⇒「文件已损坏，已重新下载」；编码 ⇒「本机不支持该编码」。
+  "本地副本已丢失，正在重新下载": "The local copy is gone — re-downloading it now (the current tab keeps playing from the site stream)",
+  "本地副本已丢失，正在重新下载…": "The local copy is gone — re-downloading it now…",
+  // P0：静态封面垫底（poster）—— 有封面时明说"你已经看到画面了"，别让人以为还在黑屏等待。
+  "已显示静态封面 · 本地副本已丢失，正在重新下载": "Showing the static cover · the local copy is gone, re-downloading",
+  "已显示静态封面 · 本地副本已丢失，正在重新下载…": "Showing the static cover · the local copy is gone, re-downloading…",
 
   // ── 4.23.18「下载队列运维」（系统 → 缓存管理 → 下载队列）──────────────────────
   "下载队列": "Download queue",
@@ -665,6 +678,8 @@ const WE_I18N_EN_PANEL = {
   "把排队中、还没开始的任务标记为未缓存；正在下和已完成的不动": "Mark queued, not-yet-started tasks as not cached; running and finished tasks are untouched",
   "重新读取队列读数（只读，不触发下载）": "Re-read queue status (read-only, does not start downloads)",
   "操作失败：{error}": "Operation failed: {error}",
+  // 4.23.19：系统 → 缓存位置 的本地副本对账摘要（只读一行）。
+  "本地可用 {local} 张 · 下载中 {downloading} · 待下载 {pending} · 上次对账 {when}": "Local-ready {local} · downloading {downloading} · not cached {pending} · last reconcile {when}",
 
   // ── 4.23.15「本地副本自愈」（播放失败 → 验内容 → 重下 / 换档 / 转码）───────────────
   // 这三句是**给用户看的结论**，不是日志：它们回答"我刚点的那张为什么没出来、现在在干什么"。

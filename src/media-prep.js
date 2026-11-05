@@ -470,6 +470,8 @@ function applySelection(id, opts) {
   if (!selection.id) {
     selection.blockedNote = "";
     selection.url = null;
+    selection.playSrc = null;
+    selection.playMode = null;
     selection.type = null;
     selection.previewUrl = null;
     selection.mediaExt = null;
@@ -507,6 +509,8 @@ function applySelection(id, opts) {
     // 被过滤条件排除 / 条目消失时必须留下可读原因（#84），见 selectionBlockedNote。
     selection.blockedNote = selectionBlockedNote(w);
     selection.url = null;
+    selection.playSrc = null;
+    selection.playMode = null;
     selection.type = null;
     selection.previewUrl = null;
     selection.mediaExt = null;
@@ -534,10 +538,22 @@ function applySelection(id, opts) {
   const savedVariant = Number(selection.frameVariants && selection.frameVariants[String(w.id)]) || 0;
   // 站点条目带 `mediaProxy`（宿主缓存代理，失败一律 302 回原 URL）⇒ 优先用它播放：
   // 首次边下边播并落盘，之后同一张直接读磁盘，切换不再等网络。没有代理就直连 `w.media`。
+  //
+  // 4.23.19（P0）：**播哪个地址只由 `resolvePlaySrc(entry)` 决定**。它保证"本地地址只在
+  // 宿主确认完整且有效时才返回"，其余一切（下载中 / pending / done-但缺失 / sha 不符）走站点流。
+  // 以前这里是 `w.mediaProxy || w.media` —— 而 `mediaProxy` 可能是清单缓存里的**旧本地地址**，
+  // 文件早被清掉 ⇒ 404 ⇒ "浏览器无法解码这段视频"（用户截图里 81% + 解码失败同现的那条链）。
+  const resolved = (typeof resolvePlaySrc === "function")
+    ? resolvePlaySrc(w)
+    : { source: "proxy", url: (w.mediaProxy || w.media || ""), mode: w.type === "image" ? "image" : "video" };
   const playableSrc = w.type === "scene"
     ? frameUrlWithVariant(w.frameUrl, savedVariant)
-    : (w.mediaProxy || w.media);
+    : (resolved.url || w.mediaProxy || w.media);
   selection.url = playableSrc;
+  // 播放源（`local` | `proxy`）与渲染方式（`video` | `image` | `poster`）：
+  // 面板/诊断读它们，排障时不必再猜"这个地址是本地还是站点流、该用哪个渲染器"。
+  selection.playSrc = w.type === "scene" ? "scene" : resolved.source;
+  selection.playMode = resolved.mode || "video";
   // `media` 仍保留原始站点地址：下载 / 兜底 / 诊断用它（不经过我们的代理）。
   selection.originUrl = w.media || null;
   // 宿主 inventory 权威标记：已有自定义画面时同步进本地记忆（换机/清配置后恢复）。
@@ -674,6 +690,22 @@ function buildMedia(sel) {
   // iframes (web wallpapers) don't read object-fit, so they skip the class.
   const fitClass = " we-media--fit";
   let media;
+  if (sel.type === "video" && sel.playMode === "poster") {
+    /**
+     * **P0/P1：视频没有可播源 ⇒ 静态封面垫底**（4.23.19）。
+     *
+     * 判据来自 `resolvePlaySrc()` 的 `mode`（不是这里再猜一次）：本地副本不合格、站点流
+     * 也没有地址时，唯一能上屏的就是 `previewUrl`（站点 thumbUrl / 宿主抽帧）。
+     * 一张静态封面的体验远好于黑屏 + "无法解码"。
+     */
+    media = document.createElement("img");
+    media.className = "we-media we-media--static" + fitClass;
+    media.setAttribute("alt", "");
+    media.setAttribute("aria-hidden", "true");
+    if (sel.previewUrl) media.src = sel.previewUrl;
+    media.dataset.weStatic = "1";
+    return media;
+  }
   if (sel.type === "video") {
     // 视频档的媒体构建归**视频通道**（见 src/video-layer.js 的 buildVideoMedia）：
     // Edge 那条腿会在通道里返回 [media, canvas]（镜像画布）⇒ 这里照原样把两条腿返回出去。

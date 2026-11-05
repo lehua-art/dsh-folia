@@ -22,7 +22,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  pickVariant, pick1080, normalizeVariants, pickQuality,
+  pickVariant, pick1080, pick4k30, normalizeVariants, pickQuality, resolveMediaExpectation,
   SLOW_MBPS, BIG_ORIGINAL_BYTES, SAVER_SCREEN_MAX, QUALITY_MODES,
 } from '../lib/variant-pick.js';
 
@@ -59,6 +59,68 @@ function check(name, cond, detail) { results.push({ name, ok: Boolean(cond), det
   check('① 屏幕高度未知（0）⇒ 只按速度判，不猜',
     pickVariant({ ...base, screenHeight: 0 }).chosen === 'original'
     && pickVariant({ ...base, screenHeight: 0, hostSlow: true }).chosen === '1080p');
+
+  /* ── 4.23.19：同分辨率 30fps 变体（站点 label `4K30`）────────────────────── */
+  const V4K30 = {
+    label: '4K30', height: 2160, fps: 30, bytes: 12 * 1024 * 1024,
+    url: 'https://site.example/media/original-4k30.mp4', sha256: 'b'.repeat(64),
+  };
+  check('① normalizeVariants 保留 label 与 fps（4K30 的识别依据）',
+    (() => { const v = normalizeVariants([V4K30])[0]; return Boolean(v) && v.label === '4K30' && v.fps === 30; })(),
+    JSON.stringify(normalizeVariants([V4K30])));
+  check('① 原画 3840×2160@60 + 变体 {label:4K30,height:2160,fps:30} ⇒ 选 4k30（hifps-variant）',
+    (() => {
+      const r = pickVariant({
+        originalUrl: ORIG, originalBytes: 40 * 1024 * 1024, variants: [V4K30],
+        originalWidth: 3840, originalHeight: 2160, originalFps: 60, quality: 'auto',
+      });
+      return r.chosen === '4k30' && r.url === V4K30.url && r.height === 2160 && r.reason === 'hifps-variant';
+    })(),
+    JSON.stringify(pickVariant({
+      originalUrl: ORIG, originalBytes: 40 * 1024 * 1024, variants: [V4K30],
+      originalWidth: 3840, originalHeight: 2160, originalFps: 60, quality: 'auto',
+    })));
+  check('① 4K@60 + 只有 1080p ⇒ 原画（不把 4K 降成 1080p 来治帧率）',
+    (() => {
+      const r = pickVariant({
+        originalUrl: ORIG, originalBytes: 40 * 1024 * 1024, variants: [V1080],
+        originalWidth: 3840, originalHeight: 2160, originalFps: 60, quality: 'auto',
+      });
+      return r.chosen === 'original' && r.reason === 'high-fps';
+    })());
+  check('① 5916×2530 + {4K30,1080p} ⇒ 仍 1080p（decode-limit 优先于降帧）',
+    (() => {
+      const r = pickVariant({
+        originalUrl: ORIG, originalBytes: 40 * 1024 * 1024, variants: [V4K30, V1080],
+        originalWidth: 5916, originalHeight: 2530, originalFps: 60, quality: 'auto',
+      });
+      return r.chosen === '1080p' && r.url === V1080.url && r.reason === 'decode-limit';
+    })());
+  check('① 无匹配变体（只有 720p）⇒ 原画（回落，绝不顺手降 720p）',
+    (() => {
+      const r = pickVariant({
+        originalUrl: ORIG, variants: [{ label: '720p', height: 720, url: 'https://site.example/media/x-720.mp4' }],
+        originalWidth: 3840, originalHeight: 2160, originalFps: 60, quality: 'auto',
+      });
+      return r.chosen === 'original';
+    })());
+  check('① 负对照：**去掉 label 与 fps 保留** ⇒ 2160 变体认不出（回到原画）',
+    (() => {
+      const bare = { height: 2160, bytes: 12 * 1024 * 1024, url: 'https://site.example/media/bare-2160.mp4' };
+      const r = pickVariant({
+        originalUrl: ORIG, variants: [bare], originalWidth: 3840, originalHeight: 2160, originalFps: 60,
+      });
+      return pick4k30(normalizeVariants([bare]), 2160) === null && r.chosen === 'original';
+    })());
+  check('① 4k30 的期望值取**变体自己**的 sha/bytes（不是原画）',
+    (() => {
+      const e = resolveMediaExpectation({
+        url: ORIG, bytes: 40 * 1024 * 1024, sha256: 'a'.repeat(64),
+        variants: [V4K30], chosenUrl: V4K30.url,
+      }, '4k30');
+      return e.source === 'variant' && e.url === V4K30.url && e.sha256 === 'b'.repeat(64) && e.bytes === V4K30.bytes;
+    })());
+
   check('① videoQuality=original ⇒ **永远**原画（慢链路/大文件都不许降）',
     (() => {
       const slow = pickVariant({ ...base, quality: 'original', hostSlow: true, screenHeight: 900 });

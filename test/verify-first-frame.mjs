@@ -372,12 +372,13 @@ async function sectionClient() {
 // ══════════════════════════════════════════════════════════════════════════════
 function sectionStructure() {
   const sm = readFileSync(join(ROOT, 'lib', 'routes', 'site-media.js'), 'utf8');
-  check('D1 /folia/site-media 的"下载中"分支支持 Range（把 req 传下去）',
-    /serveGrowingFile\(partPath, job, res, headOnly, req\)/.test(sm));
-  check('D2 下载中分支给出 content-length / accept-ranges / content-range',
-    /setHeader\('content-length', String\(end - start \+ 1\)\)/.test(sm)
-    && /setHeader\('accept-ranges', 'bytes'\)/.test(sm)
-    && /setHeader\('content-range', 'bytes ' \+ start \+ '-' \+ end \+ '\/' \+ total\)/.test(sm));
+  // 4.23.19：**下载中不再走渐进读**（半截字节被当成品 ⇒「文件可能已损坏」，用户截图 81%）。
+  // 首帧提速的那条判据（moov 前置 + Range）仍然由下载队列自己的 Range 实现保证；
+  // 播放器在下载中拿到的是**站点源**（302），content-length/Range 由源端保证。
+  check('D1 下载中分支改为 302 回源（不再把 .part 喂给播放器）',
+    /origin-downloading/.test(sm) && !/await serveGrowingFile\(partPath/.test(sm));
+  check('D2 已完成的本地副本仍按不可变载荷发（长缓存 + Range）',
+    /\{ immutable: true \}/.test(sm) && /serveFile\(job\.dest, req, res, headOnly/.test(sm));
   const diag = readFileSync(join(ROOT, 'lib', 'routes', 'diag.js'), 'utf8');
   check('D3 /folia/diag/switch-stats 记录 kind 并按类型汇总',
     /kind: String\(b\.kind \|\| ''\)/.test(diag) && /byKind:/.test(diag));

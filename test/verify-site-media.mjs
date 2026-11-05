@@ -16,7 +16,6 @@
  *
  * 每条都配负对照：把该条判据的前提改坏，判据必须变红。
  */
-import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createServer, request } from 'node:http';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
@@ -214,7 +213,9 @@ const q = 'u=' + encodeURIComponent(mediaUrl);
   await new Promise((ok) => { app.listen(0, '127.0.0.1', ok); });
   const appPort = app.address().port;
   const get = (pathname) => new Promise((ok, fail) => {
-    const req = request({ host: '127.0.0.1', port: appPort, path: pathname, method: 'GET' }, (res) => {
+    // `agent: false`：不复用 keep-alive 连接 —— 否则 `app.close()` 会等那些空闲 socket，
+    // 测试偶发挂死（4.23.19 全量审计实测：这一条让 run-audit 卡了 25 分钟）。
+    const req = request({ host: '127.0.0.1', port: appPort, path: pathname, method: 'GET', agent: false }, (res) => {
       const chunks = [];
       res.on('data', (c) => chunks.push(Buffer.from(c)));
       res.on('end', () => ok({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
@@ -303,6 +304,7 @@ const q = 'u=' + encodeURIComponent(mediaUrl);
     'cc=' + growRes.headers['cache-control']);
 
   await new Promise((ok) => { app.close(ok); });
+  try { if (typeof app.closeAllConnections === 'function') app.closeAllConnections(); } catch { /* ignore */ }
 }
 
 upstream.close();
@@ -314,5 +316,5 @@ for (const r of results) {
   else { failed += 1; process.stdout.write('  ✗ ' + r.name + (r.detail ? ' — ' + r.detail : '') + '\n'); }
 }
 process.stdout.write('\n  ' + (results.length - failed) + ' 通过 / ' + failed + ' 失败\n');
-if (failed) process.exit(1);
-assert.ok(true);
+// 显式退出：即使某条用例漏关了一个 server，也不该让门禁挂到 180s 超时（run-audit 实测）。
+process.exit(failed ? 1 : 0);

@@ -177,14 +177,18 @@ try { rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
   check('⑧ 源码里 existed 分支确实调用了 pump()', /existed: true[\s\S]{0,160}pump\(\)/.test(qSrc) || /pump\(\);\s*return \{ job: snapshot\(\)\.find[^}]*existed: true/.test(qSrc));
 }
 
-/* ⑨ 单源复用：代理不再为同一条 URL 开第二条上游连接（实测重复下载抢带宽 5 倍差距）。 */
+/* ⑨ 单源复用 + **下载中绝不喂 `.part`**（4.23.19：用户截图"81% + 文件可能已损坏"的根因）。 */
 {
   const sm = readFileSync(join(ROOT, 'lib', 'routes', 'site-media.js'), 'utf8');
+  /** 判据本体：路由里有没有"把正在增长的文件当成品发出去"的调用。 */
+  const playsPart = (src) => /await serveGrowingFile\(partPath/.test(src);
   check('⑨ 代理会复用队列里同 URL 的 job（queueJobFor）', /queueJobFor\(u\.toString\(\), 'wallpaper'\)/.test(sm));
-  check('⑨ 存在渐进读函数 serveGrowingFile', /async function serveGrowingFile\(/.test(sm));
-  check('⑨ 渐进读会读 .part（下载中的文件）', /\.dest \+ '\.part'/.test(sm));
-  check('⑨ 无新字节时有上限（stalled）不无限挂着', /stalled > GROWING_STALL_LIMIT/.test(sm));
-  check('⑨ negative control: 去掉复用块 ⇒ 判据会红', !/serveGrowingFile\(partPath, job, res, headOnly\)/.test(sm.replace(/await serveGrowingFile\(partPath, job, res, headOnly\);/, '')));
+  check('⑨ 4.23.19：播放路径零处 serveGrowingFile 调用（下载中不播半截文件）',
+    playsPart(sm) === false);
+  check('⑨ 下载中 ⇒ 302 回源（x-folia-source: origin-downloading）',
+    /origin-downloading/.test(sm) && /redirect\(res, u\)/.test(sm));
+  check('⑨ 负对照：把 `await serveGrowingFile(partPath…` 贴回 ⇒ 判据会红',
+    playsPart('await serveGrowingFile(partPath, job, res, headOnly, req);') === true);
 }
 
 /* ⑩ 壁纸入队：必须能从 /inventory 的**真实键名**（wallpapers）里找到条目。
@@ -479,18 +483,12 @@ try { rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
 
   check('⑯ 已完成的站点文件按不可变载荷发（immutable + 长缓存）',
     /\{ immutable: true \}/.test(smedia) && /public, max-age=31536000, immutable/.test(serveSrc));
-  check('⑯ 负对照：下载中的渐进读仍然是 no-store（不缓存半截文件）',
-    // 4.23.12：调用点改成 `serveGrowingFile(partPath, job, res, headOnly, req)`（多传 req 才能回 206），
-    // 判据跟着放宽成"把 req 也传下去"，但**no-store 这一条不许变**。
-    /serveGrowingFile\(partPath, job, res, headOnly, req\)/.test(smedia)
-    && /res\.setHeader\('cache-control', 'no-store'\)/.test(smedia));
-  check('⑯ 下载中的渐进读给出 content-length / accept-ranges / 正确 Content-Type（4.23.12）',
-    /GROWING_MIME/.test(smedia)
-    && /res\.setHeader\('content-length', String\(end - start \+ 1\)\)/.test(smedia)
-    && /res\.setHeader\('accept-ranges', 'bytes'\)/.test(smedia)
-    && /res\.setHeader\('content-range', 'bytes ' \+ start \+ '-' \+ end \+ '\/' \+ total\)/.test(smedia));
-  check('⑯ 负对照：渐进读仍保留"总量未知 ⇒ 不给错的总长"的旧形态',
-    /res\.setHeader\('accept-ranges', 'none'\)/.test(smedia));
+  // 4.23.19：下载中的**渐进读**已从播放路径移除（半截字节被当成成品 ⇒「文件可能已损坏」）。
+  // 现在那条分支是 302 回源；`.part` 只由下载队列自己消费。
+  check('⑯ 4.23.19：下载中不读 `.part`（路由不再有 partPath 分支）',
+    !/job\.dest \+ '\.part'/.test(smedia));
+  check('⑯ 负对照：把"下载中读 .part"贴回 ⇒ 上一条即红',
+    /job\.dest \+ '\.part'/.test(smedia + "const partPath = job.dest + '.part';"));
 
   check('⑯ 面板有排队位置文案，且 N = queuePos - 1',
     /排队中：前面还有 \{n\} 个任务/.test(panel) && /pos - 1/.test(panel));

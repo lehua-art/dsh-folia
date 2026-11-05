@@ -973,6 +973,30 @@
         {
           "kind": "guard",
           "npm": null,
+          "file": "test/verify-local-media-heal.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-media-state.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-media-chaos.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
           "file": "test/pets-layer.mjs",
           "args": [],
           "tier": "hard",
@@ -2059,6 +2083,30 @@
           "kind": "guard",
           "npm": null,
           "file": "test/verify-queue-priority.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-local-media-heal.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-media-state.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-media-chaos.mjs",
           "args": [],
           "tier": "hard",
           "probe": false

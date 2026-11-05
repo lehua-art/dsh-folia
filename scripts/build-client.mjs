@@ -428,6 +428,16 @@ const INLINE_MODULES = [
     markers: ['function probeVideoPoster(', 'function videoContentReady(', 'VIDEO_POSTER_BUDGET_MS', 'let mediaInfoToken = ', 'function clearUpgradePoll(', 'async function refreshMediaInfo(', 'function abortTranscodeUpgrade(', 'function maybeUpgradeToTranscoded(', 'function invalidateMediaInfoProbe('],
   },
   {
+    // **4.23.19：播放源选择的客户端唯一入口**（与宿主 `lib/media-state.js` 同一套判据）。
+    // 必须排在 `src/local-first.js` / `src/media-prep.js` / `src/client.js` 之前：三者都按名
+    // 调 `resolvePlaySrc(entry)` / `msMarkUnavailable`。零 Node 依赖（只用 Map 与正则），
+    // 因此可以被 test/verify-media-state.mjs 直接 import 做纯判据。
+    file: 'src/media-state.js',
+    why: '本地副本状态（客户端半边）：resolvePlaySrc 是播放源的唯一出口；下载中/失效一律 proxy',
+    markers: ['const MS_STATES = new Map();', 'function resolvePlaySrc(entry) {',
+      'function msMarkUnavailable(urlOrJobId, reason) {'],
+  },
+  {
     // 「站点资源先下载到本地，再本地渲染」的客户端那一半：点击即入队、连点即并发、
     // 完成后自动重新应用。排在 `src/media-prep.js` **之前**：applySelection 会按名字调它。
     file: 'src/local-first.js',

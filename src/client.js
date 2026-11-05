@@ -417,8 +417,14 @@ const selection = {
   queuePendingCount: 0,
   queueNote: "",
   queueError: "",
+  // 4.23.19：本地副本对账读数的一行摘要（系统 → 缓存位置；来源 `/downloads/list.mediaState`）。
+  queueMediaSummary: "",
   // 本地优先/自愈的一句提示（信息类；失败类走 videoError 的红色行）。
   mediaNote: "",
+  // 4.23.19：当前播放源（`local` | `proxy` | `scene`）与渲染方式（`video` | `image` | `poster`）
+  // —— 面板/诊断读它，排障不必再猜地址与渲染器。
+  playSrc: null,
+  playMode: null,
   // WE 官方资源路径编辑器（transient）：开态 + 草稿路径 + 上次错误。
   // 生效状态（目录/可用性）由 inventory 携带（host 是唯一真相）。
   editingWeAssetsDir: false,
@@ -1664,12 +1670,17 @@ async function clearCacheTargets(targets) {
     const bytes = Number((d.released && d.released.bytes) || 0);
     const files = Number((d.released && d.released.files) || 0);
     const failed = Array.isArray(d.failed) ? d.failed.length : 0;
+    // 4.23.19（P0）：宿主的 `clearedJobs` = 同时重置的下载记录数。清完必须有回执，
+    // 否则用户不知道该重新下载（"清空媒体后点同一张报无法解码"的那条链就断在这里）。
+    const jobs = Number(d.clearedJobs) || 0;
     const size = fmtCacheBytes(bytes);
     setTransient("cacheNote", failed
-      ? weT("已清理 {name}：释放 {size}（{n} 个文件）；{failed} 个文件被占用，重启 DSH 后彻底生效", {
-        name: label, size, n: files, failed,
+      ? weT("已清理 {name}：释放 {size}（{n} 个文件）· 重置 {jobs} 条下载记录；{failed} 个文件被占用，重启 DSH 后彻底生效", {
+        name: label, size, n: files, jobs, failed,
       })
-      : weT("已清理 {name}：释放 {size}（{n} 个文件）", { name: label, size, n: files }));
+      : (jobs > 0
+        ? weT("已清理 {name}：释放 {size}（{n} 个文件）· 重置 {jobs} 条下载记录", { name: label, size, n: files, jobs })
+        : weT("已清理 {name}：释放 {size}（{n} 个文件）", { name: label, size, n: files })));
     await loadCacheUsage();
   } catch (err) {
     setTransient("cacheError", weT("清理失败：{error}", {
@@ -1756,6 +1767,21 @@ async function loadQueueStatus() {
     setTransient("queuePaused", doc.paused === true);
     setTransient("queueQueuedCount", Number(doc.queuedCount) || 0);
     setTransient("queuePendingCount", Number(doc.pendingCount) || 0);
+    // 4.23.19：每行的 `fileExists` / `fileValid` 写回客户端状态表 —— 播放源解析读它。
+    // 这是"下载完成后 3 秒内 src 变 local"的事实来源（队列说 done 还不够，必须有盘上证据）。
+    try {
+      if (Array.isArray(doc.jobs)) for (const j of doc.jobs) msNoteJob(j);
+    } catch { /* 状态表不可用不影响读数 */ }
+    // 「系统 → 缓存位置」那一行摘要：本地可用 / 待下载 / 上次对账（同一份对账数字）。
+    const ms = doc.mediaState || null;
+    setTransient("queueMediaSummary", ms
+      ? weT("本地可用 {local} 张 · 下载中 {downloading} · 待下载 {pending} · 上次对账 {when}", {
+        local: Number(ms.localReady) || 0,
+        downloading: Number(ms.downloading) || 0,
+        pending: Number(ms.pending) || 0,
+        when: ms.last && ms.last.at ? new Date(Number(ms.last.at)).toLocaleTimeString() : "—",
+      })
+      : "");
   } catch { /* 老宿主没有这些字段：按钮照常可点，只是读数未知 */ }
 }
 
@@ -2069,6 +2095,15 @@ function isEffectivelyPlaying() {
 function videoPlaybackError(video) {
   const err = video && video.error;
   if (!err) return "";
+  /**
+   * 4.23.19：**本地副本的错误不许按 MediaError 单值翻译**（见 docs/MEDIA-LIFECYCLE.md 文案矩阵）。
+   *
+   * `code === 4`（SRC_NOT_SUPPORTED）在"文件被清掉 ⇒ 404"与"本机真解不了这个编码"上
+   * **完全同形** —— 前者恰恰是用户清完缓存后看到的那句"浏览器无法解码这段视频"。
+   * 判据在宿主：`HEAD /local-media` 判有没有文件、`/local-heal` 判内容/编码。
+   * 这里先**不写**泛化文案，等 `maybeSelfHealVideo` 分类后写具体那句（几百毫秒内）。
+   */
+  if (msIsLocalMediaUrl(selection.url)) return "";
   // MediaError: 1 ABORTED / 2 NETWORK / 3 DECODE / 4 SRC_NOT_SUPPORTED
   if (err.code === 4) return weT("浏览器无法解码这段视频（自上传建议改用 H.264 编码的 MP4）");
   if (err.code === 3) return weT("视频解码失败（文件可能已损坏）");
@@ -2113,6 +2148,8 @@ function syncVideoState(video) {
  */
 /** 同一张壁纸只允许一条自愈在飞（`error` 事件会连发好几颗）。 */
 let selfHealInflightKey = "";
+/** 4.23.19：local-media 404 → 站点代理的**只重试一次**记录（key = id|url）。 */
+const LOCAL_MEDIA_FALLBACK_TRIED = new Set();
 
 /** 当前选择对应的 inventory 条目（站点条目带 sha256 / variants；本机条目没有也能用）。 */
 function selfHealItemOf(id) {
@@ -2157,6 +2194,67 @@ function maybeSelfHealVideo(video) {
   if (!url) return;
   if (selUrl && srcUrl && srcUrl.indexOf(selUrl.split("?")[0]) < 0 && srcUrl.indexOf("/local-media/") < 0) return;
   const id = String(selection.id || "");
+  /**
+   * 4.23.19（E 播放错误兜底）：**本地副本"丢了"和"坏了"要分开处置，别一律报解码失败**。
+   *
+   * 事故：清空媒体 / 外部清理之后，job 可能仍是 done，`/local-media/<id>` 回 404，
+   * `<video>` 得到 `MEDIA_ERR_SRC_NOT_SUPPORTED`（code 4）⇒ 界面写"浏览器无法解码这段视频"。
+   *
+   * 判据（不再靠 MediaError 单值猜）：
+   *   ① 先 `HEAD` 那个本地地址 —— **404/410 = 文件丢了** ⇒ 立刻换站点流重试一次 + 复位重下
+   *      + 「本地副本已丢失，正在重新下载」；
+   *   ② 200 = 文件在，那才是内容/编码的事 ⇒ 交给下面的宿主取证（`/local-heal`）：
+   *      corrupt ⇒「文件已损坏，已重新下载」/ undecodable ⇒「本机不支持该编码…」。
+   * 只重试一次：代理也报错时不再循环（`LOCAL_MEDIA_FALLBACK_TRIED`）。
+   */
+  if (/\/local-media\//.test(url) && (code === 4 || code === 2)) {
+    const fkey = id + "|" + url;
+    if (!LOCAL_MEDIA_FALLBACK_TRIED.has(fkey)) {
+      LOCAL_MEDIA_FALLBACK_TRIED.add(fkey);
+      Promise.resolve()
+        .then(() => apiHead(url))
+        .catch(() => ({ status: 0 }))
+        .then((r) => {
+          const status = Number((r && r.status) || 0);
+          const missing = status === 404 || status === 410;
+          if (!missing) { healLocalCopy(url, code); return; }   // 文件在 ⇒ 取证（损坏 / 编码）
+          // 本会话内记为不可用：下一次 `resolvePlaySrc` 直接给站点流（同一地址不再 404 一次）。
+          try { msMarkUnavailable(url, "local-media-missing"); } catch { /* 状态表不可用不阻塞兜底 */ }
+          // **P0：先铺静态封面再切流**（4.23.19）。理由：换源到站点流后还要等首帧，
+          // 这段空窗若露出底色，用户看到的就是"点了没反应"；先垫 poster 则屏上是这张壁纸的图。
+          let posterShown;
+          try { posterShown = mountStaticFrameFallback(staticFallbackUrlOf()); } catch { posterShown = false; }
+          const proxy = lfLocalMediaFallback(el, lfLocalMediaJobId(url), url, selfHealItemOf(id));
+          try {
+            setTransient("videoError", "");
+            if (proxy) {
+              // selection.url 跟着改：后续 syncLayers / 重挂读的是它，不能还指向 404 的本地地址。
+              selection.url = proxy;
+              selection.playSrc = "proxy";
+              setTransient("mediaNote", posterShown
+                ? weT("已显示静态封面 · 本地副本已丢失，正在重新下载")
+                : weT("本地副本已丢失，正在重新下载"));
+            } else {
+              // 没有站点代理（本机上传等）：也不把 404 说成解码失败，只说正在重下。
+              setTransient("mediaNote", posterShown
+                ? weT("已显示静态封面 · 本地副本已丢失，正在重新下载…")
+                : weT("本地副本已丢失，正在重新下载…"));
+            }
+            emit();
+          } catch { /* 提示失败不影响代理重试 */ }
+        });
+      return;
+    }
+  }
+  healLocalCopy(url, code);
+}
+
+/**
+ * 本地副本**存在但播不出来**时的取证自愈（4.23.15）：交宿主验内容，按结论重下 / 换 1080p /
+ * 明说"本机不支持该编码"。与"文件丢了"的快速兜底（见上）分开是**判据不同**，不是风格。
+ */
+function healLocalCopy(url, code) {
+  const id = String(selection.id || "");
   const key = id + "|" + url;
   if (selfHealInflightKey === key) return;
   if (dlHealPlan({ isVideo: selection.type === "video", url, code, tries: 0 }) !== "heal") return;
@@ -2174,7 +2272,13 @@ function maybeSelfHealVideo(video) {
       playing1080p,
     }))
     .then((res) => {
-      if (res && res.mounted) { liveLog("media-selfheal", "已重挂播放：" + res.message); return; }
+      if (res && res.mounted) {
+        // 4.23.19：重下成功也要把"这条现在可播了"写回状态表，否则下一次 `resolvePlaySrc`
+        // 还拿着上一轮的"不可用"记录，界面会莫名其妙继续走站点流。
+        try { if (res.jobId) msNoteJob({ id: res.jobId, status: "done", fileExists: true, fileValid: true, url: String((item && item.media) || "") }); } catch { /* ignore */ }
+        liveLog("media-selfheal", "已重挂播放：" + res.message);
+        return;
+      }
       // 没挂上 ⇒ 走**最后一级**：静态帧兜底。需求原文是"只要站点上有可用文件，最终都必须能上屏"，
       // 所以只有连一张静态图都没有时，才允许说"无法显示"。
       const still = staticFallbackUrlOf();
@@ -2213,9 +2317,10 @@ function maybeSelfHealVideo(video) {
  * 留着不碍事；拆它反而会把池的"谁在屏上"弄乱（那是 4.23.8 的账）。
  *
  * @param {string} url 静态帧地址（缩略图 / 首帧）
+ * @param {() => void} [onFail] 封面**本身**加载失败时的回调（4.23.19：只有这时才允许显示最终失败）
  * @returns {boolean} true = 已经铺上去
  */
-function mountStaticFrameFallback(url) {
+function mountStaticFrameFallback(url, onFail) {
   const u = String(url || "");
   if (!u) return false;
   let layer;
@@ -2231,6 +2336,12 @@ function mountStaticFrameFallback(url) {
       img.setAttribute("aria-hidden", "true");
       layer.appendChild(img);
     }
+    // 封面加载失败 ⇒ 把它撤掉（不能留一块空图盖在视频上），并让调用方走"最终失败"那一级。
+    img.onerror = () => {
+      try { if (img.parentElement) img.parentElement.removeChild(img); } catch { /* ignore */ }
+      try { if (typeof onFail === "function") onFail(); } catch { /* ignore */ }
+    };
+    img.onload = () => { try { img.dataset.weStaticReady = "1"; } catch { /* ignore */ } };
     img.src = u;
     img.dataset.weStatic = "1";
     return true;

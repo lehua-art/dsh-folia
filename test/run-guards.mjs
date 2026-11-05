@@ -358,6 +358,22 @@ const VERIFY_STEPS = [
   // 30 条 done-缺失 ⇒ 全 pending（queuedCount=0）、预取 2 个且 low、N=queuedAhead（假队列含
   // 跨 kind）、清空未开始、暂停/恢复、升级迁移（真源下载 done / 幂等 / 清单不可达 / 变异负对照）。
   step('test/verify-queue-priority.mjs'),
+  // 4.23.19（P0）：**本地副本 404 的假"无法解码"** —— 用户按「清空媒体」步骤踩到。
+  // 判据：启动 3 条 done-缺失 ⇒ pending；/local-media 命中 done 但文件缺失 ⇒ 404 + 复位 pending；
+  // 清空媒体 ⇒ 内存队列 done=0 + clearedJobs（负对照：只删文件/JSON 不改内存队列）；
+  // 客户端 local-media 404/error 4 ⇒ 站点代理重挂 + /downloads/requeue（最终 src 不是 local-media）。
+  step('test/verify-local-media-heal.mjs'),
+  // 4.23.19：**单一状态模型 / 单一解析器 / 对账**（这一类问题的一次性收口）。
+  // 判据矩阵 58 条：纯状态机 8（含"下载中即使盘上有文件也不是 local"）、宿主解析器 6 + 负对照、
+  // 客户端解析器 6 + 负对照、对账器（30 条 done-缺失 / 幂等 / deep sha 删文件 / 提升）、
+  // 清缓存同一事务（clearedFiles+resetJobs）、/local-media 缺失 ⇒ pending、/diag/media-state、
+  // 源码扫描（唯一拼法/唯一解析器/唯一写入口/`.part` 不进播放路径）、文案矩阵。
+  // 合同：docs/MEDIA-LIFECYCLE.md（13 状态 × 10 事件 + 15 条文案 + 12 条绕过）。
+  step('test/verify-media-state.mjs'),
+  // 4.23.19：**混沌测试** —— 随机折腾 100 轮（删文件/改记录/只写一半/校验不符/清缓存/重启），
+  // 逐轮断言 I1 无 done-缺失 · I2 local 只指完整有效文件 · I3 下载中必 proxy ·
+  // I4 完成即 local · I5 失败有具体文案 · I6 UI 与队列一致。复现靠 seed。
+  step('test/verify-media-chaos.mjs'),
   step('test/pets-layer.mjs'),
 ];
 

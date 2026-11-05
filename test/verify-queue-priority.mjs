@@ -454,6 +454,9 @@ try {
     const mutRoot = freshDir('mut');
     mkdirSync(join(mutRoot, 'lib'), { recursive: true });
     copyFileSync(join(ROOT, 'lib', 'media-verify.js'), join(mutRoot, 'lib', 'media-verify.js'));
+    // 4.23.19：download-queue 现在 import media-state（startupStatusFor）—— 变异副本也要带上，
+    // 否则这条负对照会以 ERR_MODULE_NOT_FOUND 崩掉（不是判据红，是测试自己坏）。
+    copyFileSync(join(ROOT, 'lib', 'media-state.js'), join(mutRoot, 'lib', 'media-state.js'));
     const src = readFileSync(join(ROOT, 'lib', 'download-queue.js'), 'utf8');
     const mutatedSrc = src.replace(/\n\s*migrateLegacyExpectations\(\);\n\s*pump\(\);/, '\n  pump();');
     writeFileSync(join(mutRoot, 'lib', 'download-queue.js'), mutatedSrc, 'utf8');

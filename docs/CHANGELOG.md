@@ -1,5 +1,97 @@
 # 变更记录（Changelog）
 
+### v4.23.20（2026-11-05，收敛「下载 / 本地文件 / 播放 / 清缓存」整类问题 + 4K30 选档）
+
+> ⚠️ 4.23.19 是同一批改动的**第一个**发布号（已发 latest 供测试）。4.23.20 为同一工作树的
+> **整理版重发**：补 4K30 同分辨率 30fps 选档（chosenVariant='4k30'）、确认对账器导出/调用
+> 完整、并把 4.23.19 的说明整体收在本节。功能面无回退。
+
+> 主题：**不再是逐条打补丁，而是单一状态模型 + 单一解析器 + 对账 + 判据矩阵**。
+>
+> 二分结论（用户实测"4.23.17 没问题、4.23.18 才坏"）：问题由 **`291e493`（4.23.18）的
+> `lib/download-queue.js:404-405`** 引入 —— `load()` 把「done 但成品缺失」从 `queued`
+> 改成 `pending`，于是**没有任何路径会再重下** ⇒ `/local-media/<id>` 变成**永久 404**
+> （4.23.17 是几秒内自愈）。客户端把 404 的 `MediaError.code=4` 一律译成"浏览器无法解码"，
+> 而清单缓存（60s + 落盘）里又存着**旧本地地址** ⇒ 首屏必然撞上。本机实测状态
+> `done 30 / pending 46 / failed 5`，且 46 条 pending 的文件全部不存在 —— 就是这个形态。
+>
+> 另一条独立故障（4.23.17 已存在）：下载进行中，`/site-media` 把**正在增长的 `.part`**
+> 按 `content-length=总量` 端给播放器（用户截图：81% 37.2/45.8 MB 同时显示"文件可能已损坏"）
+> ⇒ 半截字节被当成成品解码。本版起**下载中一律 302 回源**，`.part` 不再进播放路径。
+
+**A. 单一状态模型** — 新增 `lib/media-state.js`（宿主）/ `src/media-state.js`（客户端）：
+`MediaState = { key, jobId, kind, expectSha, expectBytes, jobStatus, fileExists, fileBytes,
+fileValid, localReady, source }`。`localReady` **只能**由 `reconcile()` 产出，其它模块不许
+自己推断。状态机 13 态（`none / pending / queued / downloading / downloading-blocked /
+verifying / complete-valid / complete-invalid / missing / failed-net / failed-hash /
+failed-decode / cleared`），合同见 **docs/MEDIA-LIFECYCLE.md**。
+
+**B. 单一解析器** — `resolvePlaySrc(state, entry)`（宿主与客户端同名同判据）：
+只有 `jobStatus==='done' && fileExists && fileValid` 才返回 `/folia/local-media/<jobId>`；
+其余一切（下载中 / pending / failed / done-缺失 / sha 不符 / 结构坏）走站点流，且候选里
+**跳过任何本地地址**。本地播放地址的唯一拼法收敛到 `localMediaUrl()` / `msLocalMediaUrl()`
+（`media-selfheal`、`video-switch`、`local-first` 的字面量全部改调它）。
+
+**C. 对账** — `reconcileAll()` 四个时机：启动（quick 同步 + 2s 后 deep 校验 ≤20MB）、
+清缓存后、`/local-media` 命中缺失时、下载完成（队列 `onDone` → `noteDone`）。
+规则：done+缺失 ⇒ pending + 异常；done+存在但 sha/结构不符 ⇒ 删文件 + pending；
+pending 但盘上完整有效 ⇒ 提升 done；**对账不 pump**（只改状态，下载只由点击/在播/预取触发）。
+幂等（第二遍 reset/deleted/promoted 全 0），统计写 `/folia/diag/media-state`。
+
+**D. 清缓存入口自愈** — `lib/routes/cache.js` 删文件与重置记录在**同一事务**：响应
+`{ clearedFiles, resetJobs, clearedJobs, mediaState }`；面板 toast 同时显示两个数字。
+
+**E. 播放错误兜底** — `src/client.js`：本地地址报 error code 4/2 时先 `HEAD` 判据：
+404/410 ⇒ 立刻切站点流重试一次 + `POST /downloads/requeue` + 「本地副本已丢失，正在重新下载」；
+200 ⇒ 交 `/local-heal` 取证（corrupt ⇒「文件已损坏，已重新下载」/ undecodable ⇒「本机不支持该编码」）。
+`videoPlaybackError()` 对本地源**不再**把 code 4 译成"无法解码"（那是 404 的假象）。
+`/local-media` 404 ⇒ `noteMissing()` 复位 **pending**（不偷偷重下；在播那张由客户端显式 requeue）。
+
+**F. 判据矩阵** — 新增 `test/verify-media-state.mjs`（58 条，进 verify 链）：纯状态机 ×8、
+宿主解析器 ×6 + 负对照、客户端解析器 ×6 + 负对照、对账器（30 条 done-缺失 / 幂等 / deep sha /
+提升）、清缓存同一事务、`/local-media` 缺失、`/diag/media-state`、源码扫描（唯一拼法 /
+唯一解析器 / 唯一写入口 / `.part` 不进播放路径）、文案矩阵。
+新增 `test/verify-media-chaos.mjs`（混沌 100 轮，seed 可复现）：I1 无 done-缺失 ·
+I2 local 只指完整有效文件 · I3 下载中必 proxy · I4 完成即 local · I5 失败有具体文案 ·
+I6 UI 与队列一致 —— 实测 **0 违例**。
+
+**P0/P1 追加：静态封面垫底 + 渲染方式分派**
+- src/client.js：本地副本 404/410 时**先** mountStaticFrameFallback(staticFallbackUrlOf())
+  再切站点流 —— 换源到首帧的空窗里屏上是这张壁纸的缩略图（站点 	humbUrl / 宿主抽帧），
+  不是黑屏；mountStaticFrameFallback 挂 onerror：只有**封面本身**也加载失败才撤掉并允许
+  进入"最终失败"那一级。文案分「已显示静态封面 · 本地副本已丢失，正在重新下载」与
+  「本地副本已丢失，正在重新下载…」两种。
+- esolvePlaySrc 输出新增 mode（ideo | image | poster）：image 条目走 <img>；
+  站点视频正常走视频池；视频**没有可用地址**时 uildMedia 直接返回静态封面 <img>
+  （不建 <video>、不报解码失败）；scene / web 为**预留分支**（本次不实现渲染），
+  现有行为不变。降级链与 4.23.15 对齐：变体 → 4K@30 → 1080p → 救援转码 → **静态帧** → 才报错。
+**选档：同分辨率 30fps 变体（4K30）**
+- 站点为 4K@60 原画生成的是**同分辨率 30fps** 变体（label 4K30，height=2160）。旧
+  pick1080() 只认 height===1080 ⇒ 选不到它 ⇒ 4K@60 只能靠客户端现场转码。
+- lib/variant-pick.js：
+ormalizeVariants 保留 label 与新增 ps；新增 pick4k30()
+  （同分辨率 30fps 或 label 命中 4K30/30fps，且不是 1080p 档）；pickVariant 在
+  "decode-limit 超分辨率 → 1080p" 之后加一条"高帧率 → 4k30"，无这一档才回落原画。
+  chosenVariant 值域扩为 original | 1080p | 4k30（队列落盘 / /downloads/list /
+  inventory 小标 / 期望值全部同步；esolveMediaExpectation('4k30') 取**变体自己**的 sha）。
+- 降级链：4k30 仍解码失败 ⇒ 自愈按 1080p 变体降（hasVariant=1080 已有）⇒ 救援转码 ⇒ 静态封面。
+- 	est/verify-variants.mjs 新增 7 条（含"5916×2530 仍选 1080p"与"去掉 label/fps 保留 ⇒ 认不出"负对照）。
+**G. 可观测** — `GET /folia/diag/media-state`：总数 / 本地可用 / 下载中 / 待下载 / 失败 /
+上次对账统计 / 最近 20 条异常（含原因）；面板「系统 → 缓存位置」一行摘要（同一份数字）。
+
+**4.23.17 行为回归**（用户验证过的那套"能自愈"不能丢）：done+缺失**仍然**不会显示"无法解码"，
+只是不再靠"启动批量重下"来兜 —— 播放侧立刻走站点流，重下只发生在用户点击/在播/预取时；
+`verify-media-state.mjs` 的 M3c/M3d 与 `verify-local-media-heal.mjs` 的 B/D 段把这条钉住。
+
+**其它（4.23.18 → 4.23.19 补丁，保留）**
+- `src/media-prep.js`：非点击路径对**当前在播**调用 `localFirstApply(id,{silent:true,item})`
+  （启动恢复 / 轮播 / revalidate 同一张也会提权，5s 节流），`test/verify-queue-priority.mjs` 58 条。
+- 下载中播放源：`/folia/site-media` 下载中 302 回源（`x-folia-source: origin-downloading`），
+  只有 done 且文件在盘上才复用本地字节；`serveGrowingFile` 退出产品播放路径（仅留度量用例）。
+- `test/verify-local-media-heal.mjs`（28 条）：启动 3 条 done-缺失 ⇒ pending / `/local-media` 404
+  且复位 **pending**（负对照：只 404 不改状态）/ 清空媒体 `clearedJobs` 且内存队列 done=0
+  （负对照：只删文件不改内存队列）/ 客户端最终 `el.src` 不是 local-media + requeue / 面板文案。
+
 ### v4.23.18（2026-11-04）
 
 > 主题：**当前在看的壁纸必须排第一，启动不许再批量入队**。用户实测：标题栏「排队中：前面还有
