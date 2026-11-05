@@ -14,7 +14,8 @@
  *   M3 客户端解析器 × 6 + 负对照  M4 对账器（30 条 done-缺失 / 幂等 / sha 不符 / 提升）
  *   M5 清缓存同一事务            M6 /local-media 缺失 ⇒ pending
  *   M7 /diag/media-state         M8 源码扫描（唯一解析器 / 唯一拼法 / 唯一写入口）
- *   M9 下载中/完成后的播放源判据
+ *   M9 文案矩阵                  M10 渲染方式（<video>/<img>/poster）
+ *   M11 宿主 × 客户端两份 resolvePlaySrc 逐字段一致（P1-B：受控重复的同步判据）
  *
  * 隔离：`test/tools/isolate-home.mjs`（临时 DSH_HOME，绝不写用户库）。
  * Usage: node test/verify-media-state.mjs
@@ -476,6 +477,65 @@ console.log('\nM10 渲染方式（P1）+ 静态封面垫底（P0）');
     check('M10i 负对照：去掉 mode 分派 ⇒ image 条目不再得到 image（M10a 变红）',
       mutated !== src && mod.resolvePlaySrc(imgEntry).mode !== 'image',
       'mode=' + mod.resolvePlaySrc(imgEntry).mode);
+  } finally {
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+}
+
+/* ══ M11 两份解析器逐字段一致（4.23.21，P1-B：受控重复的同步判据）════════════ */
+// `resolvePlaySrc` 有两份实现：宿主 `lib/media-state.js`（state 由对账器给）与客户端
+// `src/media-state.js`（state 由本会话表给）。它们**不能**抽成一份（宿主 import node:fs；
+// 客户端由 build-client 按文件内联）。所以这里用同一个输入矩阵把两份都喂一遍：
+// `source / url / jobId / mode` 四个字段必须逐字相等。任何一边改了判据（ready 四条件、
+// 候选顺序、mode 映射），M11 立刻断 —— 这是"两份必须同步"的唯一可执行保证。
+console.log('\nM11 宿主 × 客户端两份 resolvePlaySrc 逐字段一致');
+{
+  const compareResolvers = (hostFn, clientFn, cases) => {
+    const diffs = [];
+    for (const c of cases) {
+      let a;
+      let b;
+      try { a = hostFn(c.state, c.entry); } catch (e) { a = { error: String(e && e.message) }; }
+      try { b = clientFn(Object.assign({}, c.entry, { mediaState: c.state })); } catch (e) { b = { error: String(e && e.message) }; }
+      for (const k of ['source', 'url', 'jobId', 'mode']) {
+        const av = a && a[k] === undefined ? '' : String(a && a[k]);
+        const bv = b && b[k] === undefined ? '' : String(b && b[k]);
+        if (av !== bv) diffs.push(c.id + '.' + k + ': host=' + av + ' client=' + bv);
+      }
+    }
+    return diffs;
+  };
+  const U = (n) => 'https://site.test/xcheck-' + n + '.mp4';
+  const PX = (n) => '/folia/site-media/xcheck-' + n + '.mp4?u=' + encodeURIComponent(U(n));
+  const st = (n, patch) => Object.assign({
+    key: U(n), jobId: 'cx' + n, jobStatus: 'done', fileExists: true, fileValid: true, localReady: true,
+  }, patch || {});
+  const cases = [
+    { id: 'ready', state: st(1), entry: { media: U(1), mediaProxy: PX(1) } },
+    { id: 'done-missing', state: st(2, { fileExists: false, fileValid: false, localReady: false }), entry: { media: U(2), mediaProxy: '/folia/local-media/cx2' } },
+    { id: 'downloading', state: st(3, { jobStatus: 'running', fileExists: false, fileValid: false, localReady: false }), entry: { media: U(3), mediaProxy: PX(3) } },
+    { id: 'no-state', state: null, entry: { media: U(4), mediaProxy: PX(4) } },
+    { id: 'no-jobid', state: st(5, { jobId: '' }), entry: { media: U(5), mediaProxy: PX(5) } },
+    { id: 'invalid-file', state: st(6, { fileValid: false, localReady: false }), entry: { media: U(6), mediaProxy: PX(6) } },
+    { id: 'image-ready', state: st(7), entry: { type: 'image', media: 'https://site.test/xcheck-7.jpg', mediaProxy: '/folia/site-media/xcheck-7.jpg?u=x' } },
+    { id: 'scene-empty', state: null, entry: { type: 'scene', media: '', mediaProxy: '' } },
+    { id: 'origin-url', state: null, entry: { originUrl: U(9) } },
+    { id: 'failed', state: st(10, { jobStatus: 'failed', fileExists: false, fileValid: false, localReady: false }), entry: { media: U(10), mediaProxy: PX(10) } },
+  ];
+  const diffs = compareResolvers(resolvePlaySrc, client.resolvePlaySrc, cases);
+  check('M11a ' + cases.length + ' 组输入下，宿主与客户端 resolvePlaySrc 的 source/url/jobId/mode 逐字段相等',
+    diffs.length === 0, diffs.length ? diffs.slice(0, 4).join(' | ') : cases.length + ' 组一致');
+
+  // 负对照：改坏客户端副本（拿掉 fileValid 判据）⇒ 同一比较函数必须报出 invalid-file 那一组。
+  const dir = mkdtempSync(join(tmpdir(), 'client-parity-mutant-'));
+  try {
+    const src = readFileSync(join(ROOT, 'src', 'media-state.js'), 'utf8');
+    const mutated = src.replace('&& state.fileValid === true', '&& state.fileValid !== null');
+    writeFileSync(join(dir, 'media-state.js'), mutated, 'utf8');
+    const mod = await import(pathToFileURL(join(dir, 'media-state.js')).href + '?v=' + Date.now());
+    const bad = compareResolvers(resolvePlaySrc, mod.resolvePlaySrc, cases);
+    check('M11b 负对照：客户端副本拿掉 fileValid 判据 ⇒ 同一比较函数报出 invalid-file（M11a 会红）',
+      mutated !== src && bad.some((d) => d.startsWith('invalid-file.')), bad.slice(0, 2).join(' | ') || '没报出来');
   } finally {
     try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
   }

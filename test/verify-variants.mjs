@@ -104,6 +104,64 @@ function check(name, cond, detail) { results.push({ name, ok: Boolean(cond), det
       });
       return r.chosen === 'original';
     })());
+  /* ── 4.23.21（P0-B）：「1080p 档」是**矩形**，不是 height===1080 ─────────────
+   * QA 实测：「原神 钟离」4320×2160，站点唯一变体 1920×960（url 名 .1080p.mp4）。
+   * 旧判据只认 height===1080 ⇒ 不命中 ⇒ chosenVariant=original ⇒ 4K@60 仍靠客户端转码。 */
+  const V960 = {
+    height: 960, width: 1920, bytes: 4 * 1024 * 1024,
+    url: 'https://site.example/media/original.1080p.mp4',
+  };
+  const orig4320 = {
+    originalUrl: ORIG, originalBytes: 40 * 1024 * 1024, variants: [V960],
+    originalWidth: 4320, originalHeight: 2160, originalFps: 60, quality: 'auto',
+  };
+  check('P0-B 4320×2160 + 唯一变体 {height:960,width:1920} ⇒ 选它，chosenVariant=1080p',
+    (() => {
+      const r = pickVariant(orig4320);
+      return r.chosen === '1080p' && r.url === V960.url && r.reason === 'decode-limit';
+    })(), JSON.stringify(pickVariant(orig4320)));
+  check('P0-B pick1080 直接命中 1920×960（几何落在 1080p 档内：宽≤1920 且 高≤1080）',
+    (() => { const v = pick1080(normalizeVariants([V960])); return Boolean(v) && v.url === V960.url; })(),
+    JSON.stringify(pick1080(normalizeVariants([V960]))));
+  check('P0-B normalizeVariants 保留 width（没有它分不开 1920×960 与 720p）',
+    normalizeVariants([V960])[0].width === 1920);
+  check('P0-B 1920×1080 原画 + 无变体 ⇒ original（小屏原画不许白折腾）',
+    (() => {
+      const r = pickVariant({
+        originalUrl: 'https://site.example/media/fhd.mp4', originalBytes: 8 * 1024 * 1024,
+        variants: [], originalWidth: 1920, originalHeight: 1080, originalFps: 30, quality: 'auto',
+      });
+      return r.chosen === 'original' && r.reason === 'no-variant';
+    })());
+  check('P0-B 3840×2160 + 变体 {height:2160,fps:30,label:4K30} ⇒ 选 4k30（1080p 矩形不抢这一档）',
+    (() => {
+      const r = pickVariant({
+        originalUrl: ORIG, originalBytes: 40 * 1024 * 1024, variants: [V4K30],
+        originalWidth: 3840, originalHeight: 2160, originalFps: 60, quality: 'auto',
+      });
+      return r.chosen === '4k30' && r.url === V4K30.url;
+    })());
+  check('P0-B 720p（1280×720，几何完整）仍在档外 —— 面积下限挡住"顺手降 720p"',
+    pick1080(normalizeVariants([{ height: 720, width: 1280, url: 'https://site.example/media/x-720.mp4' }])) === null);
+  check('P0-B 多档命中取**面积最大**：{1280×720, 1920×960} ⇒ 1920×960',
+    (() => {
+      const v = pick1080(normalizeVariants([
+        { height: 720, width: 1280, url: 'https://site.example/media/x-720.mp4' },
+        V960,
+      ]));
+      return Boolean(v) && v.url === V960.url;
+    })());
+  check('P0-B 负对照：把旧判据 `height===1080` 贴回 ⇒ 上面第一条会红（1920×960 不命中）',
+    (() => {
+      const legacyPick1080 = (list) => {
+        const l = Array.isArray(list) ? list : [];
+        if (!l.length) return null;
+        return l.find((v) => v && Number(v.height) === 1080)
+          || l.find((v) => v && /1080/.test(String(v.label || ''))) || null;
+      };
+      const old = legacyPick1080(normalizeVariants([V960]));
+      return old === null && pick1080(normalizeVariants([V960])) !== null;
+    })());
   check('① 负对照：**去掉 label 与 fps 保留** ⇒ 2160 变体认不出（回到原画）',
     (() => {
       const bare = { height: 2160, bytes: 12 * 1024 * 1024, url: 'https://site.example/media/bare-2160.mp4' };

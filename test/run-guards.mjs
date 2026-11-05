@@ -31,6 +31,23 @@
  * 子进程一律 `stdio: 'inherit'`，与 `&&` 链一样把守卫自己的 `✓` / `✗` / `PASS |` 明细
  * 直接接到父进程的终端上。
  *
+ * ## 退役项自动降档（4.23.21，P0-A）
+ *
+ * 真实缺陷：`verify` 的第 3 步 `verify-client.mjs` 断言的是**关于页四节**，而关于页早已按需求
+ * 清空 —— 它**永久红**，于是 `&&` 式的硬短路让后面 118 步（含本轮新写的 7 条判据）**一次都没跑**。
+ * 而同样这几条守卫在 `test/tools/retired-tests.mjs` 里**早就登记为退役**（`run-audit` 对它们
+ * 既不算绿也不算红）。两个入口对同一批守卫给出两套结论，正是"门禁看起来在、实际是死的"的形态。
+ *
+ * 修法（口径统一，不硬编码名单）：
+ *   · 本 runner **读退役登记表**，凡 `file` 的 basename 在表里的步骤，加载时**自动把档位降为
+ *     `soft`**（经 `warn-only` 跑 ⇒ 原退出码照样打印、照样可见，但不决定本组红绿、**不短路**）。
+ *   · 硬短路语义**不变**：真正的红（未登记退役）仍然立即终止整组并以同一退出码退出。
+ *   · `--list-json` 输出的是**降档后的真实档位**（`retired: true` 也一并给出），于是
+ *     `verify-guard-chain` 的冻结 fixture 与 `verify-package-files` 的地板看到的是同一事实。
+ *   · 判据：`test/verify-gate-no-shortcircuit.mjs`（退役项不参与硬短路 + 执行器自检）。
+ *   · `--selfcheck` 是给那条守卫用的**执行器自检**：用两个内联子进程证明「软档红 ⇒ 继续」
+ *     与「硬档红 ⇒ 仍短路」，不是拿真链去循环。
+ *
  * ## 用法
  *
  *   node test/run-guards.mjs [verify|docs|smoke|all]   跑一组（缺省 verify）
@@ -44,8 +61,11 @@
 
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// 退役登记表是**唯一真源**：本 runner 不再自己维护"哪些守卫已经永久红"的名单（见文件头
+// 「退役项自动降档」）。`test/run-audit.mjs` 读的是同一份表 —— 两个入口对"退役"必须同口径。
+import { isRetired } from './tools/retired-tests.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const HERE = 'test/run-guards.mjs';
@@ -83,6 +103,9 @@ function npmLaunch(args) {
  *   `tier`     —— `'hard'`（挡 PR，失败即整组失败）/ `'soft'`（经 `warn-only` 降级，永不让组红）。
  *   `probe`    —— 软档专用：是否带 `--probe-spawn`（环境起不了子进程时点名 SKIP）。
  *   `kind`     —— 缺省 `'guard'`；`'npm'` 表示这一步是 npm 脚本（`verify:all` 的 `build`）。
+ *   `retired`  —— **加载期算出来的**：该 `file` 在 `test/tools/retired-tests.mjs` 里登记过退役
+ *                 ⇒ 档位已被强制降为 `soft`（见文件头「退役项自动降档」）。手写的步骤表里不填它。
+ *   `inline`   —— **只给 `--selfcheck` 用**：不落盘的 `node -e` 子进程，证明执行器的短路语义。
  */
 const step = (file, args = [], tier = 'hard', probe = false) => ({ file, args, tier, probe });
 const npmStep = (script) => ({ file: null, npm: script, args: [], tier: 'hard', probe: false });
@@ -253,6 +276,12 @@ const VERIFY_STEPS = [
   //    判据无声脱离 PR 门禁）⇒ 按 ADR-0004 归硬档，放本组末尾（它是全组的自检，读的是 MANIFEST
   //    而非某一步的产物；`--list-json` 只打印不执行，不会递归）。
   step('test/verify-guard-chain.mjs'),
+  // ⑧b 门禁不许被退役项短路（4.23.21，P0-A）。真实缺陷：第 3 步 `verify-client.mjs`（关于页四节，
+  //    页面已按需求清空）永久红 ⇒ 硬短路让后面 121 步一次都没跑。本 runner 现在读
+  //    `test/tools/retired-tests.mjs` 把退役步骤自动降为软档；本守卫钉住「退役项一律软档」
+  //    + 反向对照（名字相近未退役的仍 hard）+ 执行器自检（软档红继续 / 硬档红仍短路）。
+  //    归硬档：门禁能不能跑到 = 发布面；它自己坏了，"门禁全绿"就又可以是一句空话。
+  step('test/verify-gate-no-shortcircuit.mjs'),
   // ⑨ CI 步骤表自检（R-7，task-11 交付）：`test/tools/ci-workflow.mjs` 的行扫描 + 判据（序列 / 脚本
   //    存在性 / `continue-on-error` 只在 verify:docs / 产物出库与无尾随空白两步真的在跑 / install 在
   //    第一条 npm run 之前），正判据与 10 条负对照共用一个纯函数（变异喂内存文本，不碰真 workflow）。
@@ -414,8 +443,41 @@ const MANIFEST = {
   all: { chainKey: 'verify:all', steps: [npmStep('build'), ...VERIFY_STEPS, ...DOCS_STEPS, ...SMOKE_STEPS] },
 };
 
+/**
+ * **退役项自动降档**（4.23.21，P0-A）：读 `test/tools/retired-tests.mjs`，把已登记退役的步骤
+ * 的档位从 `hard` 强制改成 `soft`（幂等；`all` 组引用的是同一批对象，故只改一次即处处生效）。
+ *
+ * 为什么必须"读表"而不是在步骤表里逐条标 `soft`：登记表是**判据**（谁退役了、为什么、谁接管），
+ * 步骤表是**形状**（跑哪些、什么顺序）。两处各写一份 ⇒ 下次有人登记退役却忘了改档位，门禁会
+ * 再死一次，而"门禁是死的"和"门禁全绿"在报告里长得一样。本函数是那条耦合的唯一实现点。
+ *
+ * ⚠️ 只降 `hard → soft`，**不改顺序、不删步骤**：退役项仍然每一步都跑（经 `warn-only`），
+ * 它们的原退出码照样打印在终端上 —— 只是不再决定本组红绿。
+ * 返回被降档的 `file`（按组收集，启动横幅与判据读同一个数）。
+ */
+const RETIRED_NAME = (file) => (file ? basename(file) : '');
+function downgradeRetired(steps) {
+  const out = [];
+  for (const s of steps) {
+    if (!s.file || !isRetired(RETIRED_NAME(s.file))) continue;
+    // `retired` 是"登记过退役"这个**事实**；`tier==='soft'` 是"执行时不许短路"的**后果**。
+    // 两者分开记：本来就软档的退役项（如 `verify-media-bridge.mjs` 要探测环境）没有"被降档"，
+    // 但它一样必须带 `retired:true` —— 否则 `--list-json` 的读者分不清它是不是漏登记了。
+    s.retired = true;
+    if (s.tier === 'soft') continue;
+    s.tier = 'soft';
+    out.push(s.file);
+  }
+  return out;
+}
+downgradeRetired(VERIFY_STEPS);
+downgradeRetired(DOCS_STEPS);
+downgradeRetired(SMOKE_STEPS);
+downgradeRetired(MANIFEST.all.steps);
+
 /** 把一条步骤渲染成旧链里的等价命令串（`--list` 用）。 */
 function commandOf(s) {
+  if (s.inline) return 'node -e <selfcheck:' + s.inline.slice(0, 40) + '>';
   if (s.npm) return 'npm run ' + s.npm;
   const guard = ['node', s.file, ...s.args].join(' ');
   if (s.tier !== 'soft') return guard;
@@ -441,12 +503,15 @@ function listJson(group) {
     chainKey: chainKeyOf(group),
     steps: stepsOf(group).map((s, i) => ({
       index: i + 1,
-      kind: s.npm ? 'npm' : 'guard',
+      kind: s.inline ? 'inline' : (s.npm ? 'npm' : 'guard'),
       npm: s.npm || null,
       file: s.file,
       args: s.args,
       tier: s.tier,
       probe: s.probe,
+      // 退役降档是**运行期事实**，必须跟着档位一起输出：冻结 fixture / P5 地板 / 新守卫
+      // (`verify-gate-no-shortcircuit`) 都靠它区分"本来就是软档"与"因为退役才降的软档"。
+      retired: Boolean(s.retired),
       command: commandOf(s),
     })),
   };
@@ -454,6 +519,12 @@ function listJson(group) {
 
 /** 执行一步：硬档直接起守卫，软档经 `warn-only.mjs` 起守卫。返回子进程 status（null = 没起来）。 */
 function runStep(s) {
+  // `--selfcheck` 的内联步骤：不落盘、不经 warn-only（它要证明的正是执行器自己的档位语义，
+  // 而不是 warn-only 的降级文案）。真实链上永远不会有 inline 步骤。
+  if (s.inline) {
+    const r = spawnSync(process.execPath, ['-e', s.inline], { cwd: ROOT, stdio: 'inherit' });
+    return r.status;
+  }
   // ⚠️ 软档必须传**仓库根相对路径**，不能传绝对路径：`test/warn-only.mjs` 自己按
   // `join(ROOT, target)` 解析目标（它的契约就是"收相对路径"），给绝对路径会被它拼成
   // `<ROOT>/<绝对路径>` ⇒ 前置缺失，全组以合成码 2 退出（实测踩过）。硬档那侧直接执行，
@@ -471,18 +542,107 @@ function runStep(s) {
   return r.status;
 }
 
-const USAGE = '用法：node ' + HERE + ' [verify|docs|smoke|all] [--list|--list-json]';
+/**
+ * 执行一份步骤表（`&&` 链语义的**唯一实现点**）。返回结构化结果而不是直接 `process.exit`：
+ * 真实链用它决定退出码，`--selfcheck` 用它验证「软档红继续 / 硬档红仍短路」两条语义。
+ *
+ * @returns {{ ok: boolean, code: number, at: number|null, reason: 'spawn'|'red'|null,
+ *   results: { index: number, tier: string, file: string|null, status: number|null }[] }}
+ */
+function executePlan(steps) {
+  const results = [];
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i];
+    const extra = s.retired ? '  [退役 → 软档：不参与硬短路]' : '';
+    console.log('\n── [' + (i + 1) + '/' + steps.length + '] ' + commandOf(s) + extra);
+    const status = runStep(s);
+    results.push({ index: i + 1, tier: s.tier, file: s.file, status });
+    if (status === null) {
+      // 与 `package.json` 的 `&&` 链同形：子进程起不来时 `&&` 链终止且 npm 以非 0 退出。
+      console.error('✗ [' + (i + 1) + '/' + steps.length + '] 没能起来：' + commandOf(s));
+      return { ok: false, code: 1, at: i + 1, reason: 'spawn', results };
+    }
+    if (status !== 0 && s.tier !== 'soft') {
+      // 短路语义：与 `&&` 一致 —— 后续步骤不再执行，退出码与原命令一致。
+      console.error('✗ [' + (i + 1) + '/' + steps.length + '] 退出码 = ' + status + ' ⇒ 链在此短路');
+      return { ok: false, code: status, at: i + 1, reason: 'red', results };
+    }
+    if (status !== 0) {
+      console.log('⚠ [' + (i + 1) + '/' + steps.length + '] 软档守卫原退出码 = ' + status
+        + '（已由 warn-only 降级，不决定本组红绿）');
+    }
+  }
+  return { ok: true, code: 0, at: null, reason: null, results };
+}
+
+/**
+ * `--selfcheck` 的两个场景（**给 `test/verify-gate-no-shortcircuit.mjs` 用**）。
+ *
+ * 为什么要有它：P0-A 的判据不能只是"清单里档位是 soft"（那是数据，不是行为）。这里用两个
+ * 内联子进程把执行器本身跑一遍，证明：
+ *   A. 软档步骤红 ⇒ **继续**执行下一步（退役项不会再掐死链）；
+ *   B. 硬档步骤红 ⇒ **仍然短路**、退出码 = 子进程退出码（真红不许被吞）。
+ * 场景 B 是 A 的反面：只有 B 也在，才能说明"跑完全程"不是因为短路被整体删掉了。
+ */
+const SELFCHECK = [
+  {
+    id: 'A', name: '软档红不短路',
+    steps: [
+      { file: null, args: [], tier: 'soft', probe: false, retired: true, inline: 'process.exit(3)' },
+      { file: null, args: [], tier: 'hard', probe: false, inline: "console.log('SELFCHECK-SOFT-STEP2-RAN')" },
+    ],
+    want: { ok: true, code: 0, ran: 2 },
+  },
+  {
+    id: 'B', name: '硬档红仍短路',
+    steps: [
+      { file: null, args: [], tier: 'hard', probe: false, inline: 'process.exit(7)' },
+      { file: null, args: [], tier: 'hard', probe: false, inline: "console.log('SELFCHECK-HARD-STEP2-RAN')" },
+    ],
+    want: { ok: false, code: 7, ran: 1 },
+  },
+];
+
+function runSelfcheck() {
+  let bad = 0;
+  for (const sc of SELFCHECK) {
+    console.log('\n▶ selfcheck ' + sc.id + '：' + sc.name);
+    const r = executePlan(sc.steps);
+    const ran = r.results.length;
+    const ok = r.ok === sc.want.ok && r.code === sc.want.code && ran === sc.want.ran;
+    if (!ok) {
+      bad++;
+      console.error('✗ selfcheck ' + sc.id + ' 失败：ok=' + r.ok + '（want ' + sc.want.ok + '）· code='
+        + r.code + '（want ' + sc.want.code + '）· 执行了 ' + ran + ' 步（want ' + sc.want.ran + '）');
+    } else {
+      console.log('✓ selfcheck ' + sc.id + '（' + sc.name + '）：' + ran + ' 步 · code=' + r.code);
+    }
+  }
+  console.log(bad ? '\n✗ selfcheck 失败 ' + bad + ' 项' : '\n✓ selfcheck 两场景全部符合预期（软档不短路 / 硬档仍短路）');
+  process.exit(bad ? 1 : 0);
+}
+
+const USAGE = '用法：node ' + HERE + ' [verify|docs|smoke|all] [--list|--list-json] | --selfcheck';
 const GROUPS = Object.keys(MANIFEST);
 
 const rawArgs = process.argv.slice(2);
 const wantList = rawArgs.includes('--list');
 const wantJson = rawArgs.includes('--list-json');
+const wantSelfcheck = rawArgs.includes('--selfcheck');
 const positional = rawArgs.filter((a) => !a.startsWith('--'));
-const unknownFlags = rawArgs.filter((a) => a.startsWith('--') && a !== '--list' && a !== '--list-json');
+const unknownFlags = rawArgs.filter((a) => a.startsWith('--')
+  && a !== '--list' && a !== '--list-json' && a !== '--selfcheck');
 
 if (unknownFlags.length) {
   console.error('✗ 未知参数：' + unknownFlags.join(' ') + '\n' + USAGE);
   process.exit(2);
+}
+if (wantSelfcheck) {
+  if (positional.length) {
+    console.error('✗ --selfcheck 不接受组名\n' + USAGE);
+    process.exit(2);
+  }
+  runSelfcheck();
 }
 if (positional.length > 1) {
   console.error('✗ 只接受一个组名，收到：' + positional.join(' ') + '\n' + USAGE);
@@ -517,27 +677,15 @@ if (deadFiles.length) {
 
 console.log('▶ ' + group + ' —— ' + steps.length + ' 步（硬档 '
   + steps.filter((s) => s.tier !== 'soft').length + ' / 软档 '
-  + steps.filter((s) => s.tier === 'soft').length + '）');
-
-for (let i = 0; i < steps.length; i++) {
-  const s = steps[i];
-  console.log('\n── [' + (i + 1) + '/' + steps.length + '] ' + commandOf(s));
-  const status = runStep(s);
-  if (status === null) {
-    // 与 `package.json` 的 `&&` 链同形：子进程起不来时 `&&` 链终止且 npm 以非 0 退出。
-    console.error('✗ [' + (i + 1) + '/' + steps.length + '] 没能起来：' + commandOf(s));
-    process.exit(1);
-  }
-  if (status !== 0 && s.tier !== 'soft') {
-    // 短路语义：与 `&&` 一致 —— 后续步骤不再执行，退出码与原命令一致。
-    console.error('✗ [' + (i + 1) + '/' + steps.length + '] 退出码 = ' + status + ' ⇒ 链在此短路');
-    process.exit(status);
-  }
-  if (status !== 0) {
-    console.log('⚠ [' + (i + 1) + '/' + steps.length + '] 软档守卫原退出码 = ' + status
-      + '（已由 warn-only 降级，不决定本组红绿）');
-  }
+  + steps.filter((s) => s.tier === 'soft').length + '；其中登记退役 '
+  + steps.filter((s) => s.retired).length + '）');
+if (steps.some((s) => s.retired)) {
+  console.log('  登记退役（读 test/tools/retired-tests.mjs；原退出码照打，不参与硬短路）：');
+  for (const s of steps.filter((x) => x.retired)) console.log('    · ' + s.file);
 }
+
+const plan = executePlan(steps);
+if (!plan.ok) process.exit(plan.code);
 
 console.log('\n✓ ' + group + ' 全部 ' + steps.length + ' 步执行完毕');
 process.exit(0);

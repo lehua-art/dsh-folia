@@ -127,6 +127,10 @@ const NO_MODULE_TARGET_WHY = {
   'compat-harness-surfaces.mjs': 'UI 面清单棘轮 + sidebar 源码活判据（读的是已安装的 harness 包）',
   'verify-retired-lines.mjs': '管的是**退役线的零残留**（`walk` lib/src/scripts/test 全树搜退役词），目标是"整棵树里不许出现这些词"，不是某个模块',
   'verify-guard-chain.mjs': '管的是**守卫链的形状**（`test/run-guards.mjs` 的 `MANIFEST` 与冻结 fixture 对账：成员/顺序/档位/参数/地板），读的是链自己的清单，不读任何模块',
+  // 4.23.21（P0-A）：管的是**执行器自己的短路语义**（退役项降档后必须继续、硬档红仍短路、
+  // 本守卫在链上），读的是 `run-guards.mjs` 的 `--list-json` / `--selfcheck` 与退役登记表，
+  // 不指向 lib/src 里任何运行时模块。
+  'verify-gate-no-shortcircuit.mjs': '管的是**门禁执行器本身**（退役项降档后不短路 / 硬档红仍短路 / 执行器自检），读的是 run-guards 的清单与退役登记表，不针对任何 lib/src 模块',
   'verify-ci-steps.mjs': '管的是 **CI 步骤表自身**（`.github/workflows/verify.yml` 的步骤序列 / `npm run` 脚本是否存在 / `continue-on-error` 档位 / bash 与 install 步位置），读的是工作流文本与 package.json，不读任何模块',
   'verify-static.mjs': '管的是**静态门禁的棘轮**（ESLint / tsc 的**按规则计数**基线），读的是 `test/fixtures/static-baseline.json` 与 package.json 里的两个脚本名，不读源模块',
   'verify-test-isolation.mjs': '管的是**测试/脚本自身的 home 隔离**（4.23.15 污染事故）：扫 `test/**` 与 `scripts/**` 里解析 home 的入口点 + 起子进程验"真实 DSH_HOME 必须被拒"，目标是测试面本身，不针对某个 lib/src 模块',

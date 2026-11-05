@@ -1,5 +1,64 @@
 # 变更记录（Changelog）
 
+### v4.23.21（2026-11-05，修复独立 QA 对 4.23.20 报出的 4 条插件侧问题；发布到 next）
+
+> 本轮**只修插件侧**，不发 latest（`pnpm publish --tag next`）。站点侧两条由站点仓处理。
+> 每一条都有"修前会红、修后变绿"的判据，不做无判据的改动。
+
+**P0-A 门禁短路（最严重）** — `node test/run-guards.mjs verify` 遇硬档红立即短路，而第 3 步
+`test/verify-client.mjs` 断言的是「关于页四节」—— 该页早已按需求清空 ⇒ **永久红** ⇒ 后面 121 步
+（含 4.23.20 新增的 7 条判据）**一次都没执行**。同一批守卫在 `test/tools/retired-tests.mjs` 里
+早就登记退役（`run-audit` 对它们既不算绿也不算红），两个入口给出两套结论。
+修法：`run-guards.mjs` **读退役登记表**（不再硬编码名单），凡 basename 在表里的步骤加载时自动
+`hard → soft`（经 `warn-only` 跑，原退出码照样打印，**不短路**）；硬短路语义不变。
+新增守卫 `test/verify-gate-no-shortcircuit.mjs`（15 条）：退役项一律软档 + 名字相近未退役者仍
+hard（防子串误伤）+ 执行器自检 `run-guards --selfcheck`（软档红继续、硬档红仍短路）+ 本守卫
+在链上且为硬档。`run-guards --list-json` 新增 `retired` 字段；链 fixture 重冻结
+（verify 125 步 / 硬档 80）。**verify-scene 顺带转正**（见 P1-A，已修复 ⇒ 移出退役表）。
+
+> **跑完全程后才看见的两条既有硬红**（都已按同一张登记表降档，理由写进表里，不是静默 disable）：
+> · `test/tools/packages.mjs selftest`（链上第 89 步）—— 包发现层的自检：11 条负对照要求磁盘上
+>   真的存在 `lib/components/<pkg>/package.json` 或 `packages/<pkg>/` 子包，本仓已合并成单一包
+>   ⇒ 自检直接 `throw`；另两条正判据（`floor/packages=0`、`skin-center`/`market` 是**外部 npm
+>   依赖行**）也已过期。发现层模块本身仍在 `build-client` / `guard-targets` / `host-route-index`
+>   的生产路径上，退役的只是自检步骤；恢复它需要"合成包 + 注入 io"的重写（独立一轮）。
+> · `test/tools/ci-routing-red.mjs`（第 94 步）—— 断言上游 `.github/workflows/verify.yml` 的
+>   文档分流接线（`ci/result` + `scripts/ci-routing.mjs`）。本仓 workflow 是合并后重写的极简版
+>   （只 build + smoke），分流接线从未进入本仓 ⇒ 断言的是不存在的结构。
+> 这两条不是"无法修"，而是**修法属于发现层/CI 的独立一轮**；本轮按仓库既有政策登记退役并写清
+> 接管者（`verify-client-sync` + `verify-package-files` P5 / `npm run gate`）。
+
+**P0-B pick1080 太严（4K@60 选不到变体）** — QA 实测「原神 钟离」4320×2160，唯一变体
+`{height:960,width:1920}`（1920×960，url 名 `.1080p.mp4`）。旧判据要求 `height===1080` ⇒ 不命中
+⇒ `chosenVariant=original` ⇒ 4K@60 仍靠客户端转码。修法（`lib/variant-pick.js`）：
+**"1080p 档"= 宽 ≤1920 且 高 ≤1080**（`height===1080` 仍无条件命中，兼容没给 width 的旧数据）；
+非 16:9 档要求宽已知且像素面积 ≥ 半个 1920×1080（把 720p 挡在外面），多档命中取面积最大；
+`normalizeVariants` 现在**带出 `width`**。`chosen` 仍统一记 `1080p`。判据 8 条（含"把
+`height===1080` 贴回 ⇒ 第一条红"）。判据结果：4320×2160+1920×960 ⇒ 1080p；3840×2160+4K30 ⇒
+4k30；1920×1080 无变体 ⇒ original。
+
+**P1-A verify-scene 长路径（Windows 260）** — 帧缓存文件名用 `base64url(入口绝对路径)`：深路径
+（≥200 字符）下文件名 >255 ⇒ 创建文件 ENOENT ⇒ 该守卫 17 条红。修法
+（`lib/media/frame-store.js`）：键改为 `lf1_<sha1(abspath) 前 16 位>_<mtime>`（文件名定长 ~42，
+与路径长度无关）；**旧键只读兼容**（新键无产物、旧文件在 ⇒ 继续用旧文件；新键有产物则新键优先）。
+判据：`verify-scene` 新增 Level E2（入口路径 227 字符、文件名 ≤255、真的写得进去 + 旧键兼容两条），
+另加 sha1 派生点计数（恰好 1 处）+ 负对照。**实测**：默认路径 141 条全绿；把夹具根指到
+`%TEMP%` 下 239 字符的 `scene.pkg` 路径再跑一遍 —— 同样 141 条全绿。`verify-scene` 因此移出
+退役表（重新成为硬档）。
+
+**P1-B 代码质量 nits** —
+① `src/media-state.js` 的 `msSummary` 无人调用 ⇒ **删除**（连同 export；构建后的 `lib/client.js`
+已同步）；
+② `lib/variant-pick.js:231` 注释里的 0x0C 控制字符（`变体 \fps === 30`）⇒ 修正为 `变体 fps === 30`；
+③ `resolvePlaySrc` 宿主与浏览器各一份 ⇒ **抽公共实现不可行**（宿主 import `node:fs`；客户端由
+`build-client.mjs` 按文件内联、`src/` 不进发布集），故按"受控重复"处理：两份文件头写明
+**两份必须同步**及原因，并新增 `verify-media-state` **M11**（10 组输入矩阵同时喂两份实现，
+`source/url/jobId/mode` 逐字段相等 + "改坏客户端副本 ⇒ 必须红"负对照）。
+
+**其它** — `run-guards.mjs` 的执行循环抽成 `executePlan()`（唯一实现点，供 CLI 与 `--selfcheck`
+共用）；`verify-scene-live` 保持退役，理由更新为真实原因（仍读七包时代的
+`packages/fonts/src/appearance-font-section.js`，本地 ENOENT，需随单包结构改写）。
+
 ### v4.23.20（2026-11-05，收敛「下载 / 本地文件 / 播放 / 清缓存」整类问题 + 4K30 选档）
 
 > ⚠️ 4.23.19 是同一批改动的**第一个**发布号（已发 latest 供测试）。4.23.20 为同一工作树的
@@ -57,25 +116,25 @@ I6 UI 与队列一致 —— 实测 **0 违例**。
 
 **P0/P1 追加：静态封面垫底 + 渲染方式分派**
 - src/client.js：本地副本 404/410 时**先** mountStaticFrameFallback(staticFallbackUrlOf())
-  再切站点流 —— 换源到首帧的空窗里屏上是这张壁纸的缩略图（站点 	humbUrl / 宿主抽帧），
+  再切站点流 —— 换源到首帧的空窗里屏上是这张壁纸的缩略图（站点 thumbUrl / 宿主抽帧），
   不是黑屏；mountStaticFrameFallback 挂 onerror：只有**封面本身**也加载失败才撤掉并允许
   进入"最终失败"那一级。文案分「已显示静态封面 · 本地副本已丢失，正在重新下载」与
   「本地副本已丢失，正在重新下载…」两种。
-- esolvePlaySrc 输出新增 mode（ideo | image | poster）：image 条目走 <img>；
-  站点视频正常走视频池；视频**没有可用地址**时 uildMedia 直接返回静态封面 <img>
+- resolvePlaySrc 输出新增 mode（video | image | poster）：image 条目走 <img>；
+  站点视频正常走视频池；视频**没有可用地址**时 buildMedia 直接返回静态封面 <img>
   （不建 <video>、不报解码失败）；scene / web 为**预留分支**（本次不实现渲染），
   现有行为不变。降级链与 4.23.15 对齐：变体 → 4K@30 → 1080p → 救援转码 → **静态帧** → 才报错。
 **选档：同分辨率 30fps 变体（4K30）**
 - 站点为 4K@60 原画生成的是**同分辨率 30fps** 变体（label 4K30，height=2160）。旧
   pick1080() 只认 height===1080 ⇒ 选不到它 ⇒ 4K@60 只能靠客户端现场转码。
 - lib/variant-pick.js：
-ormalizeVariants 保留 label 与新增 ps；新增 pick4k30()
+ormalizeVariants 保留 label 与新增 fps；新增 pick4k30()
   （同分辨率 30fps 或 label 命中 4K30/30fps，且不是 1080p 档）；pickVariant 在
   "decode-limit 超分辨率 → 1080p" 之后加一条"高帧率 → 4k30"，无这一档才回落原画。
   chosenVariant 值域扩为 original | 1080p | 4k30（队列落盘 / /downloads/list /
-  inventory 小标 / 期望值全部同步；esolveMediaExpectation('4k30') 取**变体自己**的 sha）。
+  inventory 小标 / 期望值全部同步；resolveMediaExpectation('4k30') 取**变体自己**的 sha）。
 - 降级链：4k30 仍解码失败 ⇒ 自愈按 1080p 变体降（hasVariant=1080 已有）⇒ 救援转码 ⇒ 静态封面。
-- 	est/verify-variants.mjs 新增 7 条（含"5916×2530 仍选 1080p"与"去掉 label/fps 保留 ⇒ 认不出"负对照）。
+- test/verify-variants.mjs 新增 7 条（含"5916×2530 仍选 1080p"与"去掉 label/fps 保留 ⇒ 认不出"负对照）。
 **G. 可观测** — `GET /folia/diag/media-state`：总数 / 本地可用 / 下载中 / 待下载 / 失败 /
 上次对账统计 / 最近 20 条异常（含原因）；面板「系统 → 缓存位置」一行摘要（同一份数字）。
 

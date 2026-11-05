@@ -25,7 +25,7 @@
           "npm": null,
           "file": "test/verify-client.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -33,7 +33,7 @@
           "npm": null,
           "file": "test/verify-component-visibility.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -105,7 +105,7 @@
           "npm": null,
           "file": "test/verify-scene-live.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -161,7 +161,7 @@
           "npm": null,
           "file": "test/verify-logging.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -259,7 +259,7 @@
           "npm": null,
           "file": "test/verify-package-publish.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -267,7 +267,7 @@
           "npm": null,
           "file": "test/verify-deployment.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -275,7 +275,7 @@
           "npm": null,
           "file": "test/verify-release-set.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -283,7 +283,7 @@
           "npm": null,
           "file": "test/verify-contracts.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -291,7 +291,7 @@
           "npm": null,
           "file": "test/verify-body-caps.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -299,7 +299,7 @@
           "npm": null,
           "file": "test/verify-json-response.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -307,7 +307,7 @@
           "npm": null,
           "file": "test/verify-i18n.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -315,7 +315,7 @@
           "npm": null,
           "file": "test/verify-types.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -331,7 +331,7 @@
           "npm": null,
           "file": "test/verify-route-index.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -339,7 +339,7 @@
           "npm": null,
           "file": "test/verify-route-families.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -347,7 +347,7 @@
           "npm": null,
           "file": "test/verify-inject-contracts.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -355,7 +355,7 @@
           "npm": null,
           "file": "test/verify-cache-dir.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -411,7 +411,7 @@
           "npm": null,
           "file": "test/verify-theme-layer.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -435,7 +435,7 @@
           "npm": null,
           "file": "test/verify-component-face.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -443,7 +443,7 @@
           "npm": null,
           "file": "test/verify-fontset.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -459,7 +459,7 @@
           "npm": null,
           "file": "test/verify-presets.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -467,7 +467,7 @@
           "npm": null,
           "file": "test/verify-settings-namespaces.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -475,7 +475,7 @@
           "npm": null,
           "file": "test/verify-system-fonts.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -507,7 +507,7 @@
           "npm": null,
           "file": "test/verify-about.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -523,7 +523,7 @@
           "npm": null,
           "file": "test/verify-route-ownership.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -587,7 +587,7 @@
           "npm": null,
           "file": "test/verify-settings-schema-exports.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -595,7 +595,7 @@
           "npm": null,
           "file": "test/verify-subpackage-boot.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -603,7 +603,7 @@
           "npm": null,
           "file": "test/verify-subpackage-client-half.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -611,7 +611,7 @@
           "npm": null,
           "file": "test/verify-subpackage-purity.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -619,7 +619,7 @@
           "npm": null,
           "file": "test/verify-subpackage-toggle-roundtrip.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -627,7 +627,7 @@
           "npm": null,
           "file": "test/verify-subpackage-manifests.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -643,7 +643,7 @@
           "npm": null,
           "file": "test/verify-pet-package.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -651,7 +651,7 @@
           "npm": null,
           "file": "test/verify-pet-hotplug-host.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -659,7 +659,7 @@
           "npm": null,
           "file": "test/verify-pet-hotplug-client.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -667,7 +667,7 @@
           "npm": null,
           "file": "test/verify-pet-rope-entry.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -675,7 +675,7 @@
           "npm": null,
           "file": "test/verify-pet-tuner.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -683,7 +683,7 @@
           "npm": null,
           "file": "test/verify-pet-official.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -691,7 +691,7 @@
           "npm": null,
           "file": "test/verify-pet-sidebar-rebound.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -699,7 +699,7 @@
           "npm": null,
           "file": "test/verify-pet-sidebar-diag.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -707,7 +707,7 @@
           "npm": null,
           "file": "test/verify-pet-sidebar-glass.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -717,7 +717,7 @@
           "args": [
             "selftest"
           ],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -741,9 +741,17 @@
         {
           "kind": "guard",
           "npm": null,
-          "file": "test/verify-ci-steps.mjs",
+          "file": "test/verify-gate-no-shortcircuit.mjs",
           "args": [],
           "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-ci-steps.mjs",
+          "args": [],
+          "tier": "soft",
           "probe": false
         },
         {
@@ -751,7 +759,7 @@
           "npm": null,
           "file": "test/tools/ci-routing-red.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -759,7 +767,7 @@
           "npm": null,
           "file": "test/verify-ci-routing.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -775,7 +783,7 @@
           "npm": null,
           "file": "test/verify-issue-claim-policy.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1142,7 +1150,7 @@
           "npm": null,
           "file": "test/verify-client.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1150,7 +1158,7 @@
           "npm": null,
           "file": "test/verify-component-visibility.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1222,7 +1230,7 @@
           "npm": null,
           "file": "test/verify-scene-live.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1278,7 +1286,7 @@
           "npm": null,
           "file": "test/verify-logging.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1376,7 +1384,7 @@
           "npm": null,
           "file": "test/verify-package-publish.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1384,7 +1392,7 @@
           "npm": null,
           "file": "test/verify-deployment.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1392,7 +1400,7 @@
           "npm": null,
           "file": "test/verify-release-set.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1400,7 +1408,7 @@
           "npm": null,
           "file": "test/verify-contracts.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1408,7 +1416,7 @@
           "npm": null,
           "file": "test/verify-body-caps.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1416,7 +1424,7 @@
           "npm": null,
           "file": "test/verify-json-response.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1424,7 +1432,7 @@
           "npm": null,
           "file": "test/verify-i18n.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1432,7 +1440,7 @@
           "npm": null,
           "file": "test/verify-types.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1448,7 +1456,7 @@
           "npm": null,
           "file": "test/verify-route-index.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1456,7 +1464,7 @@
           "npm": null,
           "file": "test/verify-route-families.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1464,7 +1472,7 @@
           "npm": null,
           "file": "test/verify-inject-contracts.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1472,7 +1480,7 @@
           "npm": null,
           "file": "test/verify-cache-dir.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1528,7 +1536,7 @@
           "npm": null,
           "file": "test/verify-theme-layer.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1552,7 +1560,7 @@
           "npm": null,
           "file": "test/verify-component-face.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1560,7 +1568,7 @@
           "npm": null,
           "file": "test/verify-fontset.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1576,7 +1584,7 @@
           "npm": null,
           "file": "test/verify-presets.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1584,7 +1592,7 @@
           "npm": null,
           "file": "test/verify-settings-namespaces.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1592,7 +1600,7 @@
           "npm": null,
           "file": "test/verify-system-fonts.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1624,7 +1632,7 @@
           "npm": null,
           "file": "test/verify-about.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1640,7 +1648,7 @@
           "npm": null,
           "file": "test/verify-route-ownership.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1704,7 +1712,7 @@
           "npm": null,
           "file": "test/verify-settings-schema-exports.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1712,7 +1720,7 @@
           "npm": null,
           "file": "test/verify-subpackage-boot.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1720,7 +1728,7 @@
           "npm": null,
           "file": "test/verify-subpackage-client-half.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1728,7 +1736,7 @@
           "npm": null,
           "file": "test/verify-subpackage-purity.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1736,7 +1744,7 @@
           "npm": null,
           "file": "test/verify-subpackage-toggle-roundtrip.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1744,7 +1752,7 @@
           "npm": null,
           "file": "test/verify-subpackage-manifests.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1760,7 +1768,7 @@
           "npm": null,
           "file": "test/verify-pet-package.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1768,7 +1776,7 @@
           "npm": null,
           "file": "test/verify-pet-hotplug-host.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1776,7 +1784,7 @@
           "npm": null,
           "file": "test/verify-pet-hotplug-client.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1784,7 +1792,7 @@
           "npm": null,
           "file": "test/verify-pet-rope-entry.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1792,7 +1800,7 @@
           "npm": null,
           "file": "test/verify-pet-tuner.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1800,7 +1808,7 @@
           "npm": null,
           "file": "test/verify-pet-official.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1808,7 +1816,7 @@
           "npm": null,
           "file": "test/verify-pet-sidebar-rebound.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1816,7 +1824,7 @@
           "npm": null,
           "file": "test/verify-pet-sidebar-diag.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1824,7 +1832,7 @@
           "npm": null,
           "file": "test/verify-pet-sidebar-glass.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1834,7 +1842,7 @@
           "args": [
             "selftest"
           ],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1858,9 +1866,17 @@
         {
           "kind": "guard",
           "npm": null,
-          "file": "test/verify-ci-steps.mjs",
+          "file": "test/verify-gate-no-shortcircuit.mjs",
           "args": [],
           "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-ci-steps.mjs",
+          "args": [],
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1868,7 +1884,7 @@
           "npm": null,
           "file": "test/tools/ci-routing-red.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1876,7 +1892,7 @@
           "npm": null,
           "file": "test/verify-ci-routing.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {
@@ -1892,7 +1908,7 @@
           "npm": null,
           "file": "test/verify-issue-claim-policy.mjs",
           "args": [],
-          "tier": "hard",
+          "tier": "soft",
           "probe": false
         },
         {

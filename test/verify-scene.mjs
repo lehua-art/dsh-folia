@@ -14,7 +14,8 @@
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, rmSync, readdirSync, chmodSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Writable, Readable } from 'node:stream';
 import { EventEmitter } from 'node:events';
@@ -142,10 +143,17 @@ function buildTexRgba(width, height, rgbaBytes) {
 // testable anywhere: the pkg ships one 32×32 noise RGBA texture (noise keeps
 // the PNG payload above the >1000B assertion and passes the colorful-main-
 // texture gate that a flat fill would trip).
-const fixtureLib = join(root, '.test-cache', 'scene-fixture', 'steamlib');
+//
+// 4.23.21（P1-A）：夹具根可被 `FOLIA_TEST_SCENE_LIB` 指到任意目录。用途是把**入口绝对路径**
+// 拉长到 ≥200 字符（在没有 MAX_PATH 放宽的机器上也要能过）—— 帧缓存文件名曾用
+// base64url(绝对路径)，深路径下文件名 >255 ⇒ ENOENT、本文件 17 条红。默认仍落在仓库内。
+const fixtureBase = process.env.FOLIA_TEST_SCENE_LIB
+  ? resolve(process.env.FOLIA_TEST_SCENE_LIB)
+  : join(root, '.test-cache', 'scene-fixture');
+const fixtureLib = join(fixtureBase, 'steamlib');
 const fixtureItemDir = join(fixtureLib, 'steamapps', 'workshop', 'content', '431960', '990002');
 {
-  rmSync(join(root, '.test-cache', 'scene-fixture'), { recursive: true, force: true });
+  rmSync(fixtureBase, { recursive: true, force: true });
   mkdirSync(fixtureItemDir, { recursive: true });
   // A library root is only scanned when steamapps/common/wallpaper_engine
   // exists (owningLibrariesP) — create it so the workshop content is found.
@@ -359,7 +367,13 @@ if (token) {
     // 精确匹配本次运行的 key（含 fixture mtime）—— 目录里可能有历史运行
     // 残留的其它 key 文件，不算失败。版本取自上面从源码读出的 keyVersion，
     // 写死字面量会在宿主升键后静默测到旧文件（第 514 行的注释即此意）。
-    const curKey = keyVersion + '_' + token + '_' + Math.round(statSync(join(fixtureItemDir, 'scene.pkg')).mtimeMs);
+    //
+    // 4.23.21（P1-A）：键的中间段从 base64url(绝对路径) 换成 **sha1(绝对路径) 前 16 位**。
+    // 绝对路径从 token 反解（token 本来就是 `tokenFor(abs)` = base64url(abs)），不靠
+    // "猜夹具路径怎么拼" —— 猜错时这里会静默测到旧文件、假通过。
+    const sceneAbs = Buffer.from(String(token), 'base64url').toString('utf8');
+    const keyDigest = createHash('sha1').update(sceneAbs, 'utf8').digest('hex').slice(0, 16);
+    const curKey = keyVersion + '_' + keyDigest + '_' + Math.round(statSync(join(fixtureItemDir, 'scene.pkg')).mtimeMs);
     // 主帧产物名：<key>_gpu.png（单槽，面积升级制 —— 只升不降，见 PUT 守卫）。
     const gpuMasterFile = curKey + '_gpu.png';
     const head0 = await runHead('/folia/scene-frame/' + token);
@@ -882,7 +896,14 @@ if (token) {
   const hostSrc = readHostHalf();
   /** 共享判据：阳性（宿主半）与阴性对照（宿主半 + 一条合成派生）共用同一计数函数。 */
   const base64UrlDerivations = (t) => (t.match(/Buffer\.from\(abs, 'utf8'\)\.toString\('base64url'\)/g) || []).length;
+  /**
+   * 4.23.21（P1-A）：帧键改成 `sha1(abs)` 前 16 位（base64url 让深路径下的**文件名**超 255）。
+   * 于是"键派生点"的计数口径一分为二：base64url 仍用于场景音频/视频（以及帧的**旧键只读兼容**），
+   * sha1 只出现在帧键这一个构造点。两条计数各自钉死一处，任何一处多拼一份都会红。
+   */
+  const sha1KeyDerivations = (t) => (t.match(/createHash\('sha1'\)\.update\(abs, 'utf8'\)/g) || []).length;
   const derivations = base64UrlDerivations(readKeyDerivationSurface());
+  const sha1Derivations = sha1KeyDerivations(readKeyDerivationSurface());
   /**
    * 取一个顶层函数的函数体：起点锚 `function <name>(`，终点锚 `function <nextName>(`。
    * ⚠️ 终点锚**必须真实存在，且缺锚要判红**（返回 null）：此处此前把终点写成
@@ -902,9 +923,17 @@ if (token) {
     slotBody ? 'len=' + slotBody.length : '锚点缺失（sceneFrameSlot / gpuFrameFileFor 改名了？）');
   check('负对照：终点锚缺失时 fnBody 返回 null（判据有牙，不会静默扫全文）',
     fnBody('function a() {}\n', 'a', 'doesNotExist') === null);
-  check('P1-6 每种缓存各只有一个键派生点（当前 3 种：帧 / 场景音频 / 场景视频）',
+  check('P1-6 每种缓存各只有一个键派生点（当前 3 种：帧旧键只读 / 场景音频 / 场景视频）',
     derivations === 3,
     '派生点 ' + derivations + ' 处');
+  check('P1-A 帧键的 sha1 派生点**恰好一处**（sceneFrameCacheKey；多拼一份就会让读写错位）',
+    sha1Derivations === 1, 'sha1 派生点 ' + sha1Derivations + ' 处');
+  check('P1-A 负对照：sha1 计数判据有牙（同一函数吃合成样本 ⇒ +1）',
+    sha1KeyDerivations(readKeyDerivationSurface()
+      + "\nconst k = createHash('sha1').update(abs, 'utf8').digest('hex').slice(0, 16);") === sha1Derivations + 1);
+  check('P1-A 负对照：旧键构造点只在 sceneFrameSlot 的**读兼容**处出现（写盘仍走 sha1 键）',
+    slotBody !== null && slotBody.includes('legacySceneFrameCacheKey(abs, mtime)')
+    && slotBody.includes('existsSync(legacyPath)'), slotBody === null ? '锚点缺失' : 'ok');
   check('P1-6 sceneFrameSlot 复用 sceneFrameCacheKey 且不再自带版本前缀',
     slotBody !== null && slotBody.includes('sceneFrameCacheKey(abs, mtime)') && !slotBody.includes('LIVE_FRAME_KEY_VERSION'),
     'reuse=' + (slotBody !== null && slotBody.includes('sceneFrameCacheKey(abs, mtime)')) + ' versionInSlot=' + (slotBody !== null && slotBody.includes('LIVE_FRAME_KEY_VERSION')));
@@ -984,6 +1013,60 @@ if (token) {
   check('P4-16 档 4 豁免抓帧时**不解析槽位**（不留那次白做的 statSync + ensureFrameCacheDir）',
     /const slot = variant === 4 \? null : sceneFrameSlot\(abs\);/.test(readFileSync(join(root, 'lib', 'routes', 'scene-frame.js'), 'utf8'))
     && /const gpuFile = slot \? gpuFrameFileFor\(slot\) : null;/.test(readFileSync(join(root, 'lib', 'routes', 'scene-frame.js'), 'utf8')));
+}
+
+// ── Level E2: 深路径下的帧缓存写入（4.23.21，P1-A）─────────────────────────────
+// 真实故障：帧缓存文件名曾用 base64url(入口绝对路径)。1 byte → 4/3 字符，入口路径 ≥200 字符时
+// **文件名**就 >255 ⇒ 创建文件 ENOENT（目录明明在）。这里构造一条 ≥200 字符、但**整条路径仍
+// <260** 的入口：于是量的正是"文件名长度"，不会被 Windows 的 MAX_PATH 掩盖。
+{
+  const { createFrameStoreKit } = await import('../lib/media/frame-store.js');
+  const stamp = process.pid + '-' + Date.now();
+  const deepRoot = join(tmpdir(), 'folia-deep-' + stamp, 'a'.repeat(55), 'b'.repeat(55));
+  const deepAbs = join(deepRoot, 'steamapps', 'workshop', 'content', '431960', '990002', 'scene.pkg');
+  const kit = createFrameStoreKit({
+    cacheBaseDir: () => join(deepRoot, 'cache'),
+    ensureDirOnce: (d) => { mkdirSync(d, { recursive: true }); return d; },
+  });
+  try {
+    check('P1-A 构造出的入口绝对路径 ≥200 字符（覆盖 QA 实测的深目录形态）',
+      deepAbs.length >= 200, deepAbs.length + ' 字符');
+    const slot = kit.sceneFrameSlot(deepAbs);
+    const fileName = basename(slot.gpuPath);
+    check('P1-A 帧缓存文件名是定长的 lf1_<sha1前16位>_<mtime>_gpu.png（与绝对路径长度无关）',
+      /^lf1_[0-9a-f]{16}_\d+_gpu\.png$/.test(fileName), fileName);
+    check('P1-A 文件名 ≤255（旧 base64url 版本在同一路径下会 >255 ⇒ ENOENT）',
+      fileName.length <= 255, fileName.length + ' 字符');
+    writeFileSync(slot.gpuPath, Buffer.from('deep-frame'));
+    check('P1-A 深路径下真的写得进去（不再 ENOENT）', existsSync(slot.gpuPath),
+      '全路径 ' + slot.gpuPath.length + ' 字符');
+  } finally {
+    try { rmSync(join(tmpdir(), 'folia-deep-' + stamp), { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+
+  // 旧键**只读兼容**：升级前写下的帧（旧文件名）必须继续被命中；新键有产物时新键优先。
+  const dir = join(root, '.test-cache', 'frame-legacy-' + stamp);
+  try {
+    mkdirSync(dir, { recursive: true });
+    const absFile = join(dir, 'scene.pkg');
+    writeFileSync(absFile, 'x');
+    const kit2 = createFrameStoreKit({
+      cacheBaseDir: () => join(dir, 'cache'),
+      ensureDirOnce: (d) => { mkdirSync(d, { recursive: true }); return d; },
+    });
+    const newPath = kit2.sceneFrameSlot(absFile).gpuPath;
+    const legacyPath = join(dir, 'cache', 'frames',
+      'lf1_' + Buffer.from(absFile, 'utf8').toString('base64url') + '_' + Math.round(statSync(absFile).mtimeMs) + '_gpu.png');
+    mkdirSync(dirname(legacyPath), { recursive: true });
+    writeFileSync(legacyPath, 'old-frame');
+    check('P1-A 旧键只读兼容：新键无产物、旧文件在 ⇒ 继续用旧文件（不重抓、不失效）',
+      kit2.sceneFrameSlot(absFile).gpuPath === legacyPath);
+    writeFileSync(newPath, 'new-frame');
+    check('P1-A 新键有产物时**新键优先**（旧文件只读、不再新增）',
+      kit2.sceneFrameSlot(absFile).gpuPath === newPath);
+  } finally {
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
 }
 
 // ── Level F: sceneVideo 文件版探测（issue #136）──────────────────────────────
@@ -1214,7 +1297,7 @@ console.log('Level F — sceneVideo 文件版探测（issue #136）等价 / 读�
 
 if (typeof dispose === 'function') dispose();
 delete process.env.DSH_FOLIA_STEAM_ROOT;
-rmSync(join(root, '.test-cache', 'scene-fixture'), { recursive: true, force: true });
+rmSync(fixtureBase, { recursive: true, force: true });
 
 console.log('');
 console.log(passed + ' passed, ' + failed + ' failed'

@@ -63,9 +63,39 @@ export const RETIRED_TESTS = {
   // ── CI / 仓库治理 ──
   'verify-ci-routing.mjs': { why: CI_WHY, since: '4.7.0' },
   'verify-ci-steps.mjs': { why: CI_WHY, since: '4.7.0' },
+  'ci-routing-red.mjs': {
+    why: '断言上游 `.github/workflows/verify.yml` 的**分流接线**（固定名 `ci/result` 汇总 + '
+      + '`node scripts/ci-routing.mjs` 分类/审计/汇总）。本仓的 workflow 是合并后重写的**极简版**'
+      + '（只 build + smoke，见文件头：上游 20 KB 工作流断言的是七包形态，fork 有意改掉），'
+      + '分流接线从未进入本仓 ⇒ 这条断言是"断言一个不存在的结构"，不是 CI 真的坏了。'
+      + 'CI 在本仓由 `npm run gate` 承担。',
+    replacedBy: 'npm run gate',
+    since: '4.7.0',
+  },
   'verify-bridge-ci.mjs': { why: CI_WHY, since: '4.7.0' },
   'verify-issue-claim-policy.mjs': { why: CI_WHY, since: '4.7.0' },
   'verify-static.mjs': { why: '静态棘轮需要 ESLint / tsc 作为 devDependencies；本仓不发这些依赖。', since: '4.7.0' },
+
+  // ── 基座工具的自检（断言七包形态）──
+  // `test/tools/packages.mjs`（包发现层）本身**仍在生产路径上**：`scripts/build-client.mjs`、
+  // `test/tools/guard-targets.mjs`、`test/tools/host-route-index.mjs` 都 import 它，功能正常。
+  // 退役的只是它的 **selftest**：11 条负对照要求磁盘上真的存在 `lib/components/<pkg>/package.json`
+  // 或 `packages/<pkg>/` 形态的子包（用来挑"不带浏览器半边的包""带产物的 standalone 包"），
+  // 而本仓已合并成单一包（components 目录下没有 package.json、也没有 packages/ 目录）
+  // ⇒ selftest 在 ⑨ 处直接 `throw`（"需要至少一个不带浏览器半边的包"）。同一次合并还让两条
+  // 正判据过期：`floor/packages`（本仓 `packages[]` 恒为 0，主包不在这个数组里）与
+  // `rows/deadRow`（`skin-center` / `market` 两条 patch 行是**外部 npm 依赖**，不是本仓子包）。
+  // 要恢复自检，需把负对照改成"合成包 + 注入 io"的写法并让发现层认识外部依赖行 —— 那是发现层
+  // 单独一轮的改动，不该混进 4.23.21 的 QA 修复。发现层的功能面仍由 `verify-client-sync`
+  // （产物面）、`verify-guard-chain`（链面）与 `verify-package-files` P5（构建/校验链）间接覆盖。
+  'packages.mjs': {
+    why: '它是 `test/tools/packages.mjs selftest` 的步骤登记：11 条负对照要求磁盘上有真实的 '
+      + 'lib/components/<pkg> / packages/<pkg> 子包（本仓已合并成单一包，selftest 直接 throw），'
+      + '另两条正判据（floor/packages=0、skin-center/market 外部依赖行）也已过期。发现层模块'
+      + '本身仍在 build-client / guard-targets / host-route-index 的生产路径上。',
+    replacedBy: 'verify-client-sync.mjs（产物面）+ verify-package-files.mjs P5（构建/校验链）',
+    since: '4.7.0',
+  },
 
   // ── 桌宠组件（已并入主包）──
   'verify-pet-hotplug-client.mjs': { why: PET_WHY, replacedBy: 'pets-http.mjs', since: '4.7.0' },
@@ -92,8 +122,16 @@ export const RETIRED_TESTS = {
   'compat-harness-pages.mjs': { why: '同上。', since: '4.7.0' },
   'compat-harness-surfaces.mjs': { why: '同上。', since: '4.7.0' },
   'e2e-web-media-origin.mjs': { why: '端到端媒体源判据，需要真宿主 + 真渲染路径。', since: '4.7.0' },
-  'verify-scene.mjs': { why: '场景帧 PUT 在 Windows 上返回 500（写盘管线 atomicWriteFileP 拒绝），待单独修复；与壁纸/开机/桌宠主链路无关。', since: '4.7.0' },
-  'verify-scene-live.mjs': { why: '依赖 verify-scene 的夹具与真渲染路径。', since: '4.7.0' },
+  // 4.23.21（P1-A）：`verify-scene.mjs` **已修复并转正**（不再退役）。原先退役的理由是
+  // 「场景帧 PUT 在 Windows 上返回 500 / 帧缓存写盘管线拒绝」，根因是帧缓存文件名用
+  // base64url(入口绝对路径) ⇒ 深路径下文件名 >255 触发 ENOENT。现已改为
+  // `lf1_<sha1(abs)前16位>_<mtime>_gpu.png`（定长，旧键只读兼容），本地 141 条全绿；
+  // 判据见该文件 Level E/E2（深路径写入 + 旧键兼容）。
+  'verify-scene-live.mjs': {
+    why: '仍读上游七包结构 `packages/fonts/src/appearance-font-section.js`（合并成单包后不存在）⇒ 本地 '
+      + 'ENOENT；同时依赖真渲染路径。判据要随单包结构改写，属独立一轮（4.23.21 只把同族的 verify-scene 修好并转正）。',
+    since: '4.7.0',
+  },
   'verify-theme-layer.mjs': { why: '依赖上游主题层文件（未随合并带过来）。', since: '4.7.0' },
   'verify-system-fonts.mjs': { why: '依赖 EnumFontFamilies 的系统字体枚举面，需要在 Windows 原生环境跑。', since: '4.7.0' },
   'verify-cache-dir.mjs': { why: '断言上游"now-playing 把访问器交给媒体后端"的接线；该接线已随合并改形。', since: '4.7.0' },

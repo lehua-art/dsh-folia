@@ -15,6 +15,18 @@
  *
  * 不变量：**返回 `source === "local"` 时，url 必定是 `/folia/local-media/<jobId>` 且
  * `mediaState.localReady === true`**；其余一切返回 proxy（且 proxy 候选里跳过所有本地地址）。
+ *
+ * ══ ⚠️ 两份实现必须同步（4.23.21，P1-B）════════════════════════════════════════
+ * 宿主那份是 `lib/media-state.js` 的 `resolvePlaySrc(state, entry)`。**为什么不能抽成一份**：
+ *   · 宿主那份 `import { rmSync, statSync } from 'node:fs'`（对账器要探盘），浏览器里没有 fs；
+ *   · 客户端这份由 `scripts/build-client.mjs` **按文件内联**进 `lib/client.js`（src/*.js 是一组
+ *     有序片段，不是可 import 的模块）⇒ 它不能 import 宿主文件，宿主也不能 import 它；
+ *   · 抽一个"零依赖的第三份"再让两边各 import，会同时打破内联构建的片段序与 `files` 发布面
+ *     （src/ 不进发布集）—— 风险远大于重复本身。
+ *
+ * 所以这里是**受控重复**。同步的判据不是靠人自觉：`test/verify-media-state.mjs` 的 **M9**
+ * 把同一个输入矩阵同时喂给两份实现，逐字段比对 `source / url / jobId / mode`（含负对照：
+ * 故意改坏客户端副本 ⇒ M9 必须红）。**改这一处就必须改那一处，否则 M9 当场断。**
  */
 
 /** key → state（本会话内观察到的"这条 URL 现在能不能播"）。 */
@@ -181,22 +193,9 @@ function msMarkUnavailable(urlOrJobId, reason) {
   return next;
 }
 
-/** 会话读数（诊断/面板摘要用；`localReady` 只统计**当前**已确认可播的条目）。 */
-function msSummary() {
-  let localReady = 0;
-  let downloading = 0;
-  let pending = 0;
-  for (const st of MS_STATES.values()) {
-    if (st.localReady === true) localReady += 1;
-    else if (st.jobStatus === "running" || st.jobStatus === "queued") downloading += 1;
-    else if (st.jobStatus === "pending") pending += 1;
-  }
-  return { total: MS_STATES.size, localReady, downloading, pending };
-}
-
 // 构建期会被剥掉（内联后同作用域）；保留是为了 `test/verify-media-state.mjs` 能直接
 // import **真实现**做纯判据 —— 与 settings-schema / variant-pick 的同一做法。
 export {
   msKeyOf, msLocalMediaUrl, msIsLocalMediaUrl, msLocalMediaJobId,
-  resolvePlaySrc, msNoteJob, msMarkUnavailable, msSummary, msStateFromEntry, MS_STATES,
+  resolvePlaySrc, msNoteJob, msMarkUnavailable, msStateFromEntry, MS_STATES,
 };

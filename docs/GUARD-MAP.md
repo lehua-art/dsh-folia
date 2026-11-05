@@ -5,7 +5,7 @@
 > 口径：只统计守卫**代码**里真正碰到的模块（先剥注释），并区分"直接读源文件"与"隔着产物 `lib/client.js`"。
 > 写法：字面量路径 / `join(...)` 拼接 / 唯一 basename / 产物配方 / **前缀族读法** `scopeFiles|scopeText(<前缀>)` / **经共享族助手读**（`import { panelText } from './tools/src-scope.mjs'` + 真调用；族口径封在那个库里，见 DEV-GUIDE §4.6「同时是守卫的库」）/ **真源定位读**（`locate('符号')` / `locateFile('文件名')`，`test/tools/source-locator.mjs`：符号唯一声明在哪就是读了哪个模块）。
 
-模块面 202 个 · 守卫 138 个
+模块面 202 个 · 守卫 139 个
 
 ## 守卫 → 模块
 
@@ -53,6 +53,7 @@
 | `verify-first-click-feedback.mjs` | `src/local-first.js` `src/panel-tabs-boot.js` `src/panel-tabs-pets.js` `src/panel-tabs-skins.js` `src/picker-modal.js` `src/quick-panel.js` `src/styles-panel.js` |  |
 | `verify-first-frame.mjs` | `lib/routes/diag.js` `lib/routes/site-media.js` `src/media-prep.js` `src/quick-panel.js` `src/video-layer.js` `src/video-switch.js` |  |
 | `verify-fontset.mjs` | `lib/components/fonts/src/appearance-font-section.js` `lib/components/fonts/src/fontset-editor.js` `lib/index.js` `lib/settings-schema.js` `src/client.js` `src/extension-registry.js` `src/font/apply.js` `src/font/color-roles.js` `src/font/components.js` `src/font/typography.js` `src/fontset-store.js` `src/glass-panel.js` `src/media-prep.js` `src/module-reset.js` `src/panel-tabs-advanced.js` `src/panel-tabs-appearance.js` `src/panel-tabs-boot.js` `src/panel-tabs-effects.js` `src/panel-tabs-mascot.js` `src/panel-tabs-pets.js` `src/panel-tabs-skins.js` `src/panel-tabs-wallpaper.js` `src/panel-tabs.js` `src/picker-modal.js` `src/picker-props-panel.js` `src/section-head.js` `src/styles-base.js` `src/styles-chrome.js` `src/styles-ext.js` `src/styles-panel.js` `src/styles-quick.js` `src/styles-settings.js` `src/styles-shell.js` `src/styles-sidebar.js` `src/styles.js` `src/system-fonts.js` `src/we-cond.js` | ✅ |
+| `verify-gate-no-shortcircuit.mjs` | — |  |
 | `verify-glass-compat.mjs` | `lib/settings-schema.js` `src/glass-panel.js` |  |
 | `verify-glass-compositing.mjs` | — | ✅ |
 | `verify-glass-runtime-browser.mjs` | — | ✅ |
