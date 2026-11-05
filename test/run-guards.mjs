@@ -402,14 +402,15 @@ const VERIFY_STEPS = [
   // 4.23.18：**队列优先级 / 启动限流 / 运维 / 旧 job 迁移**。用户实测：当前在看的壁纸排在
   // 31 条 low 之后（启动批量重置）；标题栏 N 来自全局 queuePos（跨 kind 串号）；4.23.17 之前
   // 的 failed job 还带着"变体 URL + 原画哈希"的错误期望。本守卫覆盖：点击/在播 high + 队首、
-  // 30 条 done-缺失 ⇒ 全 pending（queuedCount=0）、预取 stream-first 2 / download-first 3 且
-  // low、N=queuedAhead（假队列含跨 kind）、清空未开始、暂停/恢复、当前清单校验（真源下载 done /
+  // 30 条 done-缺失 ⇒ 全 pending（queuedCount=0）、预取**默认 0 张**（4.24.1 起宿主下发、上限 3）
+  // 且 low、N=queuedAhead（假队列含跨 kind）、清空未开始、暂停/恢复、当前清单校验（真源下载 done /
   // 幂等 / 清单不可达 / 刷新复核 / 变异负对照）。
   step('test/verify-queue-priority.mjs'),
   // 4.23.23：**download-first 播放策略**（默认）—— 点未缓存壁纸先整份下载 + 校验，再从本地播；
   // 期间 `<video>` 不得指向站点媒体地址；进度 + ETA；>12s 出现「改用边下边播」但不自动降级；
   // 切走 ⇒ 该 job 降 low 继续下载（不暂停/不取消、字节不归零），点回 ⇒ 升 high / 直接播本地；
-  // stream-first 回滚档；预取 3 张。判据 66 条，含"把点击即播贴回 ⇒ B 组必红"的负对照，以及
+  // stream-first 回滚档；预取**默认 0 张**（4.24.1 起宿主下发、上限 3）。判据 66 条，
+  // 含"把点击即播贴回 ⇒ B 组必红"的负对照，以及
   // 同版合并的错误分类重试 / 期望值不持久化 / 清单刷新复核。
   step('test/verify-download-first.mjs'),
   // 4.23.19（P0）：**本地副本 404 的假"无法解码"** —— 用户按「清空媒体」步骤踩到。
@@ -428,6 +429,25 @@ const VERIFY_STEPS = [
   // 逐轮断言 I1 无 done-缺失 · I2 local 只指完整有效文件 · I3 下载中必 proxy ·
   // I4 完成即 local · I5 失败有具体文案 · I6 UI 与队列一致。复现靠 seed。
   step('test/verify-media-chaos.mjs'),
+  // 4.24.1（P0-1/P0-2）：**本地残留的恢复判据**（21 条）。A 组 `.part` 体检矩阵（==total 直接
+  // 落位 / 内容无效重下 / >total 重下 / 半截续传 / 416 自愈一次 / 416 两次才 failed + 负对照
+  // "`Range: bytes=<total>-` 必 416"）；B 组皮肤缓存 zip 与清单 sha 不符 ⇒ 删三件套后**继续下载**
+  // （负对照：不删缓存 ⇒ 队列复用 done 记录、盘上仍是旧内容）；C 组启动 sweep 的四个删除面与统计。
+  step('test/verify-download-recovery.mjs'),
+  // 4.24.1（P0-3）：**未点击就不许自己下**（24 条）。宿主 prefetchCount() 默认 0 / 上限 3、
+  // 客户端同一套夹取（真跑源码）、70 条 pending ⇒ queuedCount=0、点 1 张只排 1 张、
+  // 连点 3 张只排 3 张、prefetchCount=3 才允许额外 3 条 low 且 high 排在前；
+  // 负对照三条：默认值改回 3 / 启动把 queued 放回 / 批量 promote 的形态。
+  step('test/verify-no-auto-enqueue.mjs'),
+  // 4.25.0：**核心 6 条行为 + 3 条质量判据**（64 条）—— B1 不点恒 0 / B2 点 1 只排 1 /
+  // B3 点第 2 张前一张 low 且字节不归零 / B4 切回读 /downloads/list 快照 / B5 角标数 ==
+  // localReady 数 / B6 4K@60→4k30、超分辨率→1080p、HEVC→1080p；Q2 错误文案分流与清空；
+  // Q3 进度只在标题栏且 DOM 无 `.we-switch-hint`。每条配一条"旧实现贴回必红"的负对照。
+  step('test/verify-wallpaper-core.mjs'),
+  // 4.25.0（Q1）：**死代码不许长回来**（12 条）。8 个已删符号 + 2 条已删形态的黑名单
+  // （只看代码、先剥注释）、替代实现的在位判据、`lib/src/scripts` 零引用顶层声明为 0、
+  // 负面/正面/剥注释三类对照。补的是 `verify-dead-declarations` 明确不扫的 lib/src 面。
+  step('test/verify-dead-code.mjs'),
   step('test/pets-layer.mjs'),
 ];
 

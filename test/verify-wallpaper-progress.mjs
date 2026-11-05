@@ -167,16 +167,25 @@ if (mod) {
 
 /* ══ ③ 下完 ⇒ 两处都不再显示百分比；卡片只说「已缓存」════════════════════════ */
 if (mod) {
-  const view = mod.wpViewOf(itemA, [Object.assign(runJob(ORIG, 100), { status: 'done', received: 20 * MB })]);
-  check('③ done ⇒ 卡片「已缓存」、标题栏不画进度、两处都没有百分比',
+  // 4.25.0（P0-5）：**「已缓存」的唯一判据是 inventory 的 `localReady`**，不是 job 的 done。
+  // 所以这里把"已完成"的条目显式写成 `localReady:true`（宿主对账后的稳态），再做断言；
+  // 另加一条反向判据：done 但 localReady=false ⇒ **不许**说已缓存（见 ③-d）。
+  const doneJob = Object.assign(runJob(ORIG, 100), { status: 'done', received: 20 * MB });
+  const itemCached = Object.assign({}, itemA, { localReady: true });
+  const view = mod.wpViewOf(itemCached, [doneJob]);
+  check('③ 已完成（localReady=true）⇒ 卡片「已缓存」、标题栏不画进度、两处都没有百分比',
     Boolean(view && view.phase === 'cached' && view.card === '已缓存' && view.title == null
       && !/%/.test(view.card)),
     JSON.stringify(view && { phase: view.phase, card: view.card, title: view.title }));
-  const card = mod.wpCardRender(view, itemA);
+  const card = mod.wpCardRender(view, itemCached);
   check('③ 卡片「已缓存」是**角标**（we-wp-cached），不再有进度条',
     Boolean(findByClass(card, 'we-wp-cached')) && !findByClass(card, 'we-wp-progress')
       && /已缓存/.test(textOf(card)));
-  check('③ 标题栏在 done 时返回 null（这一行不再出现进度）', mod.wpTitleRender(view, itemA) === null);
+  check('③ 标题栏在已缓存时返回 null（这一行不再出现进度）', mod.wpTitleRender(view, itemCached) === null);
+  const viewDoneOnly = mod.wpViewOf(itemA, [doneJob]);
+  check('③-d 负对照：job=done 但 `localReady=false` ⇒ **不说**已缓存（判据已收成一条）',
+    !(viewDoneOnly && viewDoneOnly.phase === 'cached' && viewDoneOnly.card === '已缓存'),
+    JSON.stringify(viewDoneOnly && { phase: viewDoneOnly.phase, card: viewDoneOnly.card }));
 }
 
 /* ══ ④ 切 A→B→A：未完成时切回仍显示**列表里的真实进度** ═════════════════════ */
@@ -214,9 +223,12 @@ if (mod) {
   offA(); offB(); r.cancel();
 
   // A 已完成时切回：无百分比、只有「已缓存」
+  // 4.25.0（P0-5）：判据是 inventory 的 `localReady`（对账后的稳态），不是 job 的 done ⇒
+  // 夹具要把"宿主对账后"的条目给出来（`itemCached` = 同一条 + localReady:true）。
+  const itemCachedA = Object.assign({}, itemA, { localReady: true });
   mod.wpPushJobs([Object.assign(runJob(ORIG, 100), { status: 'done' })], 11000);
   let back = null;
-  const offDone = mod.wpSubscribe(itemA, (v) => { back = v; });
+  const offDone = mod.wpSubscribe(itemCachedA, (v) => { back = v; });
   check('④ A 已完成时切回 ⇒ 无百分比、只有「已缓存」',
     Boolean(back && back.phase === 'cached' && back.card === '已缓存' && !/%/.test(back.card)),
     JSON.stringify(back && { phase: back.phase, card: back.card }));

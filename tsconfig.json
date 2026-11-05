@@ -14,6 +14,9 @@
 // **不含 `test/**`**：那些是判据脚本，它们大量"故意"读畸形输入、把函数体当文本抠出来，
 // 形状错配是手法而不是缺陷 —— 报出来只会训练人忽略这门检查。也**不含 `src/**`**：
 // 那些是平铺作用域的片段，单文件看必然"名字都不存在"（见 eslint.config.mjs 文件头）。
+// `scripts/e2e-wallpaper-path.mjs` 同理排除：它是发布前手动跑的端到端脚本，直接 import
+// `src/**` 的浏览器片段来复跑真实播放路径（不是构建产物），把它收进 typecheck 等于把
+// `src/**` 整族拖进来 —— 与上面「不含 src」的口径自相矛盾。
 {
   "compilerOptions": {
     "target": "ES2023",
@@ -32,5 +35,5 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": ["lib/**/*.js", "scripts/**/*.mjs", "lib/types/**/*.d.ts"],
-  "exclude": ["node_modules", "lib/client.js"]
+  "exclude": ["node_modules", "lib/client.js", "scripts/e2e-wallpaper-path.mjs"]
 }

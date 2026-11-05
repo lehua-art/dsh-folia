@@ -17,7 +17,7 @@
  *   A. `queueAheadOf()`（纯函数、假队列）：只数**同 kind + 同优先级档**，跨 kind 不串号；
  *   B. 启动 30 条 done-但缺失 ⇒ 全 `pending`、`queuedCount=0`（不 pump、不占队列位）；
  *   C. 点击某张 ⇒ `priority=high`、`queuePos=1`、`queuedAhead=0`；在播保持 high 直到 done；
- *   D. 预取最多 2 个且 low（源码 + 行为）；
+ *   D. 预取**默认 0 张**（4.24.1 起：宿主下发、上限 3）且一律 low（源码 + 行为）；
  *   E. 「前面还有 N 个」= `queuedAhead`（0 基）且与假队列顺序一致（含跨 kind）；
  *   F. 「清空未开始队列」把 queued→pending，不动 running / done / failed；
  *   G. 暂停全部：不再取任务 / 正在跑的回到 queued / 恢复后能下完；
@@ -230,26 +230,26 @@ try {
     up.close();
   }
 
-  /* ══ D. 预取张数：stream-first 2 / download-first 3，一律 low ═══════════════ */
-  console.log('\nD. 预取：stream-first 2 张 / download-first 3 张；一律 low；pending 可被重新入队');
+  /* ══ D. 预取张数：4.24.1 起**默认 0**（宿主下发，上限 3），一律 low ═════════ */
+  console.log('\nD. 预取：默认 0 张（宿主下发，上限 3）；一律 low；pending 可被重新入队');
   {
     const lf = readFileSync(join(ROOT, 'src', 'local-first.js'), 'utf8');
-    check('D1 预取张数：旧行为 2，download-first 3（两档都由 lfPrefetchCount 现算）',
-      /const LF_PREFETCH_COUNT = 2;/.test(lf)
-      && /const LF_PREFETCH_COUNT_DOWNLOAD_FIRST = 3;/.test(lf)
-      && /function lfPrefetchCount\(\)/.test(lf)
-      && /dfPolicyOf\(selection\) === "download-first"/.test(lf));
+    check('D1 预取张数：默认 0、上限 3、只认宿主下发（不再按 playbackPolicy 算 3）',
+      /const LF_PREFETCH_MAX = 3;/.test(lf)
+      && /function lfPrefetchCount\(hostValue\)/.test(lf)
+      && /!Number\.isFinite\(v\) \|\| v <= 0\) return 0;/.test(lf)
+      && /hostCount = lfPrefetchCount\(doc\.prefetchCount\);/.test(lf)
+      && /if \(hostCount <= 0\) return;/.test(lf));
     check('D2 预取入队 priority="low"（不抢点击的 high）',
-      /kind: "wallpaper", url: next\.media, priority: "low"/.test(lf)
-      && /fresh\.map\(\(c\) => \(\{ kind: "wallpaper", url: c\.media, priority: "low" \}\)\)/.test(lf));
+      /items: batch\.map\(\(c\) => \(\{ kind: "wallpaper", url: c\.media, priority: "low" \}\)\)/.test(lf));
     check('D3 pending 不算"已在队列"（否则启动后的下一张永远不会被预取）',
       /const taken = new Set\(\["queued", "running", "done"\]\);/.test(lf)
       && /taken\.has\(String\(j\.status \|\| ""\)\)/.test(lf));
-    check('D4 负对照：把 download-first 的张数写成 2（不扩大预取）会被判出来',
-      /LF_PREFETCH_COUNT_DOWNLOAD_FIRST = 3;/.test(lf)
-      && !/LF_PREFETCH_COUNT_DOWNLOAD_FIRST = 2;/.test(lf));
+    check('D4 负对照：把"按播放策略算 2/3 张"的旧常量贴回 ⇒ 必红',
+      !/LF_PREFETCH_COUNT_DOWNLOAD_FIRST = 3;/.test(lf)
+      && !/const LF_PREFETCH_COUNT = 2;/.test(lf));
     check('D5 负对照：预取 priority 改成 high 会被判出来',
-      !/kind: "wallpaper", url: next\.media, priority: "high"/.test(lf));
+      !/priority: "high"/.test(lf.slice(lf.indexOf('function lfPrefetchNext'))));
   }
 
   /* ══ E. 标题栏 N 读 queuedAhead（0 基），不是全局 queuePos ═══════════════ */

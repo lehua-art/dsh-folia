@@ -1,5 +1,62 @@
 # 变更记录（Changelog）
 
+### v4.25.0（2026-11-05，**壁纸核心 6 条行为 + 3 条质量收口**；发布到 next，latest 保持 4.23.24）
+
+> 用户口径：本版**只做 B1–B6 与 Q1–Q3**，不扩范围。判据：新增 `test/verify-wallpaper-core.mjs`
+> （64 条：B1–B6 + Q2/Q3 各配"旧实现贴回必红"的负对照，进 verify 硬档）、
+> `test/verify-dead-code.mjs`（12 条：Q1 黑名单 + 零引用普查），以及发布前手动复跑的
+> `scripts/e2e-wallpaper-path.mjs`（7 步真实操作路径，**不进门槛**）。verify 链 128 → **132 步**。
+
+**B. 行为（B1–B6）→ 位置 / 判据**
+
+| # | 行为 | 实现位置 | 判据（verify-wallpaper-core） |
+| - | ---- | -------- | ----------------------------- |
+| B1 | 不点任何壁纸 ⇒ 队列恒为 0 | 宿主 `prefetchCount()` 默认 0（`lib/routes/downloads.js`）；客户端 `lfPrefetchCount(hostValue)` 只认宿主下发（`src/local-first.js`）；`load()` 只走 `startupStatusFor`，**没有** pending→queued 批量 promote | B1/B1b–B1g（70 条 pending ⇒ queued=0；负对照：启动把 queued 放回 ⇒ 恒等式为假） |
+| B2 | 点 1 张 ⇒ 只有这 1 张在缓存 | `downloadQueue.add({priority:'high'})`（`lib/download-queue.js`）；同 URL 重复点击只提权、不建第二条 | B2/B2b–B2d（queued=1、high、queuePos=1；负对照：旧默认预取 3 ⇒ 活跃数 4） |
+| B3 | 点第 2 张 ⇒ 前一张转后台 | `dfLeaveSelection()` 只发 `priority:'low'`（`src/download-first.js`），`applySelection` 接 `POST /downloads/priority`；`setPriority()` **不改 status/received/job id** | B3/B3b–B3f（low、未取消、received 400 与 .part 400 B 不归零、active=2；负对照：旧"切走即 cancel + 归零"） |
+| B4 | 切走再切回 ⇒ 进度从队列读 | `wpSubscribe` 立刻回 `wpSnapshotOf(item)`（读 `WP_STORE.jobs`，即 `/downloads/list` 快照）；`wpUnsubscribe` **不清快照**（`src/wallpaper-progress.js`） | B4/B4b–B4d（67% → 切走 → 82% 切回仍是 82%，与 snapshot 逐字一致；负对照：旧"切回 0% + 清快照"） |
+| B5 | 下完 ⇒ 角标数 == localReady 数 | `wpCachedOf(item)` = `item.localReady === true`，放在 `wpStateOf` 最前；done 不再是第二份判据；`wpRequestInventoryRefresh()` 在 done 后按 jobId 只拉新一次 | B5/B5b–B5g（角标 2 == localReady 2；done+false 不画；自动拉新一次；负对照：按 job=done 数 ⇒ 4 ≠ 2） |
+| B6 | 4K@60 ⇒ 4k30；超分辨率 ⇒ 1080p；HEVC ⇒ 1080p | `lib/variant-pick.js`：`decodeLimitHit()` 硬上限 ∪ 新增 `SPEC_MAX_*` 超分辨率闸（>3840 宽 / >2160 高 / >830 万像素）；codec 走 `codecSupported`（h264 之外）；fps 缺失才 `width-fallback` | B6/B6b–B6i（4k30、四种超分辨率、HEVC 两档、fps 兜底；负对照：旧 width>4096 漏 3841 / 旧实现不看 codec） |
+
+**Q1 死代码清理（纯删除；位置见括号）**
+
+- 已删零引用导出/声明：`localMediaJobId`（`lib/media-state.js`）、`isMp4Name`（`lib/media-verify.js`）、
+  `mediaStateSummary`（`lib/routes/downloads.js`）、`siteApiVersionOf`（`lib/site-list.js`）、
+  `SITE_OWNERS`（`lib/features.js`）、`foliaTypeOf`（`lib/routes/inventory.js`）、
+  `schemaView`（`lib/subpackage-boot.js`）、`assertPrebuiltBundle`（`scripts/build-client.mjs`，58 行，
+  连同失去引用的 `createHash` import）。
+- 重复实现收敛：`user-agent` 三处字面量 ⇒ 唯一常量 `UA`；stat/readdir 两处 ⇒ `bytesOf` / `dirEntries`
+  （`lib/download-queue.js`）；预取按 playbackPolicy 自算 2/3 的两个常量已删（`src/local-first.js`）。
+- 旧 `migrate()` / `migrationStats`：代码早已删除，本版把残留散文对齐现状；`expectSha` 只保留
+  "最近一次实际用了什么"的**排障字段**，job 上不再有可复用的期望值（不再被读回校验）。
+- 居中浮层残留：`src/video-switch.js` 的 `.we-switch-hint` 只存在于注释里，源码/DOM 都不再创建。
+- 判据：`test/verify-dead-code.mjs` 的 A1 黑名单、B 组替代实现、C1 零引用普查（0 orphan）、
+  D 组负对照；另由 `verify-wallpaper-core` Q3d 对**剥注释后的全部 src 源码**断言无 `.we-switch-hint`。
+
+**Q2 错误文案（位置 / 判据）**
+
+- 进入 playing 清空：`syncVideoState()`（`src/client.js`）在"从未播放 → 播放中"这一跳清
+  `videoError` / `mediaNote` / `dataset.wePlayRefused` / `wePlayAbortRetried`。
+- 切条目不继承：`applySelection()` 的 `if (idChanged)` 清 `videoError` / `mediaNote`（`src/media-prep.js`）。
+- 分流：`playRefusalMessage()`（AbortError ⇒ 不显示；NotAllowedError ⇒ 已静音请点播放；
+  NotSupportedError ⇒ 解码文案；其它 ⇒ 带 name）；`videoPlaybackError()`（本地地址不抢答"无法解码"，
+  损坏 code=3 / 缺失 code=2 / 解码 code=4 各有词）；`dlHealNote()`（损坏 / 换 1080p / 转码 /
+  编码不支持各一句）；`dlFailReason('local-part-invalid')` = 「本地残留文件异常…从 0 重新下载」。
+- 判据：`verify-wallpaper-core` Q2a–Q2t，含"旧实现不清 mediaNote / 不按 idChanged / 一律说'无法解码'"
+  三条负对照。
+
+**Q3 进度位置（位置 / 判据）**
+
+- 进度只进**标题栏元信息区**：`quick-panel.js` 的 `QpCacheHint` 在 `.we-qp__meta` 之后渲染，
+  文案由 `wpTitleRender()` 产出（`we-picker__hint we-wp-title` 行内节点）。
+- `video-switch.js` 回到**纯状态机**：零 DOM、无居中胶囊；进度文案仍写进 `selection.mediaNote` 与
+  标题栏（两处都是行内布局）。
+- 判据：`verify-wallpaper-core` Q3/Q3b–Q3g（源码顺序 + 标题栏节点 + 真跑 buffering 后 DOM 里
+  不存在 `.we-switch-hint`；负对照：把旧浮层塞回 DOM ⇒ 探测器必命中）；`verify-first-frame` C7 同口径。
+
+> 随版说明：工作树里 4.24.1 起已完成的本地残留恢复（416 / 启动 sweep）与皮肤缓存 zip 校验
+> 随本版一并发布，判据在 `test/verify-download-recovery.mjs`；本版没有新增或修改这部分行为。
+
 ### v4.24.0（2026-11-05，**壁纸链路稳定性**；发布到 next，latest 保持 4.23.24）
 
 > 用户口径：**这次把壁纸链路彻底修好，不再反复**。本版以「十条不变量」收敛范围，站点 v1
@@ -99,6 +156,8 @@ README/交付报告）；`verify-static` 不超基线；`build-client` 0。
   `POST /folia/downloads/priority` + 队列 `setPriority()`），**不暂停、不取消**，job id 与已下
   字节不变；再点回 ⇒ `/downloads/add` high 立刻升回队首；已完成 ⇒ 直接播本地。
 - **预取**：download-first 下 hover/下一张预取 **3** 张（stream-first 仍 2 张），一律 `priority:"low"`。
+  ⚠️ **已被 v4.25.0 取代**：预取**默认 0 张**（宿主 `DSH_FOLIA_PREFETCH`，上限 3），未点击不再
+  自动入队 —— 见 v4.25.0 的 B1。
 
 **B. 原 4.23.22 同版修复（结构化，不是补丁）**
 - **期望值不再持久化**：`lib/download-queue.js` 的 job 不再收/存 `sha256/expectSha/expectBytes/hashSource`；

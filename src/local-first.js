@@ -248,41 +248,48 @@ async function lfUseOriginal(item, on) {
   return true;
 }
 
-/* ── 预取（hover 300ms 预下"下一张"）───────────────────────────────────────── */
-/**
- * 为什么预取**必须是最低优先级 + 限量**：它是"替用户提前赌一张"的投机行为。
- * 一旦它抢到用户真正需要的那条下载（安装皮肤 / 桌宠）的带宽，就会重现
- * 「看壁纸时点安装，卡片一直「安装中…」」这类故障。所以：
- *   · kind = wallpaper（自己那 2 个并发槽，见 lib/download-queue.js 的 KIND_LIMITS）
- *   · priority = low（同 kind 内排在用户点击后面）
- *   · 同一时刻**最多 1 个**预取在飞；已经入队/已落地的不重复发。
+/* ── 预取（hover 300ms 预下"下一张"）—— 4.24.1（P0-3）：**默认关闭** ───────────
+ *
+ * 真实故障（用户实测，4.24.0）：清空媒体后 `pending`=70，用户**一张都没点**，界面上却出现
+ * 20+ 张「排队中」。根因不是某一条 bug，而是"替用户提前下"这条策略**默认开着**：
+ * 旧 `lfPrefetchCount()` 在 download-first 下返回 **3**，而 hover 一张卡就发一次
+ * `/downloads/add`（一批最多 3 条）⇒ 用户只是把鼠标划过列表，队列里就长出一串 low 任务，
+ * 它们全都显示「排队中：前面还有 N 个」。
+ *
+ * 现在的口径（用户要求"未点击就不许自己下"）：
+ *   · **默认 0** ⇒ 预取整条路径关闭（hover 不发任何 `/downloads/add`）；
+ *   · 用户显式开（宿主 `DSH_FOLIA_PREFETCH=1..3`，随 `/downloads/list` 下发）⇒ 只允许
+ *     "下一张"（最多 N 张），且一律 **low**（永远不抢用户点击的 high）；
+ *   · 真正无条件入队的只有两条：**用户点的那张**（high）与**当前在播那张**（high）。
+ *
+ * 为什么张数由宿主下发而不是客户端自己算：唯一真源在 `lib/routes/downloads.js` 的
+ * `prefetchCount()`（默认 0、上限 3、读 `DSH_FOLIA_PREFETCH`）。浏览器里没有 `process.env`，
+ * "宿主解析、随列表下发数字"是本仓既有口径（同 `installStallMs`），不另造第二套判据。
  */
+const LF_PREFETCH_MAX = 3;
+
+/**
+ * 预取张数（**纯函数**）：宿主下发的数字 ⇒ 夹到 `0..LF_PREFETCH_MAX`。
+ *
+ * 为什么必须无状态、且只认入参：旧实现按 `playbackPolicy` **自己算** 2/3 并且默认开 ——
+ * 那正是 P0-3 的根因（客户端替用户决定"要提前下几张"）。现在 0 是唯一默认值，
+ * 非数字 / 负数 / 缺省一律 0（**不是** 3）；超上限夹到 3（不报错）。
+ *
+ * @param {unknown} hostValue 宿主 `/downloads/list` 的 `prefetchCount`
+ * @returns {number} 0..3 的整数
+ */
+function lfPrefetchCount(hostValue) {
+  const v = Math.round(Number(hostValue));
+  if (!Number.isFinite(v) || v <= 0) return 0;
+  return Math.min(LF_PREFETCH_MAX, v);
+}
+
 const LF_PREFETCH = {
   timer: null,      // hover 计时器（300ms）
   sig: "",          // 当前悬停的卡片 id（同一张重复触发不叠计时器）
   busy: false,      // 是否有预取请求在飞
   seen: new Set(),  // 已预取过的 id（避免来回 hover 反复打宿主的 downloads/add）
 };
-/**
- * 每次预取的张数（4.23.8 / 需求 C8）。**2** 而不是 1：
- * 之前只预取 1 张，于是"下一张 → 再点一下下一张"的第二下必然落在冷源上；
- * 取 2 张把这条链也盖住，代价只是多一个 low 优先级任务（不抢用户点击的槽）。
- * 顺序即优先级：第 1 张是**紧邻的下一张**，第 2 张才是再下一张。
- *
- * 4.23.23：download-first 下"下一张"的价值更高（点击后要等整份下载才播）⇒ 取 **3** 张；
- * stream-first 保持 2（旧行为逐字回滚）。两者都仍是 **low**（预取永远不抢用户点击的 high）。
- */
-const LF_PREFETCH_COUNT = 2;
-const LF_PREFETCH_COUNT_DOWNLOAD_FIRST = 3;
-/** 预取张数：策略只有一处判定（`dfPolicyOf` 与设置键 playbackPolicy 同源）。 */
-function lfPrefetchCount() {
-  try {
-    if (typeof dfPolicyOf === "function" && dfPolicyOf(selection) === "download-first") {
-      return LF_PREFETCH_COUNT_DOWNLOAD_FIRST;
-    }
-  } catch { /* 状态机不可用 ⇒ 按旧口径 */ }
-  return LF_PREFETCH_COUNT;
-}
 
 function lfCancelPrefetch() {
   if (LF_PREFETCH.timer) { try { clearTimeout(LF_PREFETCH.timer); } catch { /* ignore */ } }
@@ -316,13 +323,10 @@ async function lfPrefetchNext(afterId, playingId) {
       if (i >= 0) { pool = p; at = i; break; }
     }
     if (!pool) return;
-    // **按列表顺序取前 N 张**（4.23.8 / 需求 C8；N 由 lfPrefetchCount() 现算）：
-    // 顺序即优先级 —— 第 1 张就是"下一张"。
     // 跳过：非站点条目 / 族级已落地（`localReady`，已缓存的不必预取）/ 正在播的那张 /
     // 本次会话已经预取过的。
     const picks = [];
-    const prefetchCount = lfPrefetchCount();
-    for (let k = at + 1; k < pool.length && k <= at + 8 && picks.length < prefetchCount; k += 1) {
+    for (let k = at + 1; k < pool.length && k <= at + 8 && picks.length < LF_PREFETCH_MAX; k += 1) {
       const cand = pool[k];
       if (!cand || !cand.mediaProxy) continue;
       if (cand.localReady === true || cand.local === true) continue;
@@ -334,28 +338,27 @@ async function lfPrefetchNext(afterId, playingId) {
     // 已有 job（排队/在跑/已完成）⇒ 宿主侧本来就会去重，这里先问一次列表是为了
     // **不白占预取名额**，也让 `seen` 只在真的发出去时才记账。
     let jobs = [];
+    let hostCount = 0;
     try {
       const resp = await apiJson("/downloads/list");
       const doc = (resp && resp.data) || resp || {};
       jobs = Array.isArray(doc.jobs) ? doc.jobs : [];
+      // 4.24.1（P0-3）：张数**只认宿主**（默认 0 = 预取关闭）。
+      hostCount = lfPrefetchCount(doc.prefetchCount);
     } catch { return; }
+    if (hostCount <= 0) return;                   // 默认路径：什么都不发（未点击就不许自己下）
     // 4.23.18：`pending`（启动时未缓存、没自动入队）**不算已在队列**——预取正是允许把
     // 它变回 low 的三条路径之一。queued / running / done 才算"已经有了"，不白占预取名额。
     const taken = new Set(["queued", "running", "done"]);
     const fresh = picks.filter((c) => !jobs.some((j) => j
       && j.url === c.media && taken.has(String(j.status || ""))));
     if (!fresh.length) return;
-    for (const c of fresh) LF_PREFETCH.seen.add(String(c.id));
-    // 第 1 张就是"**下一张**"（顺序即优先级）。单张走既有那条口径（priority=low，
-    // 不抢用户点击的 high）；多张时批量发一次 —— 宿主 `/downloads/add` 本来就收数组，
-    // 每条都是 low，不会变成 high。
-    const next = fresh[0];
-    if (fresh.length === 1) {
-      await apiPostJson("/downloads/add", { items: [{ kind: "wallpaper", url: next.media, priority: "low" }] }, { parse: "always" });
-      return;
-    }
+    // ⚠️ 上限**是宿主的数**（`hostCount`），不是 picks 的长度：`picks` 按
+    // `LF_PREFETCH_MAX` 截断只是为了少扫几条，真正的"最多几张"由这里定。
+    const batch = fresh.slice(0, hostCount);
+    for (const c of batch) LF_PREFETCH.seen.add(String(c.id));
     await apiPostJson("/downloads/add", {
-      items: fresh.map((c) => ({ kind: "wallpaper", url: c.media, priority: "low" })),
+      items: batch.map((c) => ({ kind: "wallpaper", url: c.media, priority: "low" })),
     }, { parse: "always" });
   } finally {
     LF_PREFETCH.busy = false;
@@ -698,6 +701,9 @@ function dlFailReason(code) {
     // 4.23.17（P0-6）：期望值与 URL 不自洽（变体 URL 却拿了原画哈希）。这是**我们自己的**
     // 哈希来源错配，不是"传输传坏了"——必须与 hash-mismatch 分开说，否则排障方向就是错的。
     'hash-source-mismatch': weT("下载地址与校验哈希不是同一个文件（原画/变体的哈希搞混了），点「重试」会按正确的那一档重新下载"),
+    // 4.25.0（Q2）：http-416 自愈一轮后仍失败 —— 这不是网络坏了，是盘上残留不可信。
+    // 文案必须点名"本地残留"并说清重试会从 0 重下，否则用户会去查站点/链路（排障方向反了）。
+    'local-part-invalid': weT("本地残留文件异常（已自动清掉并重下一次仍失败），点「重试」会从 0 重新下载"),
     'http-404': weT("站点上没有这个文件（404，可能正在补传/已被删除）"),
     'http-403': weT("站点拒绝访问这个文件（403，权限或签名问题）"),
     'http-500': weT("站点服务器错误（HTTP 500），不是本地问题，请稍后重试"),

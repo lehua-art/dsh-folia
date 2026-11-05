@@ -375,9 +375,11 @@ console.log('\nF. playbackPolicy 设置项 + 面板控件 + 预取 3 + 结构接
     && /dfPolicyLabel\(policy\)/.test(effects)
     && /下载完再播（省流量）/.test(read('src/download-first.js'))
     && /边下边播（秒开）/.test(read('src/download-first.js')));
-  check('F5 预取：download-first 3 张 / stream-first 2 张，且一律 low',
-    /LF_PREFETCH_COUNT_DOWNLOAD_FIRST = 3;/.test(lf)
-    && /lfPrefetchCount\(\)/.test(lf)
+  check('F5 预取（4.24.1 起）：默认 0 张、只认宿主下发、上限 3，且一律 low',
+    /const LF_PREFETCH_MAX = 3;/.test(lf)
+    && /function lfPrefetchCount\(hostValue\)/.test(lf)
+    && /hostCount = lfPrefetchCount\(doc\.prefetchCount\);/.test(lf)
+    && /if \(hostCount <= 0\) return;/.test(lf)
     && /priority: "low"/.test(lf));
   check('F6 src/download-first.js 已登记进 INLINE_MODULES',
     build.includes("file: 'src/download-first.js'"));

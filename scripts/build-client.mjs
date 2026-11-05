@@ -31,7 +31,6 @@
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Script } from 'node:vm';
@@ -784,63 +783,6 @@ console.error(`built ${MAIN_OUT.target} (${Buffer.byteLength(mergedText)} bytes;
   + `1 file / ${1 + SUB_OUTS.length} module registrations)`);
 for (const out of SUB_OUTS) {
   console.error(`  registered ${out.name} (${out.inlined.map((m) => m.file).join(' + ')})`);
-}
-
-/**
- * 预构建 bundle 的对账（upstream-fork 形态专用）：配方登记的字节必须真的在盘上。
- *
- * 判据四条，缺一条就红：
- *   ① 产物与宿主半边都在盘（fork 的两半同批派生，缺一半就是半个包）；
- *   ② 两半的 sha256 逐字等于登记值（**这是"受控派生"的唯一机器证据**：任何手改/重编都会红）；
- *   ③ 产物里 `__ModuleLoader__` 的注册 id 等于登记值（防止拿错世代的文件冒充）；
- *   ④ 产物可被解析（与编译路径同一条语法底线）。
- * ⚠️ 本函数**不改盘**：登记值不是"构建输出"，而是"输入必须长这样"。要让这条通过，只能改来源或改登记。
- */
-function assertPrebuiltBundle(out) {
-  const pre = out.prebuilt;
-  const want = String(pre.sha256 || '').toLowerCase();
-  if (!/^[0-9a-f]{64}$/.test(want)) {
-    console.error(`[build-client] ${out.label}：prebuilt.sha256 不是 64 位十六进制（${JSON.stringify(pre.sha256)}）`);
-    process.exit(1);
-  }
-  const pairs = [
-    { rel: pre.entry, hash: want, what: '浏览器半边' },
-    { rel: pre.hostEntry, hash: String(pre.hostSha256 || '').toLowerCase(), what: '宿主半边' },
-  ];
-  for (const pair of pairs) {
-    if (typeof pair.rel !== 'string' || !pair.rel) {
-      console.error(`[build-client] ${out.label}：prebuilt.${pair.what} 的落点没登记`);
-      process.exit(1);
-    }
-    const abs = resolve(out.dirAbs, pair.rel);
-    if (!existsSync(abs)) {
-      console.error(`[build-client] ${out.label}：登记的${pair.what} ${pair.rel} 不在盘上`);
-      process.exit(1);
-    }
-    const got = createHash('sha256').update(readFileSync(abs)).digest('hex');
-    if (got !== pair.hash) {
-      console.error(`[build-client] ${out.label}：${pair.rel} 字节与登记值不符（受控派生被改动过）——\n`
-        + `  登记 ${pair.hash}\n  实际 ${got}\n`
-        + '  要么恢复上游派生产物，要么连同来源登记一起改（不许只改一边）。');
-      process.exit(1);
-    }
-  }
-  const artAbs = resolve(out.dirAbs, pre.entry);
-  const artText = readFileSync(artAbs, 'utf8');
-  const marker = `id: ${JSON.stringify(pre.moduleId)}`;
-  const at = artText.indexOf('__ModuleLoader__');
-  if (at < 0 || artText.slice(at, at + 400).indexOf(marker) < 0) {
-    console.error(`[build-client] ${out.label}：产物里没有 __ModuleLoader__.load({ ${marker} … }) 注册`
-      + `（登记的 moduleId 与实际注册 id 不一致 ⇒ 宿主加载的是别的东西）`);
-    process.exit(1);
-  }
-  try {
-    new Script(artText, { filename: out.label });
-  } catch (err) {
-    console.error(`[build-client] 预构建产物语法错误（${out.label}）：${err && err.message}`);
-    process.exit(1);
-  }
-  console.error(`verified ${artAbs} (prebuilt; sha256 ${want.slice(0, 12)}…; 宿主半边同批登记)`);
 }
 
 function indent(text) {

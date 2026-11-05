@@ -104,29 +104,54 @@ function wpPercentOf(job) {
 }
 
 /**
+ * **「已缓存」角标的唯一判据**（4.24.1，P0-5）：就看 inventory 条目的 `localReady`。
+ *
+ * ## 为什么必须收成一条
+ *
+ * 真实故障（用户实测 + 截图）：`/folia/inventory` 说 46 条里 **45 条 `localReady:true`**、
+ * `library` 里 47 个文件、`jobs` 里 done=61 且 dest 全在（missing=0）—— 数据层完全一致，
+ * 可卡片上「天空之城」「原神 绫华」**没有**「已缓存」角标。
+ *
+ * 根因是判据有**两份**：角标先读 `localReady`，但同一函数后面还在看"这条 URL 有没有 job"。
+ * 于是"族里另一档刚下完、原画那条 job 还挂着 queued/running"时，卡片显示的是「缓存中 x%」
+ * 而不是「已缓存」；job 一旦从列表里消失（宿主重启 / 队列被清），又退回到"没有 job ⇒ 不画"。
+ *
+ * 现在只有一条：**inventory 的 `localReady`（族级，宿主 `lib/switch-cache-family.js` 的族键算出）**。
+ * 不看 job 状态、不看 URL 精确匹配、不看本地快照的其它字段 —— 那些都是"另一份会漂的判据"。
+ * `local`（精确命中）也不再用：族级 `localReady` 已经覆盖它，两个都读就又是一份二义性。
+ *
+ * @param {any} item inventory 条目
+ * @returns {boolean}
+ */
+function wpCachedOf(item) {
+  return Boolean(item) && typeof item === "object" && item.localReady === true;
+}
+
+/**
  * 卡片状态机（纯函数）：
+ *   cached（`localReady` 族命中） ⇒ 「已缓存」——**最高优先级**，压过任何 job 状态
  *   running / queued（队列里还有活） ⇒ 进度
- *   cached（`localReady` 族命中，或这条 job 已经 done） ⇒ 「已缓存」
  *   failed（job 明确失败且这张卡还没缓存） ⇒ 原因 +「重试」
  *   none（没有 job 且没缓存） ⇒ 什么都不画（避免噪音）
  */
 function wpStateOf(item, jobs) {
   const w = item || {};
-  // `localReady` = 族级已缓存（宿主 familyKeyOf：原画 / 1080p 任一下好）。
-  const cached = w.localReady === true || w.local === true;
+  // ⚠️ 4.24.1（P0-5）：**先判缓存，再判 job**。旧顺序把 running/queued 放在前面 ⇒
+  // "已经缓存了却显示缓存中/排队中"（用户截图里那两张卡就是这个形态）。
+  if (wpCachedOf(w)) return { phase: "cached", job: null, percent: 100, cached: true };
   const job = wpJobForItem(jobs, w);
   const status = String((job && job.status) || "");
-  if (status === "running") return { phase: "running", job, percent: wpPercentOf(job), cached };
-  if (status === "queued") return { phase: "queued", job, percent: 0, cached };
+  if (status === "running") return { phase: "running", job, percent: wpPercentOf(job), cached: false };
+  if (status === "queued") return { phase: "queued", job, percent: 0, cached: false };
   // 4.23.18：`pending` = 记录在、成品不在、**没有排队**（启动时不再批量入队）。
   // UI 只说「未缓存」，没有进度条；点它 / 预取 / 当前在播才会重新入队。
-  if (status === "pending") {
-    return cached ? { phase: "cached", job: null, percent: 100 } : { phase: "pending", job, percent: 0, cached };
-  }
-  // 已缓存优先于 done/failed：族里另一档已经落地 ⇒ 不再报"这条失败"的噪音。
-  if (cached) return { phase: "cached", job: null, percent: 100 };
-  if (status === "done") return { phase: "cached", job, percent: 100 };
+  if (status === "pending") return { phase: "pending", job, percent: 0, cached: false };
   if (status === "failed") return { phase: "failed", job, percent: 0, code: String(job.error || "failed") };
+  // ⚠️ `done` **不**等于已缓存（4.24.1 的判据收紧）：`done` 是"字节下完了"，`localReady` 是
+  // "对账后确认可播"。两者在稳态下同时为真，但把 `done` 当成已缓存就又造了第二份判据 ——
+  // 用户实测里正是这种"另一份判据"让角标与 localReady 分叉。
+  // 这一格（done 但清单还没说 cached）只等 `wpRequestInventoryRefresh()` 把清单拉新；
+  // 期间**不画角标**，也不谎称已缓存。
   return { phase: "none", job: null, percent: 0 };
 }
 
@@ -209,6 +234,63 @@ function wpSigOf(view) {
 }
 
 /**
+ * 已经为哪条 job 请求过"清单拉新"（每个 job 一次，避免在 1.5s 轮询里反复打 `/inventory`）。
+ * 超过上限就整表清掉：这张表只是"别重复问"，丢一次最多多重问一次，不会出错。
+ */
+const WP_INV_ASKED = new Set();
+const WP_INV_ASKED_MAX = 256;
+
+/**
+ * **下载完成后把角标拉新**（4.24.1，P0-5 第二条：不依赖用户手动刷新）。
+ *
+ * 角标读的是 inventory 的 `localReady`，而 inventory 带 30s 级别的清单缓存 —— 一条 job 刚
+ * `done` 时，手上那份快照可能还是 `localReady:false`。不主动拉新的话，用户要等"下一次点开库 /
+ * 换页签"才看得到角标（用户实测就是"已经缓存了但不显示"）。
+ *
+ * 口径：
+ *   · 只在"有 job 变成 done、且它对应的卡片还说未缓存"时拉**一次**（按 jobId 记账，不重复问）；
+ *   · 走 `loadInventory`（同一个入口，不另造清单请求）；拿不到（老宿主 / 测试作用域）就静默跳过；
+ *   · 失败**不影响**已显示的角标 —— 下一拍轮询 / 用户操作仍会重试。
+ *
+ * @param {any[]} jobs `/downloads/list` 的 jobs
+ * @returns {boolean} 是否真的请求了一次刷新
+ */
+function wpRequestInventoryRefresh(jobs) {
+  const list = Array.isArray(jobs) ? jobs : [];
+  let want = false;
+  for (const j of list) {
+    if (!j || j.status !== "done" || !j.id) continue;
+    const id = String(j.id);
+    if (WP_INV_ASKED.has(id)) continue;
+    const u = String(j.url == null ? "" : j.url).trim();
+    let seenCard = false;
+    let needs = false;
+    for (const rec of WP_STORE.subs.values()) {
+      if (!u || !wpItemUrls(rec.item)[u]) continue;
+      seenCard = true;
+      if (!wpCachedOf(rec.item)) needs = true;
+    }
+    WP_INV_ASKED.add(id);
+    // 只记卡没显示缓存的那些；已经显示缓存的（或没有卡订阅它）记下来不再问。
+    if (seenCard && needs) want = true;
+  }
+  if (WP_INV_ASKED.size > WP_INV_ASKED_MAX) WP_INV_ASKED.clear();
+  if (!want) return false;
+  try {
+    if (typeof WP_STORE.refreshInventory === "function") { WP_STORE.refreshInventory(); return true; }
+    // 内联后同一个工厂作用域里就有 `loadInventory`（与 `weT` / `dlJobActive` 同一条"按名调用"口径）。
+    // 用 typeof 守卫：本文件也被 `test/verify-wallpaper-progress.mjs` 在裸 Function 里真跑。
+    if (typeof loadInventory === "function") { loadInventory(); return true; }
+  } catch { /* 刷新失败不影响已显示的角标 */ }
+  return false;
+}
+
+/** 注入清单刷新入口（测试/宿主可覆盖；缺省按名调 `loadInventory`）。 */
+function setWpInventoryRefresher(fn) {
+  WP_STORE.refreshInventory = typeof fn === "function" ? fn : null;
+}
+
+/**
  * 队列快照变了（`WpJobsBridge` 每次轮询后调）⇒ 只通知**显示内容真的变了**的卡。
  * `nowMs` 可注入（测试用固定时钟；生产调用不传 = Date.now()）。
  */
@@ -216,6 +298,8 @@ function wpPushJobs(jobs, nowMs) {
   const list = Array.isArray(jobs) ? jobs : [];
   WP_STORE.jobs = list;
   wpSampleEta(list, Number(nowMs) || Date.now());
+  // 4.24.1（P0-5）：先把"清单可能过期"这件事处理掉，再按最新快照推视图。
+  wpRequestInventoryRefresh(list);
   for (const rec of [...WP_STORE.subs.values()]) {
     const view = wpViewOf(rec.item, list, wpEtaOfItem(rec.item, list));
     const sig = wpSigOf(view);
@@ -388,10 +472,13 @@ export {
   wpItemUrls,
   wpJobForItem,
   wpPercentOf,
+  wpCachedOf,
   wpStateOf,
   wpViewOf,
   wpSnapshotOf,
   wpPushJobs,
+  wpRequestInventoryRefresh,
+  setWpInventoryRefresher,
   wpSubscribe,
   wpUnsubscribe,
   wpCardRender,

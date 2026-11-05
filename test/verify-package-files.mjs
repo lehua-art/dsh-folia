@@ -403,10 +403,10 @@ async function main() {
     // （`test/verify-media-state.mjs` / `test/verify-media-chaos.mjs`）。
     // 4.23.21 抬到 **125/138**：门禁不许被退役项短路（`test/verify-gate-no-shortcircuit.mjs`）。
     // 4.23.23 抬到 **126/139**：download-first 播放策略（`test/verify-download-first.mjs`）。
-    // 4.24.0 抬到 **128/141**：站点 v1 新字段消费（`test/verify-site-v1-sync.mjs`）
-    // + 壁纸链路端到端稳定性（`test/verify-wallpaper-chain.mjs`）。
+    // 4.25.0 抬到 **132/145**：核心 6 条行为 + 3 条质量判据（`test/verify-wallpaper-core.mjs`）
+    // + 残留恢复 / 未点击不自下 / 死代码黑名单三条专项守卫。
     //（按本文件既有纪律：地板 = 实测步数，抬本身即证据；下面的负对照保证"删一步即红"）。
-    const CHAIN_FLOOR = { verify: 128, docs: 6, smoke: 6, all: 141 };
+    const CHAIN_FLOOR = { verify: 132, docs: 6, smoke: 6, all: 145 };
     /** 地板表与 GROUPS 的对齐体检：键名必须与**组名**逐一对齐（纯函数 ⇒ 负对照可直接喂）。 */
     const floorGaps = (groups, floors) => groups.map(([, g]) => g).filter((g) => !Number.isInteger(floors[g]));
     const problems = floorGaps(GROUPS, CHAIN_FLOOR).map((g) => '地板表缺组 ' + g
