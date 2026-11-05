@@ -564,6 +564,48 @@ function applySelection(id, opts) {
    */
   const dfGate = (typeof dfShouldCache === "function" && !(opts && opts.fromDownloadFirst))
     ? dfShouldCache(w, selection, opts) : false;
+  /**
+   * 4.25.1：**启动遇到「上次点击未完成」的 pending + high ⇒ 不自动下载**。
+   *
+   * 用户实测 4.25.0：队列里有 11 条 pending/high 的壁纸 job（上次点击后重启，load() 按 B1
+   * 把它们折成 pending）。旧流程在启动恢复 / revalidate 时又走 download-first 自动入队，
+   * 界面先显示「缓存中」；但那些 job 的 URL（变体）与当前条目的 URL 对不上，于是永远没有
+   * 百分比。现在这类记录只在**用户再次点击**时提权/复用，非点击路径只显示「未缓存（点击继续）」。
+   */
+  const pendingHold = dfGate
+    && typeof dfShouldHoldAutoStart === "function"
+    && dfShouldHoldAutoStart(w, opts);
+  if (pendingHold) {
+    // 层里只放静态封面（绝不建 `<video>`、绝不发 `/downloads/add`）。
+    selection.url = w.posterUrl || w.preview || "";
+    selection.playSrc = "pending-click";
+    selection.playMode = "poster";
+    selection.originUrl = w.media || null;
+    selection.type = w.type;
+    selection.mediaExt = w.mediaExt || null;
+    selection.posterUrl = w.posterUrl || null;
+    selection.previewUrl = w.posterUrl || w.preview || null;
+    selection.blockedNote = "";
+    selection.playbackState = "pending";
+    selection.cacheState = "pending";
+    selection.cachePercent = 0;
+    selection.cacheCanStream = false;
+    selection.cacheFailReason = "";
+    selection.mediaNote = weT("未缓存（点击继续）");
+    selection.videoError = "";
+    selection.transcodeState = "idle";
+    selection.mediaInfo = null;
+    selection.sceneVideo = null;
+    selection.sceneLiveSrc = null;
+    selection.webLiveSrc = null;
+    selection.sceneFrameUrl = null;
+    selection.sceneAudioUrl = null;
+    selection.sceneHasAudio = false;
+    syncRotationTimer();
+    emit();
+    try { weSwitchSettleAs("poster"); } catch { /* 度量是增强 */ }
+    return;
+  }
   if (dfGate) {
     const dfSnap = dfBegin(w);
     // 层里放什么由纯函数决定：caching / failed ⇒ `{ mode:"poster", src:<海报> }`。
@@ -602,7 +644,7 @@ function applySelection(id, opts) {
     // 海报层已经上屏 = 这次点击"有反应"了；状态机收口（pressed 复位）。
     try { weSwitchSettleAs("poster"); } catch { /* 度量是增强 */ }
     if (typeof startDownloadFirst === "function") {
-      try { startDownloadFirst(w); } catch { /* 失败由状态机给出原因 */ }
+      try { startDownloadFirst(w, { clicked: Boolean(opts && opts.fromManual) }); } catch { /* 失败由状态机给出原因 */ }
     }
     return;
   }

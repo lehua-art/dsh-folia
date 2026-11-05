@@ -550,6 +550,7 @@
           current
             ? qpTypeLabel(current, sel)
               + (sel.playbackState === "caching" ? weT(" · 缓存中")
+                : sel.playbackState === "pending" ? weT(" · 未缓存（点击继续）")
                 : sel.playbackState === "streaming" ? weT(" · 边下边播")
                 : weT(playbackLive ? " · 播放中" : " · 已暂停"))
               // 4.23.4：这条走的是 1080p 变体（宿主按速度/体积/设置选的）⇒ 明确标出来。

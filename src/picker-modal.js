@@ -251,7 +251,7 @@
                   "aria-label": weT("恢复并应用 {name}", { name: w.title }),
                   // 4.23.14：与正常卡片同一套同步按下反馈（恢复=应用，也是"点了要有变化"的入口）。
                   onPointerDown: (ev) => pickerPressFeedback(ev && ev.currentTarget),
-                  onClick: (ev) => { pickerPressFeedback(ev && ev.currentTarget); applySelection(w.id); },
+                  onClick: (ev) => { pickerPressFeedback(ev && ev.currentTarget); applySelection(w.id, { fromManual: true }); },
                   // 键盘可达性：正常列表卡片一直有 Enter/Space 处理，
                   // 已隐藏卡片漏了 —— 补上（共享 cardKeyDown）。
                   onKeyDown: cardKeyDown,

@@ -29,6 +29,7 @@
                 ? weT("{type}{status}", {
                     type: { video: weT("视频壁纸"), web: weT("网页壁纸"), image: weT("图片壁纸"), scene: weT(isLiveScene ? "场景壁纸（实时渲染）" : "场景壁纸（静态帧）") }[current.type] || weT("壁纸"),
                     status: cacheState === "caching" ? weT(" · 缓存中")
+                      : cacheState === "pending" ? weT(" · 未缓存（点击继续）")
                       : cacheState === "streaming" ? weT(" · 边下边播")
                       : weT(playbackLive ? " · 播放中" : " · 已暂停"),
                   })

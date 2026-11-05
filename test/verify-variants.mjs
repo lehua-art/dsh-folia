@@ -252,7 +252,21 @@ function check(name, cond, detail) { results.push({ name, ok: Boolean(cond), det
     check('② 入队的是**变体**地址（不是原画）',
       Boolean(slowItem && String(slowItem.url).includes('a-1080.mp4')), slowItem && slowItem.url);
 
+    const readList = () => new Promise((resolveCall) => {
+      const resObj = {
+        statusCode: 0, headers: {},
+        setHeader() { /* ignore */ },
+        end(s) { resolveCall({ status: this.statusCode, json: (() => { try { return JSON.parse(s); } catch { return null; } })() }); },
+      };
+      find('/folia/downloads/list').handler({ method: 'GET', url: '/folia/downloads/list', headers: {}, on() { return this; } }, resObj);
+    });
+    const firstList = await readList();
+    const firstJobs = (firstList.json && firstList.json.jobs) || [];
+    check('② 那条 1080p 的 job 在 list 里也是 1080p（不是只有 add 的响应里对）',
+      firstJobs.some((j) => j.chosenVariant === '1080p' && String(j.url).includes('a-1080.mp4')));
+
     // (b) 同一张再以 quality=original 入队 ⇒ 换回原画（「用原画」走的就是这条）
+    // 4.25.1：原画/变体是**同一条目** ⇒ 复用并迁移同一条 job（不派生第二条）。
     const forced = await call(find('/folia/downloads/add'), {
       body: { items: [{ kind: 'wallpaper', url: ORIG, variants: [V1080], bytes: 33 * 1024 * 1024, screenHeight: 1440, quality: 'original' }] },
     });
@@ -270,20 +284,16 @@ function check(name, cond, detail) { results.push({ name, ok: Boolean(cond), det
       JSON.stringify(plainItem && { ok: plain.json.ok, chosen: plainItem.chosenVariant, url: plainItem.url }));
 
     // (d) /downloads/list 里能看到 chosenVariant（面板与排障读同一个事实）
-    const list = await new Promise((resolveCall) => {
-      const resObj = {
-        statusCode: 0, headers: {},
-        setHeader() { /* ignore */ },
-        end(s) { resolveCall({ status: this.statusCode, json: (() => { try { return JSON.parse(s); } catch { return null; } })() }); },
-      };
-      find('/folia/downloads/list').handler({ method: 'GET', url: '/folia/downloads/list', headers: {}, on() { return this; } }, resObj);
-    });
+    // 4.25.1：显式换档会 abort 在跑的旧档再迁移 —— 给收尾一拍，再读列表。
+    await new Promise((r) => { setTimeout(r, 150); });
+    const list = await readList();
     const jobs = (list.json && list.json.jobs) || [];
     check('② `/downloads/list` 每条 job 都带 chosenVariant（可识别，不是 null）',
       jobs.length > 0 && jobs.every((j) => j.chosenVariant === 'original' || j.chosenVariant === '1080p'),
       JSON.stringify(jobs.map((j) => ({ url: j.url, v: j.chosenVariant }))));
-    check('② 那条 1080p 的 job 在 list 里也是 1080p（不是只有 add 的响应里对）',
-      jobs.some((j) => j.chosenVariant === '1080p' && String(j.url).includes('a-1080.mp4')));
+    check('② 同一张壁纸的 1080p/原画只有 1 条 job（「用原画」迁移既有记录，不派生第二条）',
+      jobs.filter((j) => String(j.url) === ORIG).length === 1
+        && jobs.some((j) => String(j.url) === ORIG && j.chosenVariant === 'original'));
     check('② 负对照：list 里不存在"没有 chosenVariant 字段"的 job',
       !jobs.some((j) => !Object.prototype.hasOwnProperty.call(j, 'chosenVariant')));
   } finally {

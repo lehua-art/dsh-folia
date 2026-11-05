@@ -491,7 +491,7 @@ try { rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
   // 4.24.1（P0-3）：预取**默认 0 张**，且张数只认宿主下发（`doc.prefetchCount`）。
   // 判据仍是"预取一律 low" —— 只是取值形状从 `next.media` 变成了 `batch.map(c => …)`。
   check('⑯ 预取走 low 优先级（不抢用户点击的 high）且张数只认宿主下发',
-    /items: batch\.map\(\(c\) => \(\{ kind: "wallpaper", url: c\.media, priority: "low" \}\)\)/.test(lf)
+    /items: batch\.map\(\(c\) => \(\{[\s\S]{0,160}?priority: "low"[\s\S]{0,80}?itemKey: lfItemKey\(c\)/.test(lf)
       && /hostCount = lfPrefetchCount\(doc\.prefetchCount\);/.test(lf)
       && /if \(hostCount <= 0\) return;/.test(lf));
   check('⑯ 负对照：把预取的 priority 改成 high 会被判出来',

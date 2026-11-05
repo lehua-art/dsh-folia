@@ -1,5 +1,60 @@
 # 变更记录（Changelog）
 
+### v4.25.2（2026-11-05，**点击必被调度 + 原画/变体同条目 + 进度阶段文案 + 连点语义**；发布到 next，latest 保持 4.23.24）
+
+> ⚠️ **版本号说明**：npm 上的 `4.25.1` 是**误发**（2026-11-05T10:53:38Z，shasum
+> `132d549128f637afeffa16c2ba15b15ec4673a16`，内容仍是 4.25.0 旧代码，且 `next` 未指向它）。
+> 该号已占用、不可覆盖；本版 **4.25.2** 才是下述修复的真实内容，发布到 `next`。
+>
+> 用户 4.25.0 实测暴露的两个问题：A) 点壁纸后只有「视频·缓存中」和「改用边下边播」，没有百分比；
+> B) 队列里 11 条 `pending + high` 的壁纸 job 永不开始。本版修这两条链路 + 启动自愈，并落定连点语义。
+> 判据：扩展 `test/verify-wallpaper-core.mjs`（64 → **104 条**，新增 T1–T4、U1–U4 与负对照），仍进 verify 硬档。
+
+**A. 进度（按条目绑，total 未知说阶段）**
+
+- 根因：`src/wallpaper-progress.js` 的 `wpJobForItem()` 只拿 `item.media` 去比 `job.url`；
+  宿主实际下的是 `.1080p.mp4` / `.30fps.mp4` 变体 ⇒ 找不到 job ⇒ 标题栏没有百分比，只剩按钮。
+  同时 `src/download-first.js` 的 `dfProgressText()` 在 `total=0` 时只说「正在缓存…」，
+  `wpViewOf()` 在 running+total=0 时还会给出「缓存中 0%」。
+- 修复：`/downloads/list` 每行带 **`itemKey`**（`wallpaper:<inventory id>`）；`wpJobForItem()` /
+  `wpRequestInventoryRefresh()` 先按 itemKey 认条目，URL/媒体族只做老数据兜底。
+- total 未知：queued ⇒「排队中」；running 未收到字节 ⇒「连接中」；已收到 ⇒「已下载 X MB」；
+  一拿到 total 立即切百分比 + 剩余时间。
+- 判据：T3/T3b–T3h（含"旧实现 total=0 ⇒ 正在缓存… / 缓存中 0%"负对照）。
+
+**B. 队列（条目身份 + 提权必调度）**
+
+- 根因：`lib/download-queue.js` 的 `add()` 只用 `urlKey(url)` 做键；`load()` 把上次的
+  queued/running 折成 `pending` 后，用户再点同一条（清单已换回原始 URL）会建出**第二条** job，
+  旧的变体 pending 永远没人 promote（pump 只挑 queued）。`/downloads/priority` 也只改 priority、
+  不改 status。
+- 修复：job 增加 **`itemKey`** 并落盘；`add()` 按 itemKey → 相关 URL → 媒体族键查找既有 job，
+  同一条目复用/迁移 URL（在跑的不中途换流；显式换档先 abort 再迁移），并清掉同条目上永久
+  pending/queued/failed 的重复记录。`setPriority(high)` 对 pending 显式转 queued 并 pump。
+  `/downloads/add` 接收/回传 itemKey，客户端 `lfAddItem()` 统一带 `wallpaper:<id>`。
+- 判据：T1（6 条入队路径都在 1s 内 queued/running）、T2/T2b–T2e（原画/变体只 1 条 job；
+  重复 pending 点击后清掉；负对照：旧 URL 键 ⇒ 2 条）。
+
+**C. 启动自愈（不自动下载，也不谎称缓存中）**
+
+- `load()` 后 `pending + priority=high` = 上次点击未完成 ⇒ **不自动下载**（遵守 B1）；
+  `/inventory` 为每条站点壁纸下发 `jobStatus/jobPriority/pendingHigh`，`applySelection()` 在
+  非点击路径遇到它只上静态海报 + `pending` 状态，文案「未缓存（点击继续）」；用户点击
+  （`fromManual`）才走 download-first 并提权复用既有 job。
+- 判据：T4/T4b–T4h（两次采样仍 pending、UI 不说缓存中、点击继续 1s 内开始、负对照）。
+
+**D. 连点语义（U1–U4，待定义行为落定）**
+
+- **末位优先**：最后点的那张 `high` + 队首（`boostSeq`），作为当前播放；之前点过的逐张降 `low`
+  继续下载、不取消（`dfLeaveSelection` → `/downloads/priority low`）。
+- **并发与队列分开**：`wallpaper` 同时下载仍由 `KIND_LIMITS.wallpaper = 2` 控制；新增
+  `BURST_QUEUE_MAX = 8` 只约束**未开始队列**（queued）。连点 30 张 ⇒ 2 running + 最近点击的
+  8 张 queued + 其余 pending（不下载、不显示「排队中」）；用户再点 pending 立刻拉回队列。
+- 只有 `clicked:true`（用户点击）才占 8 个名额；预取 / 启动恢复 / 轮播的自动入队仍 high 但不挤占。
+- 判据：U1（最后一张 high+running、前 9 张 low、running ≤2）、U2（10 张 itemKey 唯一）、
+  U3（30 张 queued ≤8、pending 卡片不显示「排队中」）、U4（pending 再点 1s 内回队列）；
+  负对照：去掉末位优先 / 去掉上限 / pending 不 promote 各自必红。
+
 ### v4.25.0（2026-11-05，**壁纸核心 6 条行为 + 3 条质量收口**；发布到 next，latest 保持 4.23.24）
 
 > 用户口径：本版**只做 B1–B6 与 Q1–Q3**，不扩范围。判据：新增 `test/verify-wallpaper-core.mjs`

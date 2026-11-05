@@ -136,7 +136,7 @@ function localFirstApply(id, opts) {
       // 31 个后台预取后面（标题栏"前面还有 50 个"的直接体感）。点击是唯一"我就要现在看"
       // 的信号 ⇒ high + 宿主侧提权到队首（见 lib/download-queue.js 的 boostSeq）。
       const resp = await apiPostJson("/downloads/add", {
-        items: [lfAddItem(item, item.media, "high")],
+        items: [lfAddItem(item, item.media, "high", !silent)],
       }, { parse: "always" });
       const items = (resp && resp.data && Array.isArray(resp.data.items)) ? resp.data.items : [];
       job = items[0] && items[0].job ? items[0].job : null;
@@ -185,17 +185,28 @@ function lfScreenHeight() {
   } catch { return 0; }
 }
 
+/** 4.25.1：条目级身份（与宿主 `job.itemKey` 同一个拼法）。同一张壁纸的原画/变体共用它。 */
+function lfItemKey(item) {
+  const id = String((item && item.id) == null ? "" : item.id);
+  return id ? "wallpaper:" + id : "";
+}
+
 /** 一条站点条目 → `/downloads/add` 的入队条目（带上变体数组/体积/屏幕高度/画质覆盖）。 */
-function lfAddItem(item, url, priority) {
+function lfAddItem(item, url, priority, clicked) {
   const it = item || {};
   const entry = {
     kind: "wallpaper",
     url: String(url || it.media || ""),
     priority: priority || "normal",
+    // 4.25.1：**条目级身份**。宿主按它复用/迁移同一条 job —— 原画 URL 与 1080p/30fps
+    // 变体 URL 不再各建一条；也不会再出现"旧变体 job 永远 pending".
+    itemKey: lfItemKey(it),
     // 选档的判据全部随条目带过去 —— 决策只在宿主那一处（lib/variant-pick.js）。
     bytes: Number(it.bytes) || 0,
     screenHeight: lfScreenHeight(),
   };
+  // 4.25.1（连点语义）：只有用户点击才占"最近点击 8 条"的未开始队列名额。
+  if (clicked === true) entry.clicked = true;
   if (Array.isArray(it.variants) && it.variants.length) entry.variants = it.variants;
   // 4.23.15：原画的宽/高/帧率也带上 —— 宿主选档要按**解码上限**判（4K@60 与 5916×2530
   // 都是"链路再快也解不出来"的那一类）。缺就不发，宿主按兜底口径判。
@@ -235,7 +246,7 @@ async function lfUseOriginal(item, on) {
   if (!want) { lfSay(`已改回自动选档：${label}`, true); return true; }
   try {
     const resp = await apiPostJson("/downloads/add", {
-      items: [lfAddItem(item, (item && item.media) || "", "high")],
+      items: [lfAddItem(item, (item && item.media) || "", "high", true)],
     }, { parse: "always" });
     const items = (resp && resp.data && Array.isArray(resp.data.items)) ? resp.data.items : [];
     const job = items[0] && items[0].job ? items[0].job : null;
@@ -351,14 +362,17 @@ async function lfPrefetchNext(afterId, playingId) {
     // 它变回 low 的三条路径之一。queued / running / done 才算"已经有了"，不白占预取名额。
     const taken = new Set(["queued", "running", "done"]);
     const fresh = picks.filter((c) => !jobs.some((j) => j
-      && j.url === c.media && taken.has(String(j.status || ""))));
+      && ((j.itemKey && j.itemKey === lfItemKey(c)) || j.url === c.media)
+      && taken.has(String(j.status || ""))));
     if (!fresh.length) return;
     // ⚠️ 上限**是宿主的数**（`hostCount`），不是 picks 的长度：`picks` 按
     // `LF_PREFETCH_MAX` 截断只是为了少扫几条，真正的"最多几张"由这里定。
     const batch = fresh.slice(0, hostCount);
     for (const c of batch) LF_PREFETCH.seen.add(String(c.id));
     await apiPostJson("/downloads/add", {
-      items: batch.map((c) => ({ kind: "wallpaper", url: c.media, priority: "low" })),
+      items: batch.map((c) => ({
+        kind: "wallpaper", url: c.media, priority: "low", itemKey: lfItemKey(c),
+      })),
     }, { parse: "always" });
   } finally {
     LF_PREFETCH.busy = false;

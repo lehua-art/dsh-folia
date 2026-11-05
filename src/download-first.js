@@ -98,11 +98,26 @@ function dfPosterOf(item) {
   return String(w.posterUrl || w.preview || w.thumbUrl || w.poster || "");
 }
 
-/** 「正在缓存 x%（a/b MB · 约剩 N 秒）」的唯一格式化口。 */
-function dfProgressText(recv, total, etaSec) {
+/** 「正在缓存 x%（a/b MB · 约剩 N 秒）」的唯一格式化口。
+ *
+ * 4.25.1：`total` 未知时**不许留空、也不许假装 0%**，按阶段说人话：
+ *   queued ⇒「排队中」· running 且已收到字节 ⇒「已下载 X MB」· running 刚连上 ⇒「连接中」。
+ * 一旦拿到 total ⇒ 立即切回百分比 + 剩余时间。`status` 缺省时保持旧文案（升级期兼容，
+ * 也是 `dfBegin` 点击瞬间"还没拿到 job 状态"时的正确形态）。
+ */
+function dfProgressText(recv, total, etaSec, status) {
   const r = Math.max(0, Number(recv) || 0);
   const t = Math.max(0, Number(total) || 0);
-  if (!(t > 0)) return weT("正在缓存…");
+  if (!(t > 0)) {
+    const st = String(status || "");
+    if (st === "queued") return weT("排队中");
+    if (st === "running") {
+      return r > 0
+        ? weT("已下载 {mb} MB", { mb: (r / 1048576).toFixed(1) })
+        : weT("连接中");
+    }
+    return weT("正在缓存…");
+  }
   const pct = Math.max(0, Math.min(100, Math.round((r / t) * 100)));
   const a = (r / 1048576).toFixed(1);
   const b = (t / 1048576).toFixed(1);
@@ -110,6 +125,28 @@ function dfProgressText(recv, total, etaSec) {
   return s > 0
     ? weT("正在缓存 {p}%（{a}/{b} MB · 约剩 {s} 秒）", { p: pct, a, b, s })
     : weT("正在缓存 {p}%（{a}/{b} MB）", { p: pct, a, b });
+}
+
+/**
+ * 4.25.1：这条清单条目是不是「上次点击没下完」的记录（pending + high）。
+ *
+ * 启动时 `load()` 会把上次的 queued/running 折成 `pending`（B1：不自动下载），但
+ * priority 仍是 high。它只说明"用户点过、但没完成"，不说明"现在该自动重下"。
+ */
+function dfPendingClickOf(item) {
+  const w = item || {};
+  if (w.pendingHigh === true) return true;
+  return String(w.jobStatus || "") === "pending" && String(w.jobPriority || "") === "high";
+}
+
+/**
+ * 4.25.1：非用户点击的 `applySelection`（启动恢复 / revalidate / 轮播）遇到上面那种
+ * pending+high ⇒ 只上静态海报 +「未缓存（点击继续）」，**不自动下载**。
+ * 用户真正点击（`fromManual:true`）才放行 → `/downloads/add` 把既有 job 提权并复用。
+ */
+function dfShouldHoldAutoStart(item, opts) {
+  if (!dfPendingClickOf(item)) return false;
+  return !(opts && opts.fromManual === true);
 }
 
 /**
@@ -190,9 +227,8 @@ function dfApplyJob(job, nowMs) {
     return dfSnapshot();
   }
   st.state = "caching";
-  st.text = job.status === "queued"
-    ? weT("正在缓存…（排队中）")
-    : dfProgressText(st.received, st.total, st.etaSec);
+  // 4.25.1：total 未知时用阶段文案（排队中 / 连接中 / 已下载 X MB）；拿到 total 后切百分比。
+  st.text = dfProgressText(st.received, st.total, st.etaSec, job.status);
   st.canStream = dfLongWait({ etaSec: st.etaSec, total: st.total, bps: st.bps });
   st.error = "";
   return dfSnapshot();
@@ -247,6 +283,8 @@ function dfLeaveSelection(nextId, hooks) {
   if (st.state !== "caching" || !st.id || String(st.id) === String(nextId || "")) return null;
   const rec = {
     id: st.id, jobId: st.jobId, url: st.url, title: st.title,
+    // 4.25.1：降级也带条目键 —— 宿主按它找 job，不再依赖"URL 恰好没换过档"。
+    itemKey: st.id ? "wallpaper:" + st.id : "",
     received: st.received, total: st.total, priority: "low", demoted: true,
   };
   st.last = {
@@ -262,7 +300,7 @@ function dfLeaveSelection(nextId, hooks) {
   st.jobId = "";
   st.localUrl = "";
   if (hooks && typeof hooks.demote === "function") {
-    try { hooks.demote({ id: rec.jobId, url: rec.url, kind: "wallpaper", priority: "low" }); } catch { /* 降级失败不阻塞切走 */ }
+    try { hooks.demote({ id: rec.jobId, url: rec.url, kind: "wallpaper", itemKey: rec.itemKey, priority: "low" }); } catch { /* 降级失败不阻塞切走 */ }
   }
   return rec;
 }
@@ -419,5 +457,6 @@ function dfPolicyLabel(policy) {
 export {
   dfNormalizePolicy, dfPolicyOf, dfPolicyLabel, dfShouldCache,
   dfProgressText, dfLongWait, dfApplyJob, dfSnapshot, dfBegin,
+  dfPendingClickOf, dfShouldHoldAutoStart,
   dfLeaveSelection, dfUseStream, dfMarkPlaying, dfFail, dfLoad, dfLayerPlan,
 };

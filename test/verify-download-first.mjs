@@ -421,7 +421,7 @@ console.log('\nG. 同版合并：错误分类重试 + 期望值不持久化 + �
     !/expectSha: j\.expectSha/.test(queue)
     && !/hashSource: j\.hashSource/.test(queue)
     && !/sha256: job\.sha256/.test(queue)
-    && /function add\(\{ url, dest, kind = '', priority = 'normal', chosenVariant = 'original' \}\)/.test(queue)
+    && /function add\(\{[\s\S]{0,240}?itemKey[\s\S]{0,240}?relatedUrls/.test(queue)
     && /expectSha: normalizeSha256\(j\.verifiedSha\)/.test(queue));
   check('G6 完成那一刻问当前清单；不符时强制刷新复核一次',
     /resolveExpectation/.test(queue) && /refreshExpectation/.test(queue)

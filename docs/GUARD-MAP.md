@@ -152,7 +152,7 @@
 | `verify-variants.mjs` | `lib/download-queue.js` `lib/routes/downloads.js` `lib/routes/inventory.js` `lib/variant-pick.js` `src/local-first.js` `src/quick-panel.js` |  |
 | `verify-video-preview.mjs` | `lib/media/video-preview.js` |  |
 | `verify-wallpaper-chain.mjs` | `lib/download-queue.js` `lib/media-state.js` `lib/routes/cache.js` `lib/routes/downloads.js` `lib/routes/inventory.js` `lib/variant-pick.js` `src/client-audio-playback.js` `src/client.js` `src/download-first.js` `src/local-first.js` `src/media-prep.js` `src/media-state.js` `src/panel-tabs-wallpaper.js` `src/quick-panel.js` `src/styles-base.js` `src/styles-panel.js` `src/video-switch.js` `src/wallpaper-progress.js` |  |
-| `verify-wallpaper-core.mjs` | `lib/download-queue.js` `lib/media-state.js` `lib/routes/downloads.js` `lib/variant-pick.js` `src/client.js` `src/download-first.js` `src/local-first.js` `src/media-prep.js` `src/quick-panel.js` `src/video-switch.js` `src/wallpaper-progress.js` | ✅ |
+| `verify-wallpaper-core.mjs` | `lib/download-queue.js` `lib/media-state.js` `lib/routes/downloads.js` `lib/routes/inventory.js` `lib/variant-pick.js` `src/client.js` `src/download-first.js` `src/local-first.js` `src/media-prep.js` `src/quick-panel.js` `src/video-switch.js` `src/wallpaper-progress.js` | ✅ |
 | `verify-wallpaper-progress.mjs` | `src/local-first.js` `src/picker-modal.js` `src/quick-panel.js` `src/wallpaper-progress.js` |  |
 | `verify-wallpaper-scan.mjs` | `lib/fs-paths.js` `lib/wallpaper-scan.js` |  |
 | `verify-we-install-probe.mjs` | `lib/index.js` `lib/inventory.js` `lib/steam-discovery.js` |  |
@@ -244,7 +244,7 @@
 | `lib/routes/cache.js` | 4 | `verify-cache-manager` `verify-local-media-heal` `verify-media-state` `verify-wallpaper-chain` |
 | `lib/routes/diag.js` | 4 | `verify-first-frame` `verify-logging` `verify-scene-live` `verify-switch-smooth` |
 | `lib/routes/downloads.js` | 14 | `verify-dead-code` `verify-download-chain` `verify-download-first` `verify-downloads` `verify-hash-source` `verify-install-flow` `verify-local-media-heal` `verify-media-state` `verify-no-auto-enqueue` `verify-site-v1-sync` `verify-variant-hash` `verify-variants` `verify-wallpaper-chain` `verify-wallpaper-core` |
-| `lib/routes/inventory.js` | 12 | `verify-avatar-interval-and-rotation` `verify-component-visibility` `verify-download-first` `verify-downloads` `verify-features` `verify-filters-dynamic` `verify-hash-source` `verify-media-state` `verify-route-index` `verify-site-v1-sync` `verify-variants` `verify-wallpaper-chain` |
+| `lib/routes/inventory.js` | 13 | `verify-avatar-interval-and-rotation` `verify-component-visibility` `verify-download-first` `verify-downloads` `verify-features` `verify-filters-dynamic` `verify-hash-source` `verify-media-state` `verify-route-index` `verify-site-v1-sync` `verify-variants` `verify-wallpaper-chain` `verify-wallpaper-core` |
 | `lib/routes/kernel.js` | 1 | `verify-panel-defensive` |
 | `lib/routes/live-frame.js` | 1 | `verify-scene` |
 | `lib/routes/media-bytes.js` | 4 | `verify-avatar-interval-and-rotation` `verify-route-index` `verify-scene-live` `verify-scene` |

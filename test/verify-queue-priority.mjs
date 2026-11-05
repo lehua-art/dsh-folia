@@ -214,11 +214,11 @@ try {
     // C6/C7：客户端点击 / 在播的**真实入队点**必须是 high —— 上面 C2 用的是队列 API，
     // 若有人把 localFirstApply 改回 low，C2 不会红；这一条才是那条回归的牙。
     const lfSrc = readFileSync(join(ROOT, 'src', 'local-first.js'), 'utf8');
-    const clickHighOf = (src) => /items: \[lfAddItem\(item, item\.media, "high"\)\]/.test(src);
+    const clickHighOf = (src) => /items: \[lfAddItem\(item, item\.media, "high", !silent\)\]/.test(src);
     check('C6 客户端点击/在播入队 priority="high"（不是 low）', clickHighOf(lfSrc));
     check('C7 负对照：把点击入队改回 low ⇒ C6 立即红',
-      !clickHighOf(lfSrc.replace('items: [lfAddItem(item, item.media, "high")]',
-        'items: [lfAddItem(item, item.media, "low")]')));
+      !clickHighOf(lfSrc.replace('items: [lfAddItem(item, item.media, "high", !silent)]',
+        'items: [lfAddItem(item, item.media, "low", !silent)]')));
     // C8/C9：**当前在播**（启动恢复 / 轮播 / revalidate）的提权也走同一个 high 入队；
     // 且条目来自内存 inventory，不为提权多发 /inventory。
     const mpSrc = readFileSync(join(ROOT, 'src', 'media-prep.js'), 'utf8');
@@ -241,7 +241,7 @@ try {
       && /hostCount = lfPrefetchCount\(doc\.prefetchCount\);/.test(lf)
       && /if \(hostCount <= 0\) return;/.test(lf));
     check('D2 预取入队 priority="low"（不抢点击的 high）',
-      /items: batch\.map\(\(c\) => \(\{ kind: "wallpaper", url: c\.media, priority: "low" \}\)\)/.test(lf));
+      /items: batch\.map\(\(c\) => \(\{[\s\S]{0,160}?priority: "low"[\s\S]{0,80}?itemKey: lfItemKey\(c\)/.test(lf));
     check('D3 pending 不算"已在队列"（否则启动后的下一张永远不会被预取）',
       /const taken = new Set\(\["queued", "running", "done"\]\);/.test(lf)
       && /taken\.has\(String\(j\.status \|\| ""\)\)/.test(lf));

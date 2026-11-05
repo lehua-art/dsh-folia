@@ -4025,14 +4025,19 @@ function dfApplyFailure(snap) {
   emit();
 }
 
-/** 启动一条 download-first 播放（high 入队 + 轮询；切走时状态机只降级不取消）。 */
-function startDownloadFirst(item) {
+/** 启动一条 download-first 播放（high 入队 + 轮询；切走时状态机只降级不取消）。
+ *
+ * 4.25.1（连点语义）：`opts.clicked` 区分"用户点击"与"启动/轮播的自动应用" ——
+ * 只有前者占"最近点击 8 条"的未开始队列名额（后者仍 high，但不排挤用户的连点）。
+ */
+function startDownloadFirst(item, opts) {
   const it = item || dfCurrentItem();
+  const clicked = !opts || opts.clicked !== false;
   if (!it) return Promise.resolve(null);
   const hooks = {
     enqueue: async () => {
       const resp = await apiPostJson("/downloads/add", {
-        items: [lfAddItem(it, it.media, "high")],
+        items: [lfAddItem(it, it.media, "high", clicked)],
       }, { parse: "always" });
       const items = (resp && resp.data && Array.isArray(resp.data.items)) ? resp.data.items : [];
       return (items[0] && items[0].job) || null;

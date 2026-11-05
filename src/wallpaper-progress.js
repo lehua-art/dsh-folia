@@ -48,9 +48,14 @@ const WP_ETA_MIN_SPAN_MS = 600;
 /** ETA 的最低"有速度"门槛：低于 1 KB/s 视为没往前走（别报一个几百秒的假数字）。 */
 const WP_ETA_MIN_SPEED_BPS = 1024;
 
-/** 卡片键（item.id；没有 id 的条目不该出现在库里，这里只做防御）。 */
+/** 卡片键（item.id；没有 id 的条目不该出现在库里，这里只做防御）。
+ *
+ * 4.25.1：与宿主 `job.itemKey` **同一个拼法**（`wallpaper:<id>`）。进度按条目绑，
+ * 不再按 URL / jobId —— 原画与 1080p/30fps 变体 URL 只是同一条目的不同落点。
+ */
 function wpItemKey(item) {
-  return String((item && item.id) == null ? "" : item.id);
+  const id = String((item && item.id) == null ? "" : item.id);
+  return id ? "wallpaper:" + id : "";
 }
 
 /**
@@ -78,22 +83,61 @@ function wpItemUrls(item) {
 }
 
 /**
+ * 媒体族键（4.25.1，老数据兼容）：忽略变体后缀与查询串。
+ *
+ * 新 job 都带 itemKey，正常路径不需要它；但 4.25.0 留下的 pending 记录没有 itemKey，
+ * 其 URL 可能是 `.1080p.mp4` / `.30fps.mp4`，而清单条目的 `media` 是原始 URL。
+ * 没有这层兜底，那些记录仍然"点了没进度/启动看不出未缓存"。
+ */
+function wpFamilyKey(rawUrl) {
+  try {
+    const u = new URL(String(rawUrl));
+    const parts = u.pathname.split('/');
+    const file = parts.pop() || '';
+    let stem = file.replace(/\.(?:mp4|webm|mov|m4v|mkv|avi|jpg|jpeg|png|webp|gif|avif|zip)$/i, '');
+    stem = stem.replace(/(?:[._-](?:1080p|1440p|2160p|4k30|4k|30fps|60fps|h264|hevc|av1|transcoded))+$/i, '');
+    return u.origin + '/' + (parts.filter(Boolean).length ? parts.filter(Boolean).join('/') + '/' : '') + stem;
+  } catch { return ''; }
+}
+
+/** 这条 job 是不是这张卡（itemKey 优先；老数据按 URL / 媒体族兜底）。 */
+function wpItemMatchesJob(item, job) {
+  if (!job) return false;
+  if (job.kind && String(job.kind) !== "wallpaper") return false;
+  const key = wpItemKey(item);
+  if (key && String(job.itemKey || "") === key) return true;
+  const u = String(job.url == null ? "" : job.url).trim();
+  if (u && wpItemUrls(item)[u]) return true;
+  const fam = wpFamilyKey(item && (item.media || item.variantUrl));
+  return Boolean(fam && wpFamilyKey(u) === fam);
+}
+
+
+/**
  * 这条卡对应的 job（`/downloads/list` 里 kind=wallpaper 的那条）。
+ *
+ * 4.25.1：**先认 itemKey**（条目级），URL / 媒体族只做老数据的兜底。用户实测的根因正是这里：
+ * 宿主下的可能是 `.1080p.mp4` / `.30fps.mp4` 变体，而卡片只拿 `item.media`（原始 URL）
+ * 去比 ⇒ 找不到 job ⇒ 「缓存中」没有百分比、只剩一个按钮。
+ *
  * 同一 URL 可能有多条历史（失败重下）⇒ 优先未结束的，否则取最后一条（snapshot 已按 at 倒序）。
  */
 function wpJobForItem(jobs, item) {
+  const key = wpItemKey(item);
   const urls = wpItemUrls(item);
   const list = Array.isArray(jobs) ? jobs : [];
-  let best = null;
+  const groups = { key: [], url: [], family: [] };
   for (const j of list) {
     if (!j) continue;
     // kind 缺省（旧数据 / 测试夹具）按 wallpaper 认：URL 本身就是身份。
     if (j.kind && String(j.kind) !== "wallpaper") continue;
+    if (key && String(j.itemKey || "") === key) { groups.key.push(j); continue; }
     const u = String(j.url == null ? "" : j.url).trim();
-    if (!u || !urls[u]) continue;
-    if (!best || (dlJobActive(j) && !dlJobActive(best))) best = j;
+    if (u && urls[u]) { groups.url.push(j); continue; }
+    if (wpItemMatchesJob(item, j)) groups.family.push(j);
   }
-  return best;
+  const pick = (arr) => arr.find(dlJobActive) || arr[0] || null;
+  return pick(groups.key) || pick(groups.url) || pick(groups.family);
 }
 
 /** job.percent（0..100 整数）。**只读列表里的数**，绝不按时间自己涨。 */
@@ -184,6 +228,13 @@ function wpEtaOfItem(item, jobs) {
   return Number(WP_ETA.get(String(job.id)) || 0) || 0;
 }
 
+/** 4.25.1：`total` 未知时的阶段文案（绝不显示「缓存中 0%」/空白）。 */
+function wpStageText(job) {
+  const got = Math.max(0, Number(job && job.received) || 0);
+  if (got > 0) return weT("已下载 {mb} MB", { mb: (got / 1048576).toFixed(1) });
+  return weT("连接中");
+}
+
 /**
  * **唯一的视图函数**（纯函数）：item + 队列快照 ⇒ 卡片/标题栏该显示的文案与形态。
  *
@@ -195,6 +246,11 @@ function wpEtaOfItem(item, jobs) {
 function wpViewOf(item, jobs, etaSec) {
   const s = wpStateOf(item, jobs);
   if (s.phase === "running") {
+    // 4.25.1：总量未知 ⇒ 阶段文案（连接中 / 已下载 X MB），拿到 total 才切百分比。
+    if (!(Number(s.job && s.job.total) > 0)) {
+      const text = wpStageText(s.job);
+      return { phase: "running", percent: 0, card: text, title: text };
+    }
     const p = s.percent;
     const detail = dlProgressDetail(s.job, Number(etaSec) || 0);
     return {
@@ -209,7 +265,12 @@ function wpViewOf(item, jobs, etaSec) {
     return { phase: "queued", percent: 0, card: text, title: text };
   }
   // 4.23.18：未缓存（pending）—— 卡片只给一个静态小标，**不画进度条、不报排队位置**。
+  // 4.25.1：其中 pending + high = 上次点击没下完（启动/清队列留下）⇒ 明说「点击继续」，
+  // 但**仍然不自动下载**（B1）。
   if (s.phase === "pending") {
+    if (s.job && String(s.job.priority || "") === "high") {
+      return { phase: "pending", percent: 0, card: weT("未缓存（点击继续）"), title: null };
+    }
     return { phase: "pending", percent: 0, card: weT("未缓存"), title: null };
   }
   if (s.phase === "cached") {
@@ -262,11 +323,10 @@ function wpRequestInventoryRefresh(jobs) {
     if (!j || j.status !== "done" || !j.id) continue;
     const id = String(j.id);
     if (WP_INV_ASKED.has(id)) continue;
-    const u = String(j.url == null ? "" : j.url).trim();
     let seenCard = false;
     let needs = false;
     for (const rec of WP_STORE.subs.values()) {
-      if (!u || !wpItemUrls(rec.item)[u]) continue;
+      if (!wpItemMatchesJob(rec.item, j)) continue;
       seenCard = true;
       if (!wpCachedOf(rec.item)) needs = true;
     }
@@ -376,7 +436,7 @@ async function wpRetryDownload(item) {
   if (!w.media) return false;
   try {
     await apiPostJson("/downloads/add", {
-      items: [lfAddItem(w, w.media, "high")],
+      items: [lfAddItem(w, w.media, "high", true)],
     }, { parse: "always" });
   } catch (e) {
     // 不静默：重试失败要能在控制台看到原因（界面下一次轮询仍会回到 failed +「重试」）。

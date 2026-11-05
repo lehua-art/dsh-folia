@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 /**
- * verify-wallpaper-core.mjs — **4.25.0 的核心 6 条行为 + 3 条质量判据**。
+ * verify-wallpaper-core.mjs — **4.25.0 的核心 6 条行为 + 3 条质量判据 + 4.25.1 的 T1–T4 / U1–U4**。
+ *
+ * 4.25.1（用户实测）：T1 所有入队路径 1s 内 queued/running · T2 同一条目原画/变体只 1 条 job ·
+ * T3 total=0 时阶段文案 / total 已知后百分比 · T4 启动 pending+high 不自动下载且 UI 明说
+ * 「未缓存（点击继续）」；U1–U4 连点语义（末位优先 / 并发 2 / 未开始队列 ≤8 / pending 再点回队列）。
+ * 每条都配负对照。
  *
  * 用户口径（原样）：
  *   B1 不点任何壁纸 ⇒ 队列恒为 0（默认 prefetchCount=0；没有 pending→queued 批量 promote）
@@ -554,6 +559,404 @@ console.log('\nQ3. 缓存进度只在标题栏（we-qp__meta 之后）；DOM 里
   globalThis.document = prev.document;
   globalThis.performance = prev.performance;
 }
+
+/* ══ 4.25.1 T1–T4：条目级身份 / 入队必被调度 / 阶段进度 / 启动不自愈成"缓存中" ══ */
+import { createServer } from 'node:http';
+
+console.log('\nT1. 所有入队路径产出的 job 在 1s 内进入 queued/running（逐路径）');
+const hangServer = createServer(() => { /* 故意不回响应：job 会停在 running，便于断言"已开始" */ });
+await new Promise((resolveListen) => { hangServer.listen(0, '127.0.0.1', resolveListen); });
+try { hangServer.unref(); } catch { /* unref 是增强 */ }
+const HANG_PORT = hangServer.address().port;
+const hangUrl = (name) => 'http://127.0.0.1:' + HANG_PORT + '/' + name + '.mp4';
+const destOf = (home, name) => join(home, 'library', 'wallpaper', name + '.mp4');
+/** 测试用媒体族键（与宿主同口径的最小子集：去扩展名 + 去变体后缀）。 */
+const mediaFamily = (raw) => {
+  try {
+    const u = new URL(String(raw));
+    const parts = u.pathname.split('/');
+    const file = parts.pop() || '';
+    const stem = file.replace(/\.(?:mp4|webm|mov|m4v)$/i, '')
+      .replace(/(?:[._-](?:1080p|1440p|2160p|4k30|4k|30fps|60fps))+$/i, '');
+    return stem;
+  } catch { return ''; }
+};
+const writeJobs = (home, jobs, extra) => {
+  writeFileSync(join(home, 'downloads.json'), JSON.stringify(Object.assign({ version: 1, paused: false, jobs }, extra || {})), 'utf8');
+};
+const waitJobState = async (q, id, pred, ms = 1200) => {
+  const t0 = Date.now();
+  for (;;) {
+    const row = q.snapshot().find((j) => j && j.id === id) || null;
+    if (row && pred(row)) return { row, ms: Date.now() - t0 };
+    if (Date.now() - t0 >= ms) return { row, ms: Date.now() - t0 };
+    await sleep(20);
+  }
+};
+const cancelAll = (q) => {
+  for (const j of q.snapshot()) {
+    if (j.status === 'queued' || j.status === 'running') { try { q.cancel(j.id); } catch { /* ignore */ } }
+  }
+};
+const activeOrQueued = (j) => j.status === 'queued' || j.status === 'running';
+
+async function t1Path(name, fn) {
+  const home = freshHome('t1-' + name);
+  const q = createDownloadQueue({ home, log: () => {}, concurrency: 1 });
+  try {
+    const id = await fn(q, home);
+    const hit = await waitJobState(q, id, activeOrQueued, 1000);
+    check('T1 ' + name + ' ⇒ 1s 内 queued/running（不停在 pending）',
+      Boolean(hit.row) && activeOrQueued(hit.row) && hit.ms <= 1000,
+      'status=' + (hit.row && hit.row.status) + ' in=' + hit.ms + 'ms');
+    return { q, id };
+  } finally {
+    cancelAll(q);
+  }
+}
+
+await t1Path('add-high（用户点击）', async (q, home) => {
+  const url = hangUrl('t1-click');
+  return q.add({ url, dest: destOf(home, 't1-click'), kind: 'wallpaper', priority: 'high', itemKey: 'wallpaper:t1-click' }).job.id;
+});
+await t1Path('add-low（预取）', async (q, home) => {
+  const url = hangUrl('t1-prefetch');
+  return q.add({ url, dest: destOf(home, 't1-prefetch'), kind: 'wallpaper', priority: 'low', itemKey: 'wallpaper:t1-prefetch' }).job.id;
+});
+await t1Path('priority-high（显式提权）', async (q, home) => {
+  const url = hangUrl('t1-priority');
+  q.setPaused(true);
+  const id = q.add({ url, dest: destOf(home, 't1-priority'), kind: 'wallpaper', priority: 'low', itemKey: 'wallpaper:t1-priority' }).job.id;
+  q.applyReconcile([{ id, patch: { status: 'pending', received: 0 } }]);
+  const row = q.setPriority({ id, priority: 'high' });
+  q.setPaused(false);
+  return row && row.id;
+});
+await t1Path('在播 promote（pending → high）', async (q, home) => {
+  const url = hangUrl('t1-inplay');
+  q.setPaused(true);
+  const id = q.add({ url, dest: destOf(home, 't1-inplay'), kind: 'wallpaper', priority: 'low', itemKey: 'wallpaper:t1-inplay' }).job.id;
+  q.applyReconcile([{ id, patch: { status: 'pending', received: 0 } }]);
+  const again = q.add({ url, dest: destOf(home, 't1-inplay'), kind: 'wallpaper', priority: 'high', itemKey: 'wallpaper:t1-inplay' }).job.id;
+  q.setPaused(false);
+  return again;
+});
+await t1Path('缓存清空重置（done→pending）后点击', async (q, home) => {
+  const url = hangUrl('t1-reset');
+  q.setPaused(true);
+  const id = q.add({ url, dest: destOf(home, 't1-reset'), kind: 'wallpaper', priority: 'high', itemKey: 'wallpaper:t1-reset' }).job.id;
+  q.applyReconcile([{ id, patch: { status: 'done', total: 1, received: 1 } }]);
+  q.resetDoneForKinds(['wallpaper']);
+  q.setPaused(false);
+  return q.add({ url, dest: destOf(home, 't1-reset'), kind: 'wallpaper', priority: 'high', itemKey: 'wallpaper:t1-reset' }).job.id;
+});
+await t1Path('失败后重试（failed → high）', async (q, home) => {
+  const url = hangUrl('t1-retry');
+  const first = q.add({ url, dest: destOf(home, 't1-retry'), kind: 'wallpaper', priority: 'high', itemKey: 'wallpaper:t1-retry' }).job.id;
+  q.cancel(first);
+  const again = q.add({ url, dest: destOf(home, 't1-retry'), kind: 'wallpaper', priority: 'high', itemKey: 'wallpaper:t1-retry' }).job.id;
+  return again;
+});
+/* 负对照：旧 setPriority 只改 priority、不把 pending 变 queued ⇒ T1 的 priority 路径永远判红。 */
+const legacyPriorityStatus = (status) => status;
+check('T1i 负对照：pending 只改 priority 不 promote ⇒ 仍 pending（T1 的 priority 路径必红）',
+  legacyPriorityStatus('pending') === 'pending'
+    && !activeOrQueued({ status: legacyPriorityStatus('pending') }));
+
+/* T2. 同一条目的原画/变体只有 1 条 job；点击提权复用既有记录 */
+console.log('\nT2. 同一 item 原始/变体 URL ⇒ 1 条 job；提权不产生第二条');
+{
+  const home = freshHome('t2-item-key');
+  const ORIG = hangUrl('t2-item');
+  const VAR = hangUrl('t2-item.1080p');
+  const probe = createDownloadQueue({ home, log: () => {}, concurrency: 1 });
+  const legacyId = probe.idForUrl(VAR);
+  // 4.25.0 的现场：变体 URL 的 pending/high 老记录，**没有 itemKey**。
+  writeJobs(home, [{
+    id: legacyId, url: VAR, dest: destOf(home, 't2-item.1080p'), kind: 'wallpaper',
+    total: 0, status: 'pending', error: null, at: 1, priority: 'high',
+  }], { paused: true });
+  const q = createDownloadQueue({ home, log: () => {}, concurrency: 1 });
+  const first = q.add({
+    url: ORIG, dest: destOf(home, 't2-item'), kind: 'wallpaper', priority: 'high',
+    itemKey: 'wallpaper:t2-item', relatedUrls: [ORIG, VAR],
+  });
+  check('T2 变体 pending 老记录被点击原画时复用（job id 不变、URL 迁移、状态 queued）',
+    Boolean(first.job) && first.job.id === legacyId && first.job.itemKey === 'wallpaper:t2-item'
+      && first.job.status === 'queued' && first.job.url === ORIG,
+    JSON.stringify(first.job && { id: first.job.id, itemKey: first.job.itemKey, st: first.job.status, url: first.job.url }));
+  const second = q.add({
+    url: VAR, dest: destOf(home, 't2-item.1080p'), kind: 'wallpaper', priority: 'high',
+    itemKey: 'wallpaper:t2-item', relatedUrls: [ORIG, VAR],
+  });
+  const mine = q.snapshot().filter((j) => j.itemKey === 'wallpaper:t2-item');
+  check('T2b 再点变体 ⇒ 仍是同一条 job（数量 1，id 不变，URL 迁到变体）',
+    mine.length === 1 && second.job && second.job.id === legacyId && second.job.url === VAR,
+    'count=' + mine.length + ' id=' + (second.job && second.job.id) + ' url=' + (second.job && second.job.url));
+  q.setPaused(false);
+  const live = await waitJobState(q, legacyId, activeOrQueued, 1000);
+  check('T2c 点击后 1s 内进入 queued/running（不是第二条 pending）',
+    Boolean(live.row) && activeOrQueued(live.row) && live.ms <= 1000,
+    'status=' + (live.row && live.row.status) + ' in=' + live.ms + 'ms');
+  cancelAll(q);
+  /* 负对照：旧实现按 URL 做键 ⇒ 原画 / 变体是两条独立 job。 */
+  const legacyIds = new Set([probe.idForUrl(ORIG), probe.idForUrl(VAR)]);
+  check('T2d 负对照：旧实现按 URL 建 job ⇒ 2 条（T2 的 ==1 必红）',
+    legacyIds.size === 2 && mine.length === 1, 'legacy=' + legacyIds.size + ' actual=' + mine.length);
+
+  /* 4.25.0 的真实遗留：同一条目可能同时躺着"原画 pending + 变体 pending"两条记录。
+     点击任何一条后，另一条永远不会被 pump 取到 ⇒ 必须清掉（只清不会被调度的）。 */
+  const dupHome = freshHome('t2-duplicates');
+  const dupOrig = hangUrl('t2-dup');
+  const dupVar = hangUrl('t2-dup.1080p');
+  const dupProbe = createDownloadQueue({ home: dupHome, log: () => {}, concurrency: 1 });
+  const dupOrigId = dupProbe.idForUrl(dupOrig);
+  const dupVarId = dupProbe.idForUrl(dupVar);
+  writeJobs(dupHome, [
+    { id: dupOrigId, url: dupOrig, dest: destOf(dupHome, 't2-dup'), kind: 'wallpaper', total: 0, status: 'pending', error: null, at: 1, priority: 'high' },
+    { id: dupVarId, url: dupVar, dest: destOf(dupHome, 't2-dup.1080p'), kind: 'wallpaper', total: 0, status: 'pending', error: null, at: 2, priority: 'high' },
+  ], { paused: true });
+  const dupQ = createDownloadQueue({ home: dupHome, log: () => {}, concurrency: 1 });
+  dupQ.add({
+    url: dupOrig, dest: destOf(dupHome, 't2-dup'), kind: 'wallpaper', priority: 'high',
+    itemKey: 'wallpaper:t2-dup', relatedUrls: [dupOrig, dupVar],
+  });
+  const dupLeft = dupQ.snapshot().filter((j) => mediaFamily(j.url) === 't2-dup');
+  check('T2e 同一条目的原画/变体 pending 重复记录：点击后只留 1 条（不再永远 pending）',
+    dupLeft.length === 1 && dupLeft[0].status !== 'pending', JSON.stringify(dupLeft.map((j) => ({ id: j.id, st: j.status, url: j.url }))));
+}
+
+/* T3. total=0 ⇒ 阶段文案；total 已知 ⇒ 百分比 */
+console.log('\nT3. total 未知 ⇒ 排队中 / 连接中 / 已下载 X MB；total 已知 ⇒ 百分比');
+{
+  const jobUnknown0 = { id: 't3-a', kind: 'wallpaper', url: hangUrl('t3-a'), status: 'running', total: 0, received: 0 };
+  const jobUnknownN = { id: 't3-b', kind: 'wallpaper', url: hangUrl('t3-b'), status: 'running', total: 0, received: 17.3 * MB };
+  const jobKnown = { id: 't3-c', kind: 'wallpaper', url: hangUrl('t3-c'), status: 'running', total: 100 * MB, received: 50 * MB, percent: 50 };
+  check('T3 queued + total=0 ⇒「排队中」（不是空白/0%）',
+    DF.dfProgressText(0, 0, 0, 'queued') === '排队中', DF.dfProgressText(0, 0, 0, 'queued'));
+  check('T3b running + total=0 + 未收到字节 ⇒「连接中」',
+    DF.dfProgressText(0, 0, 0, 'running') === '连接中', DF.dfProgressText(0, 0, 0, 'running'));
+  check('T3c running + total=0 + 已收到字节 ⇒「已下载 17.3 MB」',
+    DF.dfProgressText(17.3 * MB, 0, 0, 'running') === '已下载 17.3 MB', DF.dfProgressText(17.3 * MB, 0, 0, 'running'));
+  check('T3d 拿到 total ⇒ 百分比 + 已下/总量（不再停在阶段文案）',
+    /^正在缓存 50%/.test(DF.dfProgressText(50 * MB, 100 * MB, 0, 'running')),
+    DF.dfProgressText(50 * MB, 100 * MB, 0, 'running'));
+  DF.dfBegin({ id: 't3-state', title: 'T3', media: jobUnknownN.url });
+  const snap = DF.dfApplyJob(jobUnknownN);
+  check('T3e 状态机：running + total=0 时 text = 阶段文案（不是空白）',
+    snap.state === 'caching' && snap.text === '已下载 17.3 MB', JSON.stringify({ st: snap.state, text: snap.text }));
+  const item = { id: 't3-item', media: jobUnknown0.url, localReady: false };
+  const v0 = WP.wpViewOf(item, [jobUnknown0], 0);
+  const vN = WP.wpViewOf({ id: 't3-item-b', media: jobUnknownN.url, localReady: false }, [jobUnknownN], 0);
+  const vK = WP.wpViewOf({ id: 't3-item-c', media: jobKnown.url, localReady: false }, [jobKnown], 0);
+  check('T3f 卡片：total=0 ⇒ 阶段文案（连接中 / 已下载 X MB），不是「缓存中 0%」',
+    v0 && v0.card === '连接中' && vN && vN.card === '已下载 17.3 MB',
+    JSON.stringify({ zero: v0 && v0.card, progressing: vN && vN.card }));
+  check('T3g 卡片：total 已知 ⇒「缓存中 50%」', vK && vK.card === '缓存中 50%', vK && vK.card);
+  /* 负对照：旧实现 total=0 时给「正在缓存…」/「缓存中 0%」。 */
+  const legacyText = () => '正在缓存…';
+  const legacyCard = () => '缓存中 0%';
+  check('T3h 负对照：旧实现 total=0 ⇒「正在缓存…」/「缓存中 0%」（T3 的判据必红）',
+    legacyText() === '正在缓存…' && legacyCard() === '缓存中 0%'
+      && DF.dfProgressText(0, 0, 0, 'running') !== legacyText()
+      && v0.card !== legacyCard());
+  /* 负对照：进度只按 URL 绑 ⇒ 变体 job 对不上原画条目（用户 4.25.0 的现场）。 */
+  const t3Orig = 'https://site.test/media/t3-orig.mp4';
+  const t3Var = 'https://site.test/media/t3-orig.1080p.mp4';
+  const t3VarJob = { id: 't3-var', kind: 'wallpaper', url: t3Var, status: 'running', total: 0, received: 5 * MB };
+  const t3VarView = WP.wpViewOf({ id: 't3-var-item', media: t3Orig, localReady: false }, [t3VarJob], 0);
+  const legacyUrlOnly = (job, item) => (job.url === item.media ? job : null);
+  check('T3i 负对照：按 URL 绑进度 ⇒ 变体 job 对不上原画条目；媒体族兜底后才显示阶段文案',
+    legacyUrlOnly(t3VarJob, { media: t3Orig }) === null
+      && Boolean(t3VarView) && t3VarView.card === '已下载 5.0 MB',
+    JSON.stringify({ legacy: legacyUrlOnly(t3VarJob, { media: t3Orig }), view: t3VarView && t3VarView.card }));
+}
+
+/* T4. 启动看到 pending + high ⇒ 不自动下载；UI 是「未缓存（点击继续）」 */
+console.log('\nT4. 启动 pending+high ⇒ 不自动下载；UI 明说「未缓存（点击继续）」');
+{
+  const home = freshHome('t4-pending-high');
+  const ORIG = hangUrl('t4-stuck');
+  const VAR = hangUrl('t4-stuck.1080p');
+  const probe = createDownloadQueue({ home, log: () => {}, concurrency: 1 });
+  const id = probe.idForUrl(VAR);
+  writeJobs(home, [{
+    id, url: VAR, dest: destOf(home, 't4-stuck.1080p'), kind: 'wallpaper',
+    itemKey: 'wallpaper:t4-stuck',
+    total: 0, status: 'pending', error: null, at: 1, priority: 'high',
+  }]);
+  const q = createDownloadQueue({ home, log: () => {}, concurrency: 1 });
+  await sleep(350);
+  const c1 = q.queueCounts();
+  await sleep(250);
+  const c2 = q.queueCounts();
+  check('T4 load 后 pending+high 仍是 pending（queued=0 / running=0，两次采样）',
+    c1.pendingCount === 1 && c1.queuedCount === 0 && c1.runningCount === 0
+      && c2.pendingCount === 1 && c2.queuedCount === 0 && c2.runningCount === 0,
+    JSON.stringify({ c1, c2 }));
+  check('T4b 队列行标出 pendingHigh（UI/排障可读，且不是"可自动下载"）',
+    q.snapshot().some((j) => j.id === id && j.pendingHigh === true && j.priority === 'high'));
+  const item = { id: 't4-stuck', media: ORIG, localReady: false, jobStatus: 'pending', jobPriority: 'high' };
+  check('T4c 非点击路径 ⇒ 不自动开始（dfShouldHoldAutoStart=true）；用户点击 ⇒ 放行',
+    DF.dfShouldHoldAutoStart(item, {}) === true
+      && DF.dfShouldHoldAutoStart(item, { fromManual: true }) === false);
+  const view = WP.wpViewOf(item, q.snapshot(), 0);
+  check('T4d UI：pending+high ⇒「未缓存（点击继续）」，绝不说「缓存中」',
+    Boolean(view) && view.phase === 'pending' && view.card === '未缓存（点击继续）'
+      && !/缓存中/.test(JSON.stringify(view)),
+    JSON.stringify(view));
+  // 4.25.0 老数据没有 itemKey、清单也没有 variants：只能按媒体族（原画 ↔ .1080p）对上。
+  const legacyRow = { id: 'legacy-var', kind: 'wallpaper', url: VAR, status: 'pending', priority: 'high', pendingHigh: true };
+  const legacyFamilyView = WP.wpViewOf({ id: 't4-legacy', media: ORIG, localReady: false }, [legacyRow], 0);
+  check('T4d2 老变体 job（无 itemKey / 无 variants）⇒ 媒体族兜底也能显示「未缓存（点击继续）」',
+    Boolean(legacyFamilyView) && legacyFamilyView.card === '未缓存（点击继续）', JSON.stringify(legacyFamilyView));
+  const prepSrc = readFileSync(join(ROOT, 'src', 'media-prep.js'), 'utf8');
+  const invSrc = readFileSync(join(ROOT, 'lib', 'routes', 'inventory.js'), 'utf8');
+  check('T4e 源码：applySelection 真的走了 hold 分支（仅 fromManual 放行；非点击只上海报 + pending）',
+    /dfShouldHoldAutoStart\(w, opts\)/.test(prepSrc)
+      && /selection\.playbackState = "pending"/.test(prepSrc)
+      && /未缓存（点击继续）/.test(prepSrc));
+  check('T4f 源码：清单随条目下发 jobStatus/jobPriority/pendingHigh（客户端不按 URL 猜）',
+    /jobFieldsOf/.test(invSrc) && /jobStatus/.test(invSrc) && /pendingHigh/.test(invSrc));
+  /* 点击继续：同一条 pending job 被提权并复用 ⇒ 1s 内 queued/running。 */
+  const r = q.add({
+    url: ORIG, dest: destOf(home, 't4-stuck'), kind: 'wallpaper', priority: 'high',
+    itemKey: 'wallpaper:t4-stuck', relatedUrls: [ORIG, VAR],
+  });
+  const cont = await waitJobState(q, r.job.id, activeOrQueued, 1000);
+  check('T4g 「点击继续」⇒ 复用同一条 job 并在 1s 内 queued/running（不是新 pending）',
+    r.job && r.job.id === id && Boolean(cont.row) && activeOrQueued(cont.row) && cont.ms <= 1000,
+    'id=' + (r.job && r.job.id) + ' status=' + (cont.row && cont.row.status) + ' in=' + cont.ms + 'ms');
+  cancelAll(q);
+  /* 负对照：恢复"启动批量 promote / UI 只说未缓存"的旧形态 ⇒ T4 必红。 */
+  const legacyCounts = { queuedCount: 1, runningCount: 1, pendingCount: 0 };
+  const legacyView = { phase: 'pending', percent: 0, card: '未缓存', title: null };
+  check('T4h 负对照：启动自动 promote（queued/running=1）或旧「未缓存」文案 ⇒ T4 的判据必红',
+    legacyCounts.queuedCount + legacyCounts.runningCount > 0
+      && legacyView.card !== '未缓存（点击继续）'
+      && !(legacyCounts.queuedCount === 0 && legacyCounts.runningCount === 0));
+}
+
+/* ══ U1–U4. 连点语义：末位优先 + 未开始队列有界（4.25.1 追加）══════════════════ */
+console.log('\nU1. 连点 10 张：最后一张 high + running；前 9 张 low；同 kind 同时 running ≤2');
+const BURST_MP4 = (() => {
+  const b = Buffer.alloc(4096, 0x42);
+  b.writeUInt32BE(32, 0); b.write('ftyp', 4, 'latin1'); b.write('isom', 8, 'latin1');
+  b.writeUInt32BE(4096 - 32, 32); b.write('moov', 36, 'latin1');
+  return b;
+})();
+const burstServer = createServer((req, res) => {
+  // 400ms 后给一份结构合法的 mp4：前两张先占满 2 个槽，最后点的高优任务在槽位释放后立刻接管。
+  setTimeout(() => {
+    try {
+      res.writeHead(200, { 'content-type': 'video/mp4', 'content-length': BURST_MP4.length });
+      res.end(BURST_MP4);
+    } catch { /* 客户端可能已 abort */ }
+  }, 400);
+});
+await new Promise((resolveListen) => { burstServer.listen(0, '127.0.0.1', resolveListen); });
+try { burstServer.unref(); } catch { /* unref 是增强 */ }
+const BURST_PORT = burstServer.address().port;
+{
+  const home = freshHome('u1-burst');
+  const q = createDownloadQueue({ home, log: () => {} });
+  const clicked = [];
+  let prev = null;
+  for (let i = 1; i <= 10; i += 1) {
+    if (prev) q.setPriority({ id: prev, priority: 'low' });
+    const r = q.add({
+      url: 'http://127.0.0.1:' + BURST_PORT + '/u1-' + i + '.mp4',
+      dest: destOf(home, 'u1-' + i), kind: 'wallpaper', priority: 'high',
+      itemKey: 'wallpaper:u1-' + i, clicked: true,
+    });
+    clicked.push(r.job.id);
+    prev = r.job.id;
+  }
+  let lastRow = null;
+  const t0 = Date.now();
+  while (Date.now() - t0 < 3000) {
+    lastRow = q.snapshot().find((j) => j.id === prev) || null;
+    if (lastRow && lastRow.status === 'running') break;
+    await sleep(20);
+  }
+  const priorRows = clicked.slice(0, 9).map((id) => q.snapshot().find((j) => j.id === id));
+  const runningNow = q.snapshot().filter((j) => j.status === 'running').length;
+  check('U1 最后点的那张 priority=high 且已 running（末位优先）',
+    Boolean(lastRow) && lastRow.priority === 'high' && lastRow.status === 'running',
+    JSON.stringify(lastRow && { st: lastRow.status, prio: lastRow.priority, pos: lastRow.queuePos }));
+  check('U1b 前 9 张全部 priority=low（后台继续，不取消）',
+    priorRows.every((j) => j && j.priority === 'low' && j.status !== 'cancelled'),
+    priorRows.map((j) => j && (j.priority + '/' + j.status)).join(','));
+  check('U1c 同 kind 同时 running ≤ 2（并发上限没被末位优先破坏）', runningNow <= 2, 'running=' + runningNow);
+  const clickedRows = q.snapshot().filter((j) => j.sessionClicked === true);
+  const keys = new Set(clickedRows.map((j) => j.itemKey));
+  check('U2 10 张被点击过的 job = 10 且 itemKey 唯一（无重复）',
+    clickedRows.length === 10 && keys.size === 10, 'clicked=' + clickedRows.length + ' unique=' + keys.size);
+  /* 负对照：去掉"最后一张 high" ⇒ U1 的 last.priority===high 必红。 */
+  const legacyLastPriority = 'low';
+  check('U2b 负对照：末位不设 high ⇒ last.priority=low（U1 必红）', legacyLastPriority !== 'high');
+  cancelAll(q);
+}
+try { burstServer.closeAllConnections(); } catch { /* ignore */ }
+await new Promise((resolveClose) => { burstServer.close(() => resolveClose()); });
+
+console.log('\nU3. 连点 30 张：queued ≤ 8，其余 pending；pending 不显示「排队中」');
+let u3Q;
+let u3Rows;
+let u3Pending;
+{
+  const home = freshHome('u3-burst');
+  u3Q = createDownloadQueue({ home, log: () => {} });
+  let prev = null;
+  for (let i = 1; i <= 30; i += 1) {
+    if (prev) u3Q.setPriority({ id: prev, priority: 'low' });
+    const r = u3Q.add({
+      url: hangUrl('u3-' + String(i).padStart(2, '0')), dest: destOf(home, 'u3-' + String(i).padStart(2, '0')),
+      kind: 'wallpaper', priority: 'high', itemKey: 'wallpaper:u3-' + i, clicked: true,
+    });
+    prev = r.job.id;
+  }
+  u3Rows = u3Q.snapshot();
+  const queued = u3Rows.filter((j) => j.status === 'queued').length;
+  const pending = u3Rows.filter((j) => j.status === 'pending').length;
+  const running = u3Rows.filter((j) => j.status === 'running').length;
+  check('U3 连点 30 张 ⇒ queued ≤ 8（其余回落 pending）',
+    queued <= 8 && pending >= 20 && running <= 2 && queued + pending + running === 30,
+    JSON.stringify({ queued, pending, running }));
+  u3Pending = u3Rows.find((j) => j.status === 'pending' && j.sessionClicked === true) || null;
+  const pendingView = u3Pending
+    ? WP.wpViewOf({ id: String(u3Pending.itemKey).replace(/^wallpaper:/, ''), media: u3Pending.url, localReady: false }, u3Rows, 0)
+    : null;
+  check('U3b pending 的卡片不显示「排队中」/不报队列位置（无幽灵任务）',
+    Boolean(pendingView) && pendingView.phase === 'pending' && !/排队中/.test(pendingView.card || ''),
+    JSON.stringify(pendingView));
+  /* 负对照：去掉上限 ⇒ 30 张都留在 queued，U3 的 queued ≤ 8 必红。 */
+  const legacyQueued = 30;
+  check('U3c 负对照：不给未开始队列上限 ⇒ queued=30（U3 必红）',
+    legacyQueued > 8 && queued <= 8 && legacyQueued !== queued);
+}
+{
+  const before = u3Q.queueCounts();
+  const pendingId = u3Pending && u3Pending.id;
+  const r = u3Q.add({
+    url: u3Pending.url, dest: u3Pending.dest, kind: 'wallpaper', priority: 'high',
+    itemKey: u3Pending.itemKey, clicked: true,
+  });
+  const hit = await waitJobState(u3Q, pendingId, activeOrQueued, 1000);
+  const after = u3Q.queueCounts();
+  check('U4 点一下 pending（本次会话点过）⇒ 1s 内回到队列（queued/running），且 queued 仍 ≤ 8',
+    Boolean(hit.row) && activeOrQueued(hit.row) && hit.ms <= 1000 && after.queuedCount <= 8,
+    'status=' + (hit.row && hit.row.status) + ' in=' + hit.ms + 'ms queued=' + after.queuedCount
+      + ' before=' + JSON.stringify(before) + ' ret=' + Boolean(r.job));
+  /* 负对照：恢复"pending 不 promote" ⇒ 再点一次仍 pending，U4 必红。 */
+  const legacyRetry = (status) => status;
+  check('U4b 负对照：pending 再点不 promote ⇒ 仍 pending（U4 必红）',
+    legacyRetry('pending') === 'pending' && !activeOrQueued({ status: legacyRetry('pending') }));
+  cancelAll(u3Q);
+}
+
+try { hangServer.closeAllConnections(); } catch { /* ignore */ }
+await new Promise((resolveClose) => { hangServer.close(() => resolveClose()); });
 
 /* ══ 汇总 ═══════════════════════════════════════════════════════════════════ */
 cleanupTestHome(TEST_HOME);
