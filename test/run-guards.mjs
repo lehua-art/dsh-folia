@@ -384,9 +384,16 @@ const VERIFY_STEPS = [
   // 4.23.18：**队列优先级 / 启动限流 / 运维 / 旧 job 迁移**。用户实测：当前在看的壁纸排在
   // 31 条 low 之后（启动批量重置）；标题栏 N 来自全局 queuePos（跨 kind 串号）；4.23.17 之前
   // 的 failed job 还带着"变体 URL + 原画哈希"的错误期望。本守卫覆盖：点击/在播 high + 队首、
-  // 30 条 done-缺失 ⇒ 全 pending（queuedCount=0）、预取 2 个且 low、N=queuedAhead（假队列含
-  // 跨 kind）、清空未开始、暂停/恢复、升级迁移（真源下载 done / 幂等 / 清单不可达 / 变异负对照）。
+  // 30 条 done-缺失 ⇒ 全 pending（queuedCount=0）、预取 stream-first 2 / download-first 3 且
+  // low、N=queuedAhead（假队列含跨 kind）、清空未开始、暂停/恢复、当前清单校验（真源下载 done /
+  // 幂等 / 清单不可达 / 刷新复核 / 变异负对照）。
   step('test/verify-queue-priority.mjs'),
+  // 4.23.23：**download-first 播放策略**（默认）—— 点未缓存壁纸先整份下载 + 校验，再从本地播；
+  // 期间 `<video>` 不得指向站点媒体地址；进度 + ETA；>12s 出现「改用边下边播」但不自动降级；
+  // 切走 ⇒ 该 job 降 low 继续下载（不暂停/不取消、字节不归零），点回 ⇒ 升 high / 直接播本地；
+  // stream-first 回滚档；预取 3 张。判据 66 条，含"把点击即播贴回 ⇒ B 组必红"的负对照，以及
+  // 同版合并的错误分类重试 / 期望值不持久化 / 清单刷新复核。
+  step('test/verify-download-first.mjs'),
   // 4.23.19（P0）：**本地副本 404 的假"无法解码"** —— 用户按「清空媒体」步骤踩到。
   // 判据：启动 3 条 done-缺失 ⇒ pending；/local-media 命中 done 但文件缺失 ⇒ 404 + 复位 pending；
   // 清空媒体 ⇒ 内存队列 done=0 + clearedJobs（负对照：只删文件/JSON 不改内存队列）；

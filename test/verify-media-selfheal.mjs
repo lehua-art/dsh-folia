@@ -155,7 +155,7 @@ const jobDone = (q, id) => waitFor(() => {
 /** 下载一个源到本地（先入队再等 done），返回 { id, dest, row }。 */
 async function fetchToLocal(q, url, kind = 'wallpaper') {
   const dest = testDest(url, kind);
-  const r = q.add({ url, dest, kind, sha256: sha256(SOURCES.get(new URL(url).pathname) || Buffer.alloc(0)) });
+  const r = q.add({ url, dest, kind });
   const id = r.job.id;
   const row = await jobDone(q, id);
   return { id, dest, row };
@@ -165,10 +165,17 @@ async function fetchToLocal(q, url, kind = 'wallpaper') {
 function makeEnv(opts) {
   const o = opts || {};
   const home = mkdtempSync(join(tmpdir(), 'folia-heal-'));
-  const q = createDownloadQueue({ home, log: () => {} });
+  // 4.23.22：期望值只在完成/校验那一刻问当前清单（本测试的"清单"就是 SOURCES）。
+  const resolveExpectation = (row) => {
+    let buf;
+    try { buf = SOURCES.get(new URL(String(row && row.url)).pathname); } catch { buf = undefined; }
+    return buf ? { sha256: sha256(buf), bytes: buf.length, source: 'original', at: Date.now() } : null;
+  };
+  const q = createDownloadQueue({ home, log: () => {}, resolveExpectation });
   const heal = createMediaSelfHeal({
     queue: q,
     log: () => {},
+    resolveExpectation,
     destFor: (url, kind) => testDest(url, kind),
     transcodeToPlayable: o.transcodeToPlayable || undefined,
     transcodeProgressOf: o.transcodeProgressOf || undefined,

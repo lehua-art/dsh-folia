@@ -320,15 +320,19 @@
             })
           : null),
       React.createElement("span", { className: "we-qp__item-title" }, w.title),
-      // 「已缓存」角标（需求 B7 / 成因 ⑤）：判据是**族级** `localReady` —— 原画或 1080p
-      // 任一档已落地都算"点下去不用等网络"。这是用户唯一能看到的"为什么这张会快"，
-      // 也是排障时区分「在等解码」与「在等网络」的那一眼。
-      w.localReady === true
-        ? React.createElement("span", {
-            className: "we-qp__item-cached",
-            title: weT("已在本地缓存（原画或 1080p 任一档已落地），点它不必等网络"),
-          }, weT("已缓存"))
-        : null,
+      /**
+       * 4.23.22（P1 显示缺口修复）：**每张卡自己的缓存进度**。
+       *
+       * 旧实现只在壁纸选择器（picker-modal）的卡片上挂了 `WpCardProgress`；快捷面板的
+       * 列表行/卡片只有一枚 `localReady` 的「已缓存」角标 —— 于是用户点了一张正在下载的
+       * 壁纸，侧栏里**看不到任何"缓存中 x%"**（队列里另外 2 条在跑也看不见），
+       * 这就是"点了壁纸但没看到缓存进度"的直接来源。
+       *
+       * 判据复用 `src/wallpaper-progress.js`（唯一视图函数）：running ⇒「缓存中 x%」、
+       * queued ⇒「排队中…」、pending ⇒「未缓存」、cached ⇒「已缓存」、failed ⇒ 原因+重试。
+       * 它自带订阅，只有**这张卡**的显示内容变了才重渲染（不整列表重渲染）。
+       */
+      React.createElement(WpCardProgress, { key: "we-wp", item: w }),
       // 4.23.15：**已按解码上限选 1080p**（与库视图同一句话、同一个判据源 `variantReason`）。
       w.variantReason === "decode-limit"
         ? React.createElement("span", {
@@ -506,6 +510,8 @@
         : null,
       w.id === sel.id && React.createElement("span", { className: "we-qp__card-badge" }, weT("当前")),
       React.createElement("span", { className: "we-qp__card-title" }, w.title),
+      // 4.23.22（P1）：卡片档同样显示这一张自己的缓存进度（理由见 qpRenderRow 的注释）。
+      React.createElement(WpCardProgress, { key: "we-wp", item: w }),
     );
   }
 
@@ -542,7 +548,10 @@
           sel.id && current ? current.title : weT("未选择壁纸")),
         React.createElement("div", { className: "we-qp__meta" },
           current
-            ? qpTypeLabel(current, sel) + weT(playbackLive ? " · 播放中" : " · 已暂停")
+            ? qpTypeLabel(current, sel)
+              + (sel.playbackState === "caching" ? weT(" · 缓存中")
+                : sel.playbackState === "streaming" ? weT(" · 边下边播")
+                : weT(playbackLive ? " · 播放中" : " · 已暂停"))
               // 4.23.4：这条走的是 1080p 变体（宿主按速度/体积/设置选的）⇒ 明确标出来。
               // 不标的话用户只会觉得"怎么比我预期的小/糊"，而不知道这是省流量档。
               + (current.chosenVariant === "1080p" ? weT(" · 1080p") : "")
@@ -552,6 +561,23 @@
         // 数据来自宿主 `/folia/site-media-stats`；拿不到就**什么都不显示**（绝不因此报错）。
         // 4.23.17：正在缓存时这一行换成「缓存中 62%（12.3/20 MB · 约剩 8 秒）」，下完回落原文案。
         React.createElement(QpCacheHint, { item: current }),
+        // 4.23.23：长等待保护 / 失败重试。按钮只在两个条件下出现，绝不自动降级：
+        //   caching + cacheCanStream（预计 >12s 或 >40MB 且 <1MB/s）；
+        //   failed（明确原因 + 重试 + 可选的边下边播）。
+        sel.playbackState === "caching" && sel.cacheCanStream && React.createElement("div", { className: "we-picker__row" },
+          React.createElement("button", {
+            className: "we-picker__btn", type: "button",
+            onClick: () => { try { useStreamingNow(); } catch { /* 处理器不可用不影响按钮 */ } },
+          }, weT("改用边下边播"))),
+        sel.playbackState === "failed" && React.createElement("div", { className: "we-picker__row" },
+          React.createElement("button", {
+            className: "we-picker__btn we-picker__btn--primary", type: "button",
+            onClick: () => { try { retryDownloadFirst(); } catch { /* ignore */ } },
+          }, weT("重试")),
+          React.createElement("button", {
+            className: "we-picker__btn", type: "button",
+            onClick: () => { try { useStreamingNow(); } catch { /* ignore */ } },
+          }, weT("改用边下边播"))),
       ),
       React.createElement("div", { className: "we-qp__current-actions" },
         // ⚠️ **不变量：这一行只放日常操作**（暂停 / 播放 · 刷新 · 清除；场景与网页壁纸再加
@@ -716,6 +742,8 @@
           // 与设置页同源的那几个播放控制：实时渲染总开关 / 启动等待 / 实时帧率 /
           // 倍速 / 适配 / 翻转（侧栏档真的会画到它们）。
           onToggleSceneLive, onLiveBootDelay, onSceneLiveFps, onPlaybackRate, onObjectFit, onFlip,
+          // 4.23.23：侧栏「播放」档同样画「播放策略」两档 ⇒ 必须传同源处理器（缺它就是空按钮）。
+          onPlaybackPolicy,
           onOpenPicker, setPickerOpener,
           // 侧栏档的空态 CTA：切到本面板的壁纸页（不是设置页的库下钻）。
           onPickWallpaper: () => switchQpTab("wallpaper"),
@@ -962,7 +990,10 @@
 
     const list = sel.inventory.wallpapers;
     const current = list.find((w) => w.id === sel.id) || null;
-    const playbackLive = playbackIsVideoLike(sel) ? sel.videoPlaying : sel.playing;
+    // 4.23.23：caching 时屏上只有海报，不允许显示「播放中」。
+    const playbackLive = sel.playbackState === "caching"
+      ? false
+      : (playbackIsVideoLike(sel) ? sel.videoPlaying : sel.playing);
     // ── 壁纸属性（**页内下钻**：内容区整区换成面板）──────────────────────────────
     // 开关与设置页共用**同一份**（client.js 的 `propsPanelOpen`，经 `userPropsPanelOpen()`
     // 读；侧栏不另存一份，否则两个壳会分叉）。面板渲染器也是设置页那一份 ——

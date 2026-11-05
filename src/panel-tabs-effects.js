@@ -211,9 +211,28 @@
   }
 
   function renderEffectsPlaybackSection(ctx) {
-    const { onFpsCap, onPlaybackRate, sel, surface } = ctx;
+    const { onFpsCap, onPlaybackPolicy, onPlaybackRate, sel, surface } = ctx;
     const sidebarSurface = surface === "sidebar";
     return React.createElement(React.Fragment, null,
+      // 4.23.23：播放策略（download-first 默认 / stream-first 回滚档）。
+      // 与「倍速 / 帧率上限」不同，它**不依赖当前壁纸类型**（决定的是下一次点击的链路）。
+      // 文案必须同时说清"省流量"与"秒开"的取舍：换默认是产品口径，不能让用户猜。
+      React.createElement("div", { className: "we-picker__ctl we-picker__ctl--wrap", key: "playback-policy" },
+        ctlText(weT("播放策略"), weT("省流量 vs 秒开"),
+          weT("下载完再播（默认）：点未缓存的壁纸后先整份下载并校验，完成后再从本地文件播放；首播要等一次下载，但之后秒开、播放期间不走网络。边下边播（旧行为）：点击即用站点流播放，下载在后台继续；弱网首帧更快，但播放期间持续消耗流量。")),
+        React.createElement("div", { className: "we-picker__seg" },
+          PLAYBACK_POLICY_VALUES.map((policy) =>
+            React.createElement("button", {
+              key: policy,
+              className: "we-picker__btn we-picker__rate" + (dfPolicyOf(sel) === policy ? " we-picker__rate--active" : ""),
+              type: "button",
+              onClick: () => onPlaybackPolicy(policy),
+            }, dfPolicyLabel(policy)),
+          ),
+        ),
+        React.createElement("span", { className: "we-picker__hint" },
+          weT("下载中切走不会取消：这条只降为低优先级继续下载，点回来立刻升回队首。")),
+      ),
       // Playback speed — native playbackRate, instant, no media reload. Video
       // wallpapers only (web/iframe and scene wallpapers have no playbackRate).
       sel.type === "video"

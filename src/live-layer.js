@@ -376,7 +376,12 @@ function syncLayers() {
     // live 是否生效只需算一次：它同时决定「media 种类看不看 sceneVideo」与 live 段本身。
     const layerLive = (selection.type === "scene" || selection.type === "web") && liveRenderEnabled(selection);
     // 本次切换用的过场（类型 + 方向 + 毫秒）也只算一次：startFade 判定与两处调用点共用。
-    const switchTr = switchTransitionOf(selection);
+    // 4.23.23：download-first 的「海报 → 本地首帧」内部重建强制一次 200ms fade
+    //（用户设的"硬切"在这里要闪一下；那是一次内部换源，不是用户选的换壁纸过场）。
+    const dfFade = typeof weSwitchConsumeFade === "function" ? weSwitchConsumeFade() : false;
+    const switchTr = dfFade
+      ? { id: "fade", dir: "left", directional: false, ms: 200 }
+      : switchTransitionOf(selection);
     const wantKey = layerWantKey(layerLive);
     let gotKey = existing && existing.dataset.weKey;
     // 上一跳停在"等新层画面"上、而这一跳要换层：LAYER_ID 在**还没有画面**的那个层手里，
@@ -414,7 +419,7 @@ function syncLayers() {
       const widChanged = String(existing.dataset.weWid || "") !== String(selection.id || "");
       // 过场类型为「硬切」时根本不进过渡路径 —— 但"不搞过场"不等于"现在就拆"：
       // 旧层的处置统一放在新层建好之后（见下面的切层内容闸门）。
-      startFade = (rotationFade || widChanged) && switchTr.id !== "cut";
+      startFade = (rotationFade || widChanged || dfFade) && switchTr.id !== "cut";
       outgoing = existing;
       // 旧层让出 LAYER_ID（新层要用它）并标记为待退役；拆/淡都推迟到新层建好之后。
       outgoing.dataset.weFading = "1";

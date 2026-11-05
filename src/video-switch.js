@@ -86,6 +86,22 @@ const WE_SWITCH_PRESS_MS = 1200;
 // 收口记 `reason:'busy-timeout'`，便于在 `/folia/diag/switch-stats` 里一眼认出这一类。
 const WE_SWITCH_HARD_MS = 5000;
 
+/**
+ * 4.23.23：**download-first 的「海报 → 本地视频」交叉淡入**标记。
+ *
+ * 那条路径上在屏的是静态海报 `<img>`、没有可对齐的 `<video>`，用不了 `weSwitchHandoverLocal`
+ * 的时间对齐；但"新层有首帧才放行"的内容闸门仍然有效 —— 只需把这次内部重建强制走 **fade**
+ * （用户的过场设置可能是"硬切"，而那张海报与首帧之间硬切会闪一下）。
+ * `syncLayers` 消费一次即清（见 live-layer.js），不改变用户的持久化设置。
+ */
+let weSwitchPendingFade = false;
+function weSwitchRequestFade() { weSwitchPendingFade = true; }
+function weSwitchConsumeFade() {
+  const v = weSwitchPendingFade;
+  weSwitchPendingFade = false;
+  return v;
+}
+
 // ── 池与状态 ──────────────────────────────────────────────────────────────────
 const weSwitchPool = [];          // [{ id, el }] 长度恒 ≤ WE_SWITCH_POOL_SIZE
 let weSwitchVisibleEl = null;   // 此刻在屏上的那个池元素（== LAYER_ID 层里的 video）
@@ -1025,6 +1041,7 @@ export {
   weSwitchQueuePick, weSwitchFlushPick, weSwitchIsVisible,
   weSwitchPressFeedback, weSwitchConsumePress, weSwitchSettle, weSwitchSettleAs,
   weSwitchClickPlayer, weSwitchDetachedPlayer,
+  weSwitchRequestFade, weSwitchConsumeFade,
   weSwitchBufferHintText, weSwitchOverlaySet, weSwitchOverlayHide,
   weSwitchHandoverLocal, weSwitchBeginLocalWatch, weSwitchStopLocalWatch,
 };

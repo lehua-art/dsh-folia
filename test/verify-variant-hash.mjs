@@ -156,7 +156,17 @@ const ORIG_URL = site.origin + '/orig.mp4';
 const VAR_URL = site.origin + '/orig.1080p.mp4';
 
 {
-  const { registerDownloadsRoutes } = await import('../lib/routes/downloads.js');
+  const { registerDownloadsRoutes, registerManifestSource } = await import('../lib/routes/downloads.js');
+  // 4.23.22：入队不再记录 sha；校验在完成那一刻问**当前清单**。这里注册的就是当前清单。
+  const manifest = {
+    items: [{
+      id: 'folia-orig', title: 'orig', media: ORIG_URL, bytes: ORIG_BUF.length, sha256: ORIG_SHA,
+      variants: [{ label: '1080p', height: 1080, url: VAR_URL, bytes: VAR_BUF.length, sha256: VAR_SHA }],
+    }],
+    base: site.origin,
+    at: Date.now(),
+  };
+  registerManifestSource('wallpaper', { snapshot: () => manifest, refresh: async () => manifest });
   const routes = [];
   const deps = { disposers: [], base: '/folia', log: () => {}, serveFile: () => {} };
   registerDownloadsRoutes({ register: (spec) => { routes.push(spec); return () => {}; } }, deps);
@@ -200,8 +210,10 @@ const VAR_URL = site.origin + '/orig.1080p.mp4';
   const item = added.json && added.json.items && added.json.items[0];
   check('② /downloads/add 选的是变体地址', Boolean(item && item.chosenVariant === '1080p' && item.url === VAR_URL),
     JSON.stringify(item && { chosen: item.chosenVariant, url: item.url }));
-  check('② 响应里回的就是**变体**的 sha256（不是原画的）',
-    Boolean(item && item.sha256 === VAR_SHA), JSON.stringify(item && item.sha256));
+  check('② 响应只回"要下哪个 URL"（不再回/存任何 sha）',
+    Boolean(item && !Object.prototype.hasOwnProperty.call(item, 'sha256')
+      && !Object.prototype.hasOwnProperty.call(item, 'expectSha')),
+    JSON.stringify(item && { chosen: item.chosenVariant, url: item.url }));
   check('② 负对照：若拿原画哈希去校验变体必然不同（旧逻辑错在哪）', ORIG_SHA !== VAR_SHA);
 
   const done = await waitJob(listJobs, (j) => j.url === VAR_URL && (j.status === 'done' || j.status === 'failed'), 15000);
@@ -210,9 +222,10 @@ const VAR_URL = site.origin + '/orig.1080p.mp4';
     JSON.stringify(done && { status: done.status, verified: done.verified, error: done.error }));
   check('② 落盘字节的哈希 = 变体清单的 sha256（校验通过不是"跳过了校验"）',
     Boolean(done && existsSync(done.dest) && sha(readFileSync(done.dest)) === VAR_SHA));
-  check('② job 里持久化期望值三件套：expectSha=变体哈希 / expectBytes=变体体积 / hashSource=variant',
-    Boolean(done && done.expectSha === VAR_SHA && done.expectBytes === VAR_BUF.length && done.hashSource === 'variant'),
-    JSON.stringify(done && { sha: done.expectSha, bytes: done.expectBytes, src: done.hashSource }));
+  check('② 校验记录 = 变体自己的 sha/bytes/source（expectSha 是"实际验过什么"，不是入队输入）',
+    Boolean(done && done.expectSha === VAR_SHA && done.expectBytes === VAR_BUF.length
+      && done.verifiedSource === 'variant' && done.verified === 'sha256'),
+    JSON.stringify(done && { sha: done.expectSha, bytes: done.expectBytes, src: done.verifiedSource }));
 
   // 原画档仍用原画哈希（不能为了修变体把原画那条弄坏）
   const addedOrig = await call(find('/folia/downloads/add'), {
@@ -222,16 +235,17 @@ const VAR_URL = site.origin + '/orig.1080p.mp4';
     },
   });
   const origItem = addedOrig.json && addedOrig.json.items && addedOrig.json.items[0];
-  check('② quality=original ⇒ 入队原画、用原画的 sha256',
-    Boolean(origItem && origItem.chosenVariant === 'original' && origItem.url === ORIG_URL && origItem.sha256 === ORIG_SHA),
-    JSON.stringify(origItem && { chosen: origItem.chosenVariant, sha: origItem.sha256 }));
+  check('② quality=original ⇒ 入队原画（响应不再带 sha）',
+    Boolean(origItem && origItem.chosenVariant === 'original' && origItem.url === ORIG_URL
+      && !Object.prototype.hasOwnProperty.call(origItem, 'sha256')),
+    JSON.stringify(origItem && { chosen: origItem.chosenVariant, url: origItem.url }));
   const doneOrig = await waitJob(listJobs, (j) => j.url === ORIG_URL && (j.status === 'done' || j.status === 'failed'), 15000);
   check('② 原画 + 原画 sha256 ⇒ done（正向不回归）',
     Boolean(doneOrig && doneOrig.status === 'done'),
     JSON.stringify(doneOrig && { status: doneOrig.status, error: doneOrig.error }));
-  check('② 原画档的 hashSource=original（不会被变体档污染）',
-    Boolean(doneOrig && doneOrig.hashSource === 'original' && doneOrig.expectSha === ORIG_SHA),
-    JSON.stringify(doneOrig && { sha: doneOrig.expectSha, src: doneOrig.hashSource }));
+  check('② 原画档的 verifiedSource=original（不会被变体档污染）',
+    Boolean(doneOrig && doneOrig.verifiedSource === 'original' && doneOrig.expectSha === ORIG_SHA),
+    JSON.stringify(doneOrig && { sha: doneOrig.expectSha, src: doneOrig.verifiedSource }));
 }
 
 /* ══ ③ 负对照（行为）：变体 URL + 原画 sha256 ⇒ 必然失败（= 旧实现）══════════ */
@@ -241,8 +255,12 @@ const VAR_URL = site.origin + '/orig.1080p.mp4';
   try {
     const dest = join(home, 'library', 'wallpaper', 'old' + Date.now() + '.mp4');
     mkdirSync(dirname(dest), { recursive: true });
-    const q = createDownloadQueue({ home });
-    q.add({ url: VAR_URL + '?old', dest, kind: 'wallpaper', sha256: ORIG_SHA });   // 旧逻辑：拿原画哈希下变体
+    // 4.23.22：负对照 = 校验回调仍返回**原画** sha（旧逻辑的等价行为）。
+    const q = createDownloadQueue({
+      home,
+      resolveExpectation: () => ({ sha256: ORIG_SHA, bytes: 0, source: 'original', at: Date.now() }),
+    });
+    q.add({ url: VAR_URL + '?old', dest, kind: 'wallpaper' });
     // 服务器按路径匹配（?old 已被 split 掉）⇒ 仍返回变体字节。
     const failed = await waitJob(() => q.snapshot(), (j) => j.status === 'failed', 15000);
     check('③ 负对照（旧逻辑）变体 URL + 原画 sha256 ⇒ failed / hash-mismatch',
@@ -371,14 +389,18 @@ const VAR_URL = site.origin + '/orig.1080p.mp4';
   const route = readFileSync(join(ROOT, 'lib', 'routes', 'downloads.js'), 'utf8');
   const pick = readFileSync(join(ROOT, 'lib', 'variant-pick.js'), 'utf8');
   const lf = readFileSync(join(ROOT, 'src', 'local-first.js'), 'utf8');
-  check('⑦ 期望值只有一个来源：选 1080p 时由 `resolveMediaExpectation` 给出变体的 (url,bytes,sha256)',
-    /resolveMediaExpectation\(\{[\s\S]{0,400}?variants: pick\.variants,[\s\S]{0,120}?chosenUrl: pick\.url,[\s\S]{0,80}?\}, pick\.chosen\)/.test(route)
-    && /url: expectation\.url[\s\S]{0,120}?sha256: expectation\.sha256/.test(route));
-  check('⑦ 运行时不变式在入队前跑：期望值与 url 不自洽 ⇒ 当场 hash-source-mismatch',
-    /assertExpectation\(/.test(route) && /hash-source-mismatch|sourceViolation/.test(route));
-  check('⑦ 入队点不再自己从 `it.sha256` 拿哈希去校验（只把清单事实交给 resolve）',
-    !/downloadQueue\.add\(\{[\s\S]{0,160}?sha256:\s*normalizeSha256\(it/.test(route)
-    && !/sha256:\s*it && it\.sha256/.test(route));
+  const qsrc = readFileSync(join(ROOT, 'lib', 'download-queue.js'), 'utf8');
+  check('⑦ 期望值只在**完成那一刻**问当前清单（`currentExpectation(job)`），不是读 job 字段',
+    /function verifyCompletedFile\(job, file\)/.test(qsrc)
+    && /let exp = currentExpectation\(job\);/.test(qsrc)
+    && !/normalizeSha256\(job && job\.expectSha\)/.test(qsrc));
+  check('⑦ 入队点只记 URL：`downloadQueue.add({` 体里没有 sha256/expectBytes/hashSource',
+    !/downloadQueue\.add\(\{[\s\S]{0,160}?sha256:/.test(route)
+    && !/downloadQueue\.add\(\{[\s\S]{0,160}?expectBytes:/.test(route)
+    && !/downloadQueue\.add\(\{[\s\S]{0,160}?hashSource:/.test(route));
+  check('⑦ 变体 URL 仍取 variants 自己的 sha（resolver 委托 resolveMediaExpectation）',
+    /chosenUrl: url/.test(pick) && /resolveMediaExpectation\(\{/.test(pick)
+    && /export function resolveJobExpectationFromItems/.test(pick));
   check('⑦ variant-pick 的 normalizeVariants 保留 sha256（丢掉它客户端就只能拿原画哈希）',
     /sha256/.test(pick) && /item\.sha256 = sha/.test(pick));
   check('⑦ 客户端入队条目把 `variants`（含各自 sha256）原样带回宿主',

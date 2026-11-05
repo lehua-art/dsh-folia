@@ -403,6 +403,19 @@ function prepareSceneStaticStage(w, prep, onReady, onFail) {
 // 元素级领养（buildMedia 收编）。staging 容器的收尾在 applySelection 返回后 ——
 // 节点级领养时它已变成新层，元素级领养时它已完成使命移除。
 function applySelection(id, opts) {
+  // 4.23.23：切走 / 清除时，仍在缓存的那条**降为 low 继续下载**（不暂停、不取消；
+  // job id 与已下字节都不变）。再点回来由 high 重新入队立刻升回队首。
+  // 同 id 的 revalidate / 完成后的本地交接 ⇒ 纯 no-op（dfLeaveSelection 自己判同一 id）。
+  if (typeof dfLeaveSelection === "function") {
+    try {
+      dfLeaveSelection(id || "", {
+        demote: (payload) => {
+          try { apiPostJson("/downloads/priority", payload, { parse: "always" }).catch(() => {}); }
+          catch { /* 宿主没有该端点（旧版）⇒ 队列继续按原优先级跑 */ }
+        },
+      });
+    } catch { /* 降级失败不影响切换 */ }
+  }
   // 让路态里用户**手动重选**壁纸（点卡片 / 快捷面板 / 「下一张」）= 最新的显式动作 ⇒
   // 立刻退出让路：玻璃整族回来，且用用户这次的选择（skipRestore 别拿记忆里的旧 id 盖它）。
   // 只认 fromManual —— 启动恢复 / revalidate / 轮换提交都不是"用户刚点了"。
@@ -416,29 +429,6 @@ function applySelection(id, opts) {
   // "皮肤使用中"。fire-and-forget：写失败不影响这次壁纸应用（页签按读到的事实显示）。
   if (id && opts && opts.fromManual) {
     try { apiPostJson("/skins/activate", { id: "" }, { parse: "always" }).catch(() => {}); } catch { /* ignore */ }
-  }
-  // 「先下载到本地，再本地渲染」+「点击即下载、连点即并发」（用户 2026-10-30 的规则）。
-  //
-  // ⚠️ 这里**只入队、不拦截本次播放**：本次照旧用现有地址起播（站点代理会边下边播并落盘），
-  // 同时把这条资源放进本地库队列。下次再点它时 inventory 已经 `local: true`，直接读本地文件。
-  // 早期版本在入队后 `return`（等下载完再播），结果是"点了没反应"且让两条播放判据失败 ——
-  // 用户要的是"点一下就下、能同时下多个"，不是"点一下必须等下载完"。
-  if (id && opts && opts.fromManual && typeof localFirstApply === "function") {
-    try { localFirstApply(id); } catch { /* 下载链路不可用不影响本次播放 */ }
-  }
-  // 4.23.18：**当前在播 = 最高优先级**（含启动恢复 / 轮播 / revalidate 这类非点击路径）。
-  // 点击路径已由 localFirstApply 入队 high；这里补"在播那张若已有 job，保持 high 直到 done"。
-  // 同 id 的 revalidate 也走 —— 启动时 `revalidateSelection` 可能先把 selection.id 设好再调
-  // `applySelection`，只认"id 变了"会漏掉这张。内置 5s 节流；条目从**内存 inventory**取，
-  // 不再为提权多发 `/inventory`（test/verify-picker-upload 的"恰好一次重拉"依赖这一点）。
-  if (id && !(opts && opts.fromManual)
-      && typeof localFirstApply === "function") {
-    // 从**已在内存里的 inventory** 拿条目，别为提权再发一次 `/inventory`（上传成功那条链
-    // 自己已经重拉过一次；再查一次就是"恰好一次"判据变红的原因）。
-    const list = (selection.inventory && Array.isArray(selection.inventory.wallpapers))
-      ? selection.inventory.wallpapers : [];
-    const hit = list.find((x) => x && String(x.id) === String(id)) || null;
-    try { localFirstApply(id, { silent: true, item: hit || undefined }); } catch { /* 提权失败不影响本次播放 */ }
   }
   reportClientDiag("apply", "id=" + String(id || "").slice(0, 40));
   // 手动切换/清除/revalidate：取消进行中的轮换准备（staged/探测元素全部
@@ -466,6 +456,16 @@ function applySelection(id, opts) {
   // 手动切换不走渐变 → 立即放行轮换音频闸（轮换提交由旧层退场放行）。
   if (!opts || !opts.fromRotation) releaseRotationAudioGate();
   selection.id = id || "";
+  // 4.23.23：换一张普通壁纸 ⇒ 上一张的 download-first 可见状态作废。
+  // 两条例外：① 完成后的本地交接（fromDownloadFirst）刚把状态写成 playing；
+  //          ② 用户点「改用边下边播」（forceStream）刚把状态写成 streaming。
+  if (!(opts && (opts.fromDownloadFirst || opts.forceStream))) {
+    selection.playbackState = "";
+    selection.cacheState = "";
+    selection.cachePercent = 0;
+    selection.cacheCanStream = false;
+    selection.cacheError = "";
+  }
   persistSelection();
   if (!selection.id) {
     selection.blockedNote = "";
@@ -534,6 +534,80 @@ function applySelection(id, opts) {
     try { if (typeof weSwitchSettleAs === "function") weSwitchSettleAs(w ? "blocked" : "missing"); } catch { /* 度量是增强 */ }
     emit();
     return;
+  }
+  /**
+   * 4.23.23：**download-first 拦截点**（默认策略）。
+   *
+   * 未缓存的站点视频在「整份下载完 + 宿主校验通过」之前**不建 `<video>`、不碰站点流**：
+   * 层里只放海报（`playMode: "poster"` ⇒ buildMedia 返回 `<img>`），状态写 `caching`；
+   * `startDownloadFirst()`（src/client.js）负责 high 入队 / 进度 / 切走降级 / 失败重试。
+   *
+   * 为什么拦截点必须在这里（而不是在点击 handler）：`applySelection` 是**选中项落地**的
+   * 唯一入口，启动恢复 / 轮播 / revalidate 也走它；只改点击口会留下"别的路径照样先播站点流"。
+   * 判定本身是纯函数（`dfShouldCache`），stream-first 时恒 false ⇒ 旧行为逐字保留。
+   */
+  const dfGate = (typeof dfShouldCache === "function" && !(opts && opts.fromDownloadFirst))
+    ? dfShouldCache(w, selection, opts) : false;
+  if (dfGate) {
+    const dfSnap = dfBegin(w);
+    // 层里放什么由纯函数决定：caching / failed ⇒ `{ mode:"poster", src:<海报> }`。
+    // 这条分支绝不把 `<video>.src` 指到站点媒体地址（判据：verify-download-first 的 B 组）。
+    const dfPlan = dfLayerPlan(w, selection, dfSnap);
+    selection.url = dfPlan.src;
+    selection.playSrc = "download-first";
+    selection.playMode = dfPlan.mode;
+    selection.originUrl = w.media || null;
+    selection.type = w.type;
+    selection.mediaExt = w.mediaExt || null;
+    selection.previewUrl = w.preview || null;
+    selection.blockedNote = "";
+    selection.cacheState = "caching";
+    selection.playbackState = "caching";
+    selection.cachePercent = dfSnap.percent;
+    selection.cacheCanStream = dfSnap.canStream;
+    selection.cacheFailReason = "";
+    selection.mediaNote = dfSnap.text;
+    // 上一张视频留下的错误行不属于这一张（caching 期间层里也没有 <video>）。
+    selection.videoError = "";
+    selection.transcodeState = "idle";
+    selection.mediaInfo = null;
+    selection.sceneVideo = null;
+    selection.sceneLiveSrc = null;
+    selection.webLiveSrc = null;
+    selection.sceneFrameUrl = null;
+    selection.sceneAudioUrl = null;
+    selection.sceneHasAudio = false;
+    syncRotationTimer();
+    emit();
+    // 海报层已经上屏 = 这次点击"有反应"了；状态机收口（pressed 复位）。
+    try { weSwitchSettleAs("poster"); } catch { /* 度量是增强 */ }
+    if (typeof startDownloadFirst === "function") {
+      try { startDownloadFirst(w); } catch { /* 失败由状态机给出原因 */ }
+    }
+    return;
+  }
+  // 「先下载到本地，再本地渲染」+「点击即下载、连点即并发」（用户 2026-10-30 的规则）。
+  //
+  // ⚠️ stream-first 下这里**只入队、不拦截本次播放**：本次照旧用现有地址起播（站点代理会
+  // 边下边播并落盘），同时把这条资源放进本地库队列。download-first 的拦截已在上面的
+  // dfGate 分支完成（那条路径不会走到这里）。
+  if (id && opts && opts.fromManual && !(opts.fromDownloadFirst || opts.forceStream)
+      && typeof localFirstApply === "function") {
+    try { localFirstApply(id); } catch { /* 下载链路不可用不影响本次播放 */ }
+  }
+  // 4.23.18：**当前在播 = 最高优先级**（含启动恢复 / 轮播 / revalidate 这类非点击路径）。
+  // 点击路径已由 localFirstApply 入队 high；这里补"在播那张若已有 job，保持 high 直到 done"。
+  // 同 id 的 revalidate 也走 —— 启动时 `revalidateSelection` 可能先把 selection.id 设好再调
+  // `applySelection`，只认"id 变了"会漏掉这张。内置 5s 节流；条目从**内存 inventory**取，
+  // 不再为提权多发 `/inventory`（test/verify-picker-upload 的"恰好一次重拉"依赖这一点）。
+  if (id && !(opts && opts.fromManual) && !(opts && (opts.fromDownloadFirst || opts.forceStream))
+      && typeof localFirstApply === "function") {
+    // 从**已在内存里的 inventory** 拿条目，别为提权再发一次 `/inventory`（上传成功那条链
+    // 自己已经重拉过一次；再查一次就是"恰好一次"判据变红的原因）。
+    const list = (selection.inventory && Array.isArray(selection.inventory.wallpapers))
+      ? selection.inventory.wallpapers : [];
+    const hit = list.find((x) => String(x.id) === String(id)) || null;
+    try { localFirstApply(id, { silent: true, item: hit || undefined }); } catch { /* 提权失败不影响本次播放 */ }
   }
   const savedVariant = Number(selection.frameVariants && selection.frameVariants[String(w.id)]) || 0;
   // 站点条目带 `mediaProxy`（宿主缓存代理，失败一律 302 回原 URL）⇒ 优先用它播放：

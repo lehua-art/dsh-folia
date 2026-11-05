@@ -421,10 +421,20 @@ const selection = {
   queueMediaSummary: "",
   // 本地优先/自愈的一句提示（信息类；失败类走 videoError 的红色行）。
   mediaNote: "",
-  // 4.23.19：当前播放源（`local` | `proxy` | `scene`）与渲染方式（`video` | `image` | `poster`）
-  // —— 面板/诊断读它，排障不必再猜地址与渲染器。
+  // 4.23.19：当前播放源（`local` | `proxy` | `scene` | `download-first`）与渲染方式
+  // （`video` | `image` | `poster`）—— 面板/诊断读它，排障不必再猜地址与渲染器。
   playSrc: null,
   playMode: null,
+  // 4.23.23：download-first 的可见状态机（transient）：
+  //   playbackState = `caching` | `playing` | `failed` | "（空 = 旧路径 / 无壁纸）
+  //   cacheState 与它同值（历史字段名，卡片的缓存语义读它；两者由同一处写）
+  //   cachePercent / cacheCanStream / cacheFailReason 供「进度行 + 改用边下边播 / 重试」按钮。
+  // 关键不变量：`caching` 时 `playMode` 必为 `poster`，`<video>` 的 src 绝不是站点媒体地址。
+  playbackState: "",
+  cacheState: "",
+  cachePercent: 0,
+  cacheCanStream: false,
+  cacheFailReason: "",
   // WE 官方资源路径编辑器（transient）：开态 + 草稿路径 + 上次错误。
   // 生效状态（目录/可用性）由 inventory 携带（host 是唯一真相）。
   editingWeAssetsDir: false,
@@ -2117,6 +2127,27 @@ function playRefusalBlocks(video) {
   const r = video && video.dataset ? video.dataset.wePlayRefused : "";
   return Boolean(r) && r !== "AbortError";
 }
+/**
+ * **play() 被拒的文案矩阵**（4.23.22）。
+ *
+ * 用户截图（原神 纳西妲）：H.264 2524×1080、**没有音轨**，却显示「浏览器拒绝了
+ * 播放请求」。旧实现把所有非 AbortError 一律翻成这一句 —— 可真实原因至少四类。
+ * 现在按 DOMException.name 分类（重试动作在 `client-audio-playback.js` 的
+ * `recoverPlayFailure`）：
+ *
+ *   name                动作                          是否显示/文案
+ *   AbortError          load→play 静默重试一次          **不显示**（快速切换/换源打断）
+ *   NotAllowedError     muted=true 再 play             仍失败才显示「已静音…请点播放」
+ *   NotSupportedError   —                              「浏览器无法解码这段视频…」（已有分类）
+ *   其它 name           —                              「播放失败（{name}）」（保留 name 便于排障）
+ */
+function playRefusalMessage(video) {
+  const name = String((video && video.dataset && video.dataset.wePlayRefused) || "");
+  if (!name || name === "AbortError") return "";
+  if (name === "NotAllowedError") return weT("已静音自动播放被系统拒绝，请点播放");
+  if (name === "NotSupportedError") return weT("浏览器无法解码这段视频（自上传建议改用 H.264 编码的 MP4）");
+  return weT("播放失败（{name}）", { name });
+}
 // 把元素真实状态写进 store（仅在变化时 emit —— play/pause/error 监听器会在
 // 每次浏览器驱动的状态切换时被调用，不能每次都触发整树重渲染）。
 function syncVideoState(video) {
@@ -2125,7 +2156,7 @@ function syncVideoState(video) {
   // 而随后 loadedmetadata 里补的 play() 成功时标记没人清 —— 不判 playing 的话
   // 面板会同时显示「播放中」和「浏览器拒绝了播放请求」。
   const reason = videoPlaybackError(video)
-    || (!playing && playRefusalBlocks(video) ? weT("浏览器拒绝了播放请求") : "");
+    || (!playing ? playRefusalMessage(video) : "");
   if (selection.videoPlaying === playing && selection.videoError === reason) return;
   setTransient("videoPlaying", playing);
   setTransient("videoError", reason);
@@ -2386,6 +2417,9 @@ function remountLayerVideo(url) {
   if (!el) return false;
   try {
     delete el.dataset.weTranscoded;
+    // 4.23.22：换源 = 新一轮，允许 AbortError 再自动重试一次。
+    delete el.dataset.wePlayAbortRetried;
+    delete el.dataset.wePlayRefused;
     el.src = u;
     if (typeof el.load === "function") el.load();
     const p = el.play();
@@ -3137,6 +3171,26 @@ function onToggleSceneLive(e) {
 function onLiveBootDelay(secs) { setSetting("liveBootDelay", secs); emit(); }
 function onSceneLiveFps(f) { setSetting("sceneLiveFps", f); syncLayers(); emit(); }
 function onPlaybackRate(rate) { setSetting("playbackRate", rate); emit(); }
+/**
+ * 播放策略两档（4.23.23）：
+ *   · download-first：先完整下载 + 校验，再播本地（默认）；
+ *   · stream-first：旧行为，点击即站点流（回滚档）。
+ * 切到 stream-first 时若**正在缓存**当前这张 ⇒ 立刻按新策略重挂一次（用户明确选了旧行为，
+ * 不该继续干等）；后台下载不动（下完仍会由既有的本地交接切过去）。
+ */
+function onPlaybackPolicy(policy) {
+  const next = typeof dfNormalizePolicy === "function" ? dfNormalizePolicy(policy) : policy;
+  setSetting("playbackPolicy", next);
+  if (next === "stream-first" && selection.playbackState === "caching" && selection.id) {
+    try { dfUseStream(); } catch { /* 状态机不可用也照样重挂 */ }
+    selection.playbackState = "playing";
+    selection.cacheState = "";
+    selection.cacheCanStream = false;
+    selection.mediaNote = "";
+    applySelection(selection.id, { forceStream: true });
+  }
+  emit();
+}
 function onFpsCap(cap) {
   // 用户主动改上限：这一轮抽帧升级允许当场换源（自动触发的那一轮不允许，见 upgradeByUser）。
   try { noteFpsCapChange(); } catch { /* ignore */ }
@@ -3768,6 +3822,149 @@ function playbackIsVideoLike(selLike) {
   return !isLiveScene && (selLike.type === "video"
     || (selLike.type === "scene" && Boolean(selLike.sceneVideo)));
 }
+
+// ── download-first（4.23.23）：点击 → 海报上屏 + caching → 下载完 + 校验 → 本地播 ─────
+// 这段是**编排**，状态机/文案/阈值都在 src/download-first.js（可独立 import 断言）；
+// 这里只接宿主 API 与 store。判据：test/verify-download-first.mjs。
+function dfCurrentItem() {
+  const id = String(selection.id || "");
+  const list = (selection.inventory && Array.isArray(selection.inventory.wallpapers))
+    ? selection.inventory.wallpapers : [];
+  return id ? (list.find((x) => x && String(x.id) === id) || null) : null;
+}
+
+/**
+ * 完成时把**内存 inventory** 的这一条改成本地可播（与 `msNoteJob` 同一份状态表口径）。
+ * 不这么做的话，紧接着的 `applySelection` 仍会从清单读到旧的 `localReady:false` / 旧
+ * `mediaState`，`resolvePlaySrc()` 会继续返回站点代理 —— 那正是"下完了还走 CDN"。
+ */
+function dfMarkItemLocalReady(id, job) {
+  try { msNoteJob(job); } catch { /* 状态表不可用：仍有 inventory 补丁兜底 */ }
+  const list = (selection.inventory && Array.isArray(selection.inventory.wallpapers))
+    ? selection.inventory.wallpapers : [];
+  const w = list.find((x) => x && String(x.id) === String(id));
+  if (!w) return;
+  w.localReady = true;
+  w.mediaState = {
+    key: String(w.media || ""), jobId: String((job && job.id) || ""), kind: "wallpaper",
+    jobStatus: "done", fileExists: true, fileValid: true, localReady: true, source: "local",
+  };
+}
+
+/** 进度 / 终态的 store 写入（只在 `selection.id` 仍是这条时生效）。 */
+function dfApplyUiSnapshot(snap) {
+  if (!snap || String(selection.id || "") !== String(snap.id || "")) return false;
+  if (snap.state === "caching") {
+    selection.playbackState = "caching";
+    selection.cacheState = "caching";
+    selection.cachePercent = Number(snap.percent) || 0;
+    selection.cacheCanStream = snap.canStream === true;
+    selection.mediaNote = String(snap.text || "");
+    selection.cacheFailReason = "";
+    try { weSwitchOverlaySet(selection.mediaNote); } catch { /* 覆盖层是增强 */ }
+    return true;
+  }
+  return false;
+}
+
+/** 下载完成 + 校验通过 ⇒ 预热本地副本 → 交叉淡入 → 从本地文件播放。 */
+function dfFinishToLocal(snap, job) {
+  if (!snap || !job || String(selection.id || "") !== String(snap.id || "")) return;
+  const localUrl = String(snap.localUrl || msLocalMediaUrl(job.id));
+  dfMarkItemLocalReady(selection.id, job);
+  // 预热：池里**不在屏上**的那个元素先装本地地址并解出首帧；
+  // 紧接着的 applySelection 会把它整体搬进新层（同文档 reparent 不重载）。
+  try {
+    if (typeof weSwitchBegin === "function") weSwitchBegin(null);
+    if (typeof weSwitchPoolPick === "function" && typeof weSwitchArm === "function") {
+      weSwitchArm(weSwitchPoolPick(localUrl), localUrl, selection.previewUrl || "");
+    }
+  } catch { /* 池不可用时 applySelection 仍会走一次性播放器 */ }
+  selection.playbackState = "playing";
+  selection.cacheState = "playing";
+  selection.cachePercent = 100;
+  selection.cacheCanStream = false;
+  selection.cacheFailReason = "";
+  selection.videoError = "";
+  selection.mediaNote = "";
+  try { weSwitchOverlayHide(); } catch { /* ignore */ }
+  try { dfMarkPlaying(localUrl); } catch { /* 纯状态机，失败不影响落地 */ }
+  // 强制一次 200ms fade（用户的过场可能是"硬切"，海报→首帧硬切会闪）。
+  try { weSwitchRequestFade(); } catch { /* ignore */ }
+  applySelection(selection.id, { fromDownloadFirst: true });
+}
+
+/** 失败：原因可见 + 「重试」+「改用边下边播」（按用户要求，绝不自动降级）。 */
+function dfApplyFailure(snap) {
+  if (!snap || String(selection.id || "") !== String(snap.id || "")) return;
+  selection.playbackState = "failed";
+  selection.cacheState = "failed";
+  selection.cacheFailReason = String(snap.error || "");
+  // 失败原因走 mediaNote（信息行）而不是 videoError：caching/failed 时层里没有 <video>，
+  // syncLayers 会按上一张视频的失败态把 videoError 清掉（那张壁纸并不在场）。
+  selection.videoError = "";
+  selection.mediaNote = String(snap.error || "");
+  selection.cacheCanStream = true;
+  try { weSwitchOverlayHide(); } catch { /* ignore */ }
+  emit();
+}
+
+/** 启动一条 download-first 播放（high 入队 + 轮询；切走时状态机只降级不取消）。 */
+function startDownloadFirst(item) {
+  const it = item || dfCurrentItem();
+  if (!it) return Promise.resolve(null);
+  const hooks = {
+    enqueue: async () => {
+      const resp = await apiPostJson("/downloads/add", {
+        items: [lfAddItem(it, it.media, "high")],
+      }, { parse: "always" });
+      const items = (resp && resp.data && Array.isArray(resp.data.items)) ? resp.data.items : [];
+      return (items[0] && items[0].job) || null;
+    },
+    listJobs: async () => {
+      const resp = await apiJson("/downloads/list");
+      const doc = (resp && resp.data) || resp || {};
+      return Array.isArray(doc.jobs) ? doc.jobs : [];
+    },
+    onUpdate: (snap) => { if (dfApplyUiSnapshot(snap)) emit(); },
+    onDone: (snap, job) => { dfFinishToLocal(snap, job); },
+    onFail: (snap) => { dfApplyFailure(snap); },
+    onGone: (snap) => { dfApplyFailure(snap); },
+  };
+  return Promise.resolve()
+    .then(() => dfLoad(it, hooks))
+    .catch(() => { dfApplyFailure(dfFail(weT("下载中断，请重试或改用边下边播"))); });
+}
+
+/** 「重试」：重新以 high 入队同一条，状态回到 caching（job 的已下字节会被续传复用）。 */
+function retryDownloadFirst() {
+  const it = dfCurrentItem();
+  if (!it) return;
+  selection.playbackState = "caching";
+  selection.cacheState = "caching";
+  selection.cachePercent = 0;
+  selection.cacheCanStream = false;
+  selection.cacheFailReason = "";
+  selection.videoError = "";
+  selection.mediaNote = weT("正在缓存…");
+  emit();
+  startDownloadFirst(it);
+}
+
+/** 「改用边下边播」：用户显式点了才走站点代理流；后台下载继续（下完仍会自动切本地）。 */
+function useStreamingNow() {
+  const id = String(selection.id || "");
+  if (!id) return;
+  try { dfUseStream(); } catch { /* 状态机不可用时也照样重挂 */ }
+  selection.playbackState = "streaming";
+  selection.cacheState = "streaming";
+  selection.cacheCanStream = false;
+  selection.cacheFailReason = "";
+  selection.videoError = "";
+  selection.mediaNote = weT("已改用边下边播（下载仍会在后台完成）");
+  emit();
+  applySelection(id, { forceStream: true, fromDownloadFirstStream: true });
+}
 // 播放/暂停: 意图 =「播放」但元素并没有真的在播时（被拒 / 解码失败 /
 // 被浏览器暂停），点击必须【重试播放】而不是把意图翻成 false —— 否则这个
 // 按钮在冻住状态下等于没反应，用户没有可用的「继续」。
@@ -3775,7 +3972,8 @@ function onTogglePlay() {
   if (selection.playing && playbackIsVideoLike(selection) && !selection.videoPlaying) {
     const layer = document.getElementById(LAYER_ID);
     const v = layer && layer.querySelector("video");
-    if (v && v.dataset) delete v.dataset.wePlayRefused; // 清掉拒绝标记才能重试
+    // 清掉拒绝/重试标记才能重试（4.23.22：AbortError 的"只自动重试一次"也在这里重置）。
+    if (v && v.dataset) { delete v.dataset.wePlayRefused; delete v.dataset.wePlayAbortRetried; }
     setTransient("videoError", "");
     emit(); // syncLayers → applyVideoPlayback 会重新 play()
     return;
@@ -4741,7 +4939,11 @@ function WallpaperPicker() {
   // 卡片上显示/按钮用的播放态: 视频类壁纸以 <video> 元素的真实状态为准。
   // 意图为「播放」但元素被拒/解码失败时，面板必须说「已暂停」并把按钮显示成
   // 「播放」，否则用户面对一张冻住的壁纸却只有「暂停」可点 —— 没有「继续」。
-  const playbackLive = isVideoLike ? sel.videoPlaying : sel.playing;
+  // 4.23.23：download-first 的 `caching` 状态下屏上只有海报、没有 <video> —— 面板不能写
+  // 「播放中」（那会让用户以为已经在播，进度行反而像装饰）。状态文案由渲染器按
+  // `sel.playbackState` 覆盖；这里把播放态压成 false，播放/暂停按钮回到「播放」。
+  const cachingNow = sel.playbackState === "caching";
+  const playbackLive = cachingNow ? false : (isVideoLike ? sel.videoPlaying : sel.playing);
   // 播放/暂停 / 音轨 / 音量 / 关闭 / 轮播切换 / 换列表：处理器见「播放控制处理器」段
   //（快捷播放面板共用同一份实现）。
 
@@ -5175,7 +5377,7 @@ function WallpaperPicker() {
     if (activeTab === "playback") return React.createElement(React.Fragment, null,
       renderEffectsTab({
         setSetting, setTransient,
-        onBackgroundBrightness, onBackgroundContrast, onBackgroundSaturate, onClearCustomFrame, onClearGpuFrame, onCustomFrameFile, onFlip, onFpsCap, onLayerPositionX, onLayerPositionY, onLayerReset, onLayerScale, onLiveBootDelay, onObjectFit, onOpenPicker, onPlaybackRate, onRecaptureGpuFrame, onRefreshFrame, onSceneLiveFps, onScrim, onToggleSceneLive, onWallpaperBlur, onWallpaperOpacity, sel, setPickerOpener,
+        onBackgroundBrightness, onBackgroundContrast, onBackgroundSaturate, onClearCustomFrame, onClearGpuFrame, onCustomFrameFile, onFlip, onFpsCap, onLayerPositionX, onLayerPositionY, onLayerReset, onLayerScale, onLiveBootDelay, onObjectFit, onOpenPicker, onPlaybackPolicy, onPlaybackRate, onRecaptureGpuFrame, onRefreshFrame, onSceneLiveFps, onScrim, onToggleSceneLive, onWallpaperBlur, onWallpaperOpacity, sel, setPickerOpener,
       }),
       renderAudioTab({
         setSetting, setTransient,
@@ -5210,7 +5412,7 @@ function WallpaperPicker() {
     );
     return renderWallpaperTab({
       setSetting, setTransient,
-      INTERVALS, armedConfirm: sel.armedConfirm, cdMode, current, editing, editorPageView, group, groups, isLiveScene, onArmConfirm: armConfirm, onArmDeleteGroup, onCancelEditUploadDir, onCancelEditWeAssetsDir, onClear, onDeleteGroup, onDisarmConfirm: disarmConfirm, onEditInterval, onEditName, onEditOrder, onEditTrigger, onGroupChange, onGroupInterval, onGroupTrigger, onOpenPicker, onOpenPickerDraft, onRefresh, onStartEditUploadDir, onStartEditWeAssetsDir, onSwitchTransition, onSwitchTransitionDir, onSwitchTransitionSpeed, onToggleAudio, onTogglePlay, onTogglePropsPanel, onToggleRotation, onUploadDirDraft, onWeAssetsDirDraft, pagerRow, playableCount, playableList, playbackLive, propsPanelOpen, renderUserPropsPanel, sel, setPickerOpener, uploadedList,
+      INTERVALS, armedConfirm: sel.armedConfirm, cdMode, current, editing, editorPageView, group, groups, isLiveScene, onArmConfirm: armConfirm, onArmDeleteGroup, onCacheRetry: retryDownloadFirst, onCancelEditUploadDir, onCancelEditWeAssetsDir, onClear, onDeleteGroup, onDisarmConfirm: disarmConfirm, onEditInterval, onEditName, onEditOrder, onEditTrigger, onGroupChange, onGroupInterval, onGroupTrigger, onOpenPicker, onOpenPickerDraft, onRefresh, onStartEditUploadDir, onStartEditWeAssetsDir, onSwitchTransition, onSwitchTransitionDir, onSwitchTransitionSpeed, onToggleAudio, onTogglePlay, onTogglePropsPanel, onToggleRotation, onUploadDirDraft, onWeAssetsDirDraft, onUseStreaming: useStreamingNow, pagerRow, playableCount, playableList, playbackLive, propsPanelOpen, renderUserPropsPanel, sel, setPickerOpener, uploadedList,
     });
   };
   const tabIdx = Math.max(0, visibleTabs.findIndex((t) => t.id === activeTab));

@@ -1,5 +1,49 @@
 # 变更记录（Changelog）
 
+### v4.23.23（2026-11-05，download-first 播放策略 + 4.23.22 同版合并；发布到 next，latest 保持 4.23.21）
+
+> 本轮把两路成果合并成**一个**版本：① download-first（用户本轮明确要求的新默认播放策略）；
+> ② 原 4.23.22 那批结构修复（下载校验问当前清单 / 错误分类重试 / 快切面板缓存进度）。
+> 判据：新增 `test/verify-download-first.mjs`（66 条，进 verify 链硬档）；合并的 8 个守卫全部重跑通过。
+
+**A. `playbackPolicy`：默认「先下载完 + 校验通过，再从本地文件播」** — 旧行为保留为 `stream-first`。
+- 设置项 `playbackPolicy`（`download-first` 默认 / `stream-first` 回滚档）：面板「播放」页签两档
+  （「下载完再播（省流量）」/「边下边播（秒开）」+ 一句取舍说明）。默认值在 `lib/settings-schema.js`，
+  归属/页签重置/命名空间同步登记。
+- 点击未缓存的站点视频 ⇒ **海报立刻上屏 + 状态 `caching`**（`playMode:"poster"`，绝不把
+  `<video>.src` 指到站点媒体地址）；进度行「正在缓存 x%（a/b MB · 约剩 N 秒）」由
+  `src/download-first.js` 的纯函数统一格式化（无样本就不编「约剩」）。
+- 下载完成 **且** `job.verified` 通过（`fileValid !== false`）⇒ 预热池里的隐藏 `<video>` →
+  强制 200ms fade 进新层（复用既有双元素池/内容闸门）→ 播 `/folia/local-media/<jobId>`。
+- **长等待保护**：预计 >12s 或 >40MB 且 <1MB/s ⇒ 进度行下方出现「改用边下边播」；用户点了才走
+  CDN 流，**绝不自动降级**。失败 ⇒ 明确原因 +「重试」+「改用边下边播」。
+- **切走降级（方案 A）**：切换/清除时，仍在缓存的那条只发一次 `priority:"low"`（新
+  `POST /folia/downloads/priority` + 队列 `setPriority()`），**不暂停、不取消**，job id 与已下
+  字节不变；再点回 ⇒ `/downloads/add` high 立刻升回队首；已完成 ⇒ 直接播本地。
+- **预取**：download-first 下 hover/下一张预取 **3** 张（stream-first 仍 2 张），一律 `priority:"low"`。
+
+**B. 原 4.23.22 同版修复（结构化，不是补丁）**
+- **期望值不再持久化**：`lib/download-queue.js` 的 job 不再收/存 `sha256/expectSha/expectBytes/hashSource`；
+  下载完成那一刻由 `resolveExpectation()` 问**当前清单**，`hash-mismatch` 时 `refreshExpectation()`
+  **强制刷新清单复核一次**，仍不符才失败；清单不可达 ⇒ `verified=none|size` + warn，不判失败。
+  四个路由各自注册清单源（wallpaper / skin / boot / pet），`/downloads/list` 删除 `migration`。
+- **播放错误分类**（`src/client-audio-playback.js` + `client.js`）：AbortError（快速切换/换源打断）
+  静默重试一次、旧元素直接忽略；NotAllowedError 先 `muted=true` 再试；NotSupportedError 走既有
+  「无法解码」；其它保留 DOMException name（「播放失败（{name}）」）。
+- **缓存进度显示缺口**：快捷面板的列表行与卡片档都挂 `WpCardProgress`（原来只有壁纸选择器有）——
+  用户"点了壁纸但没看到缓存进度"的根因是**显示缺口**，不是队列没下。
+
+**C. 判据 / 门禁**
+- 新增 `test/verify-download-first.mjs` 66 条：策略默认/回滚、进度/ETA/阈值边界、caching 不建
+  `<video>`、完成+verified ≤3s 进 local-media、失败三件套、切走降 low（不取消/字节不归零）、
+  切回升 high/已完成直接本地、真实队列 `setPriority` + 负对照、设置/面板/预取/结构接线、
+  以及"把点击即播站点流贴回 ⇒ B 组必红"的变异负对照；并合并错误分类/期望值结构判据。
+- 合并后重跑的 8 个守卫：queue-priority 57 · hash-source 24 · variant-hash 29 ·
+  media-state 60 · media-selfheal 93 · ranged-integrity 33 · wallpaper-progress 47 ·
+  playback-controls 全过。
+- 门禁：build-client 0 错；`run-audit` 失败 0；`verify-static` 不超基线；
+  `run-guards verify` **126 步跑完**（硬档 81）。链 fixture / 地板 / GUARD-MAP 同步重冻结。
+
 ### v4.23.21（2026-11-05，修复独立 QA 对 4.23.20 报出的 4 条插件侧问题；发布到 next）
 
 > 本轮**只修插件侧**，不发 latest（`pnpm publish --tag next`）。站点侧两条由站点仓处理。

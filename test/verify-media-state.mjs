@@ -252,7 +252,22 @@ mkdirSync(LIB, { recursive: true });
   writeFileSync(join(HOME, 'downloads.json'), JSON.stringify({ version: 1, jobs }), 'utf8');
 
   const q = createDownloadQueue({ home: HOME, log: () => {} });
-  const rec = createMediaReconciler({ queue: q, log: () => {} });
+  /**
+   * 4.23.22：对账器的校验输入来自**当前清单**（注入的 resolveExpectation），
+   * 不再读 job 上持久化的 expectSha（那正是 hash-mismatch 的根因）。
+   */
+  const expectedByUrl = new Map([
+    ['https://site.test/media/bad.mp4', shaOf(Buffer.from('different'))],
+    ['https://site.test/media/orphan.mp4', shaOf(okBuf)],
+  ]);
+  const rec = createMediaReconciler({
+    queue: q,
+    log: () => {},
+    resolveExpectation: (job) => {
+      const sha = expectedByUrl.get(String(job && job.url));
+      return sha ? { sha256: sha, bytes: 4096, source: 'original', at: Date.now() } : null;
+    },
+  });
   // 4.23.18 的 `load()` 语义保留：done-缺失在载入时已经折成 pending（不占队列）。
   // 对账器负责的是**运行时**的同一件事（文件在会话中途被删 / 被外部清理），所以这里
   // 先把 3 条强制改回 done，再对账 —— 这才是"done 但成品缺失"的真实发生方式。
@@ -282,10 +297,11 @@ mkdirSync(LIB, { recursive: true });
   writeFileSync(deepDest, deepBuf);
   q.add({ url: 'https://site.test/media/deep.mp4', dest: deepDest, kind: 'wallpaper' });
   q.add({ url: 'https://site.test/media/deep.mp4', dest: deepDest, kind: 'wallpaper' });
-  // 直接把它改成 done 且期望值错（模拟"长度对、内容错"的 4.23.6 遗留）
+  // 4.23.22：当前清单说它应该是另一个 sha（"长度对、内容错"的 4.23.6 遗留）。
+  expectedByUrl.set('https://site.test/media/deep.mp4', shaOf(Buffer.from('other')));
   q.applyReconcile([{
     id: q.snapshot().find((j) => j.url.endsWith('/deep.mp4')).id,
-    patch: { status: 'done', expectSha: shaOf(Buffer.from('other')), expectBytes: 4096, total: 4096 },
+    patch: { status: 'done', total: 4096 },
   }]);
   await rec.reconcileAll({ reason: 'deep', deep: true });
   const deepJob = q.snapshot().find((j) => j.url.endsWith('/deep.mp4'));

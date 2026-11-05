@@ -421,6 +421,24 @@ body[data-we-glass-floaters] .we-repo-panel__body {
   .we-qp__item-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .we-qp__item-badge { flex: none; font-size: 0.78em; font-weight: 600; color: var(--we-accent, #4f8cff); }
   .we-qp__item-type { flex: none; font-size: 0.78em; color: var(--we-ink-3, rgba(128, 128, 128, 0.65)); }
+  /* 4.23.22（P1）：快捷面板行/卡片上的缓存进度。
+     行是 flex 容器 ⇒ 进度条改成行内块，放在标题右边（默认的 absolute bottom:20px 是给
+     网格卡片用的，在 34px 高的行里会压到标题上）；卡片档保留默认的 absolute 叠层。 */
+  .we-qp__item > .we-wp-progress {
+    position: static; flex: 0 0 84px; width: 84px; margin-left: auto;
+  }
+  .we-qp__item > .we-wp-progress .we-wp-progress__label {
+    margin-bottom: 1px; font-size: 0.66em; line-height: 1.2; text-align: right;
+    color: var(--we-ink-3, rgba(128, 128, 128, 0.65)); text-shadow: none;
+  }
+  .we-qp__item > .we-wp-queued,
+  .we-qp__item > .we-wp-cached,
+  .we-qp__item > .we-wp-pending {
+    position: static; flex: none; margin-left: auto;
+  }
+  .we-qp__item > .we-wp-failed {
+    position: static; flex: 0 1 132px; margin-left: auto;
+  }
   .we-qp__foot {
     display: flex; padding-top: 10px;
     border-top: 1px solid var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.22));

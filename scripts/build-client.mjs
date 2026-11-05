@@ -335,7 +335,7 @@ const INLINE_MODULES = [
     file: 'src/panel-tabs-wallpaper.js',
     why: '「壁纸库」页签的四个节渲染器（原 src/panel-tabs.js 的 38–508 行原样搬移）',
     markers: ['function renderWallpaperCurrentSection(ctx) {',
-      '    const { current, isLiveScene, onClear, onOpenPicker, onRefresh, onToggleAudio, onTogglePlay, onTogglePropsPanel, playbackLive, propsPanelOpen, renderUserPropsPanel, sel, setPickerOpener } = ctx;'],
+      '    const { current, isLiveScene, onCacheRetry, onClear, onOpenPicker, onRefresh, onToggleAudio, onTogglePlay, onTogglePropsPanel, onUseStreaming, playbackLive, propsPanelOpen, renderUserPropsPanel, sel, setPickerOpener } = ctx;'],
   },
   {
     file: 'src/panel-tabs-appearance.js',
@@ -443,6 +443,16 @@ const INLINE_MODULES = [
     file: 'src/local-first.js',
     why: '本地优先：站点条目点击 → 入队下载（并发由宿主队列控制）→ 完成后再应用一次',
     markers: ['function localFirstApply(', 'function setLocalFirstNote(', 'function lfPoll('],
+  },
+  {
+    // **download-first**（4.23.23）：未缓存的站点视频先整份下载 + 校验，再从本地文件播。
+    // 排在 `src/local-first.js` 之后：运行时的失败文案复用 `dlFailReason`（按名调用，无 TDZ）；
+    // 它自己的策略/文案/阈值是纯函数，`test/verify-download-first.mjs` 可独立 import 断言。
+    file: 'src/download-first.js',
+    why: 'download-first：策略判定 / 进度+ETA 文案 / 长等待保护 / caching→playing 状态机 / 切走降级',
+    markers: ['const DF_POLICY_DEFAULT = "download-first";', 'function dfShouldCache(',
+      'function dfProgressText(', 'function dfLongWait(', 'function dfLeaveSelection(',
+      'function dfLoad(', 'function dfLayerPlan('],
   },
   {
     // **壁纸缓存进度**（4.23.17）：卡片底部小进度条 +「缓存中 62%」/「已缓存」/「重试」，

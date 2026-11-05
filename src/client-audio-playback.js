@@ -148,6 +148,82 @@ function syncSceneAudio(selLike) {
   }
 }
 
+/** 在屏那个元素才是"当前这一张"；旧元素被新切换取代后，它的 AbortError 直接忽略。 */
+function isCurrentVideoEl(video) {
+  try {
+    const cur = typeof onScreenVideo === "function" ? onScreenVideo(null) : null;
+    if (cur && cur !== video) return false;
+  } catch { /* 没有该助手（单测/旧宿主）：按当前元素处理 */ }
+  return true;
+}
+/** 成功一次就清掉拒绝/重试标记（下一轮（用户点播放 / 换源）重新给机会）。 */
+function clearPlayRefusal(video) {
+  try {
+    if (video && video.dataset) {
+      delete video.dataset.wePlayRefused;
+      delete video.dataset.wePlayAbortRetried;
+    }
+  } catch { /* ignore */ }
+}
+/**
+ * play() 失败后的**分类 + 重试**（4.23.22）。
+ *
+ * 用户截图里的「原神 纳西妲」：H.264 2524×1080、**没有音轨**，却显示"浏览器拒绝了
+ * 播放请求"。这不是 NotAllowedError（不是自动播放策略），而是快速切换/换源时 play()
+ * 被新的 load() 打断的 **AbortError**。旧实现把所有非 AbortError 一律翻译成同一句，
+ * 于是瞬时失败被永久显示成"真拒绝"。
+ *
+ * 分类表（name → 动作）：
+ *   · AbortError      ⇒ 旧元素忽略；当前元素重新 load 后**静默重试一次**，不显示错误；
+ *   · NotAllowedError ⇒ 置 muted 再 play（自动播放策略的标准解法）；仍失败才提示；
+ *   · NotSupportedError / 其它 ⇒ 记 name，由 `playRefusalMessage` 分类显示。
+ */
+function recoverPlayFailure(video, err, retried) {
+  const name = String((err && err.name) || "");
+  if (name === "AbortError") {
+    clearPlayRefusal(video);
+    // 快速切换：旧元素的 play() 被新 load 打断 —— 它已经不在屏上了，忽略，不重试。
+    if (!isCurrentVideoEl(video)) { syncVideoState(video); return; }
+    // 同一元素只重新 load 一次，避免 canplay ↔ play 的无限循环。
+    if (retried || (video.dataset && video.dataset.wePlayAbortRetried === "1")) {
+      syncVideoState(video);
+      return;
+    }
+    try { if (video.dataset) video.dataset.wePlayAbortRetried = "1"; } catch { /* ignore */ }
+    try { if (typeof video.load === "function") video.load(); } catch { /* ignore */ }
+    let p;
+    try { p = video.play(); } catch { p = null; }
+    if (p && typeof p.then === "function") {
+      p.then(() => { clearPlayRefusal(video); weApplyAudio(video); syncVideoState(video); },
+        (again) => recoverPlayFailure(video, again, true));
+    } else {
+      syncVideoState(video);
+    }
+    return;
+  }
+  if (name === "NotAllowedError" && !retried) {
+    // 自动播放被拒：先确保 muted=true 再试一次；成功就静默恢复（不打扰用户）。
+    try { video.muted = true; } catch { /* ignore */ }
+    let p;
+    try { p = video.play(); } catch { p = null; }
+    if (p && typeof p.then === "function") {
+      p.then(() => { clearPlayRefusal(video); weApplyAudio(video); syncVideoState(video); },
+        (again) => {
+          const againName = String((again && again.name) || name);
+          if (againName === "AbortError") { recoverPlayFailure(video, again, true); return; }
+          if (video.dataset) video.dataset.wePlayRefused = againName || name;
+          syncVideoState(video);
+        });
+    } else {
+      if (video.dataset) video.dataset.wePlayRefused = name;
+      syncVideoState(video);
+    }
+    return;
+  }
+  if (video.dataset) video.dataset.wePlayRefused = name || "1";
+  syncVideoState(video);
+}
+
 function applyVideoPlayback(video) {
   if (!video) return;
   watchVideoState(video);
@@ -158,21 +234,17 @@ function applyVideoPlayback(video) {
     return;
   }
   if (!video.paused && !video.ended && !video.error) { syncVideoState(video); return; }
-  if (playRefusalBlocks(video)) { syncVideoState(video); return; } // 等用户显式重试
+  if (playRefusalBlocks(video)) { syncVideoState(video); return; } // 等用户显式重试（AbortError 不算）
   let p;
   try { p = video.play(); } catch { p = null; }
   if (!p || typeof p.then !== "function") { syncVideoState(video); return; }
   p.then(
     () => {
-      if (video.dataset) delete video.dataset.wePlayRefused;
+      clearPlayRefusal(video);
       weApplyAudio(video);
       syncVideoState(video);
     },
-    (err) => {
-      // 浏览器真的拒绝了这个 play()：如实记录性质，等用户重试（不要沉默）。
-      if (video.dataset) video.dataset.wePlayRefused = (err && err.name) || "1";
-      syncVideoState(video);
-    },
+    (err) => { recoverPlayFailure(video, err, false); },
   );
 }
 

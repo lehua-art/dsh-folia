@@ -981,6 +981,14 @@
         {
           "kind": "guard",
           "npm": null,
+          "file": "test/verify-download-first.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
           "file": "test/verify-local-media-heal.mjs",
           "args": [],
           "tier": "hard",
@@ -2099,6 +2107,14 @@
           "kind": "guard",
           "npm": null,
           "file": "test/verify-queue-priority.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-download-first.mjs",
           "args": [],
           "tier": "hard",
           "probe": false

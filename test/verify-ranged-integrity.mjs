@@ -115,10 +115,19 @@ function sendRange(res, range, object, claimTotal, opts = {}) {
 }
 
 const home = mkdtempSync(join(tmpdir(), 'folia-ranged-integrity-'));
+/** 4.23.22：期望值只在完成那一刻问"当前清单"（这里用 URL → 期望的假清单）。 */
+const EXPECT = new Map();
 let homeSeq = 0;
 function newQueue(log) {
   homeSeq += 1;
-  return createDownloadQueue({ home: join(home, 'q' + homeSeq), log });
+  return createDownloadQueue({
+    home: join(home, 'q' + homeSeq),
+    log,
+    resolveExpectation: (job) => {
+      const e = EXPECT.get(String(job && job.url));
+      return e ? Object.assign({ source: 'original', at: Date.now() }, e) : null;
+    },
+  });
 }
 
 const envBackup = {
@@ -213,7 +222,9 @@ const has = (logs, re) => logs.some((l) => re.test(l));
   const logs = [];
   const q = newQueue((l) => logs.push(l));
   const dest = join(home, 'case3.zip');
-  q.add({ url: up.origin + '/media/good.zip', dest, kind: 'wallpaper', sha256: OLD_SHA });
+  const goodUrl = up.origin + '/media/good.zip';
+  EXPECT.set(goodUrl, { sha256: OLD_SHA, bytes: OLD_BUF.length });
+  q.add({ url: goodUrl, dest, kind: 'wallpaper' });
   const j = await waitJob(q);
 
   check('③ 走的是多连接且成功（mode=ranged:4）',
@@ -264,7 +275,9 @@ const has = (logs, re) => logs.some((l) => re.test(l));
   const logs = [];
   const q = newQueue((l) => logs.push(l));
   const dest = join(home, 'case5.bin');
-  q.add({ url: up.origin + '/media/hash.bin', dest, kind: 'wallpaper', sha256: GOOD_SHA });
+  const hashUrl = up.origin + '/media/hash.bin';
+  EXPECT.set(hashUrl, { sha256: GOOD_SHA, bytes: GOOD.length });
+  q.add({ url: hashUrl, dest, kind: 'wallpaper' });
   const j = await waitJob(q);
 
   check('⑤ 内容不符被判成 hash-mismatch', has(logs, /hash-mismatch/),
@@ -288,7 +301,9 @@ const has = (logs, re) => logs.some((l) => re.test(l));
   const logs = [];
   const q = newQueue((l) => logs.push(l));
   const dest = join(home, 'case5b.bin');
-  q.add({ url: up.origin + '/media/bad.bin', dest, kind: 'wallpaper', sha256: sha(GOOD) });
+  const badUrl = up.origin + '/media/bad.bin';
+  EXPECT.set(badUrl, { sha256: sha(GOOD), bytes: GOOD.length });
+  q.add({ url: badUrl, dest, kind: 'wallpaper' });
   const j = await waitJob(q);
 
   check('⑤b 最终 failed，且文案说明"传输内容与站点不一致"',

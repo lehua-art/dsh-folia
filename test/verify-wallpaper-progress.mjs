@@ -241,6 +241,58 @@ if (mod) {
     JSON.stringify(famJob && { phase: famJob.phase, percent: famJob.percent }));
 }
 
+/* ══ ⑨ 用户实测三场景（4.23.22，P1）：选中项与"别的在下载"的卡片分别显示什么 ══
+ *
+ *   ① 选中的那张正在下载 ⇒ 标题栏 + 卡片都显示「缓存中 x%」；
+ *   ② 选中的那张已 localReady、但队列里**别的**在下载 ⇒ 标题栏不显示（合理），
+ *      **那些卡片**各自显示自己的进度（这是旧版快捷面板的显示缺口：卡片根本没挂进度）；
+ *   ③ 选中项 pending（未开始）⇒ 卡片「未缓存」，不显示假进度、标题栏不显示。
+ */
+if (mod) {
+  const itemC = { id: 'C', title: 'C', media: 'https://site.test/media/c.mp4', localReady: false };
+  // ②：选中 A 已缓存；B/C 在下载。
+  const selectedCached = Object.assign({}, itemA, { localReady: true });
+  const jobB = runJob(itemB.media, 88, { received: Math.round(17.6 * MB), total: 20 * MB });
+  const jobC = runJob(itemC.media, 93, { received: Math.round(18.6 * MB), total: 20 * MB });
+  const vSel = mod.wpViewOf(selectedCached, [jobB, jobC]);
+  check('⑨② 选中项已 localReady + 别的在下载 ⇒ 标题栏不显示进度（合理）',
+    Boolean(vSel && vSel.phase === 'cached' && vSel.title == null && vSel.card === '已缓存'),
+    JSON.stringify(vSel && { phase: vSel.phase, card: vSel.card, title: vSel.title }));
+  const vB = mod.wpViewOf(itemB, [jobB, jobC]);
+  const vC = mod.wpViewOf(itemC, [jobB, jobC]);
+  check('⑨② 别的下载中的卡片各自显示「缓存中 88% / 93%」（标题栏不必显示）',
+    Boolean(vB && vB.phase === 'running' && vB.percent === 88 && /缓存中 88%/.test(vB.card)
+      && vC && vC.phase === 'running' && vC.percent === 93 && /缓存中 93%/.test(vC.card)),
+    JSON.stringify({ B: vB && vB.card, C: vC && vC.card }));
+  const cardB = mod.wpCardRender(vB, itemB);
+  check('⑨② 那些卡片真的画出进度条（不是只有标题栏有）',
+    Boolean(cardB && findByClass(cardB, 'we-wp-progress')
+      && findByClass(cardB, 'we-wp-progress__fill')?.props?.style?.width === '88%'),
+    textOf(cardB));
+
+  // ①：选中的那张自己在下载（未缓存）⇒ 两处都有。
+  const vSelf = mod.wpViewOf(itemC, [jobC]);
+  check('⑨① 选中项正在下载 ⇒ 卡片 + 标题栏都显示 93%',
+    Boolean(vSelf && vSelf.phase === 'running' && /缓存中 93%/.test(vSelf.card)
+      && /缓存中 93%/.test(vSelf.title)),
+    JSON.stringify({ card: vSelf && vSelf.card, title: vSelf && vSelf.title }));
+  check('⑨① 两处渲染器都真的输出节点',
+    Boolean(findByClass(mod.wpCardRender(vSelf, itemC), 'we-wp-progress')
+      && /93%/.test(textOf(mod.wpTitleRender(vSelf, itemC)))));
+
+  // ③：选中项 pending ⇒ 只给静态「未缓存」，没有假进度。
+  const pendingJob = Object.assign(runJob(itemC.media, 0), { status: 'pending', percent: 0 });
+  const vPending = mod.wpViewOf(itemC, [pendingJob]);
+  check('⑨③ 选中项 pending ⇒ 卡片「未缓存」、标题栏不显示、无百分比',
+    Boolean(vPending && vPending.phase === 'pending' && vPending.card === '未缓存'
+      && vPending.title == null && !/%/.test(vPending.card)),
+    JSON.stringify(vPending && { phase: vPending.phase, card: vPending.card }));
+  const cardPending = mod.wpCardRender(vPending, itemC);
+  check('⑨③ pending 卡片是静态角标（we-wp-pending，没有进度条）',
+    Boolean(findByClass(cardPending, 'we-wp-pending') && !findByClass(cardPending, 'we-wp-progress')),
+    textOf(cardPending));
+}
+
 /* ══ ⑥ failed ⇒ 「重试」+ 原因（复用 dlFailReason）════════════════════════════ */
 if (mod) {
   const job = Object.assign(runJob(ORIG, 0), { status: 'failed', error: 'http-404' });
@@ -346,6 +398,10 @@ if (mod) {
     /useWallpaperProgress\(/.test(qp) && /wpTitleRender\(/.test(qp));
   check('⑧ 快捷面板也挂了队列桥（侧栏标题栏才有进度）',
     /React\.createElement\(WpJobsBridge/.test(qp));
+  // 4.23.22（P1 显示缺口）：旧版快捷面板的行/卡片只有「已缓存」角标，**没有**进度组件 ——
+  // 用户点一张正在下载的壁纸时，侧栏里看不到任何「缓存中 x%」。
+  check('⑧ 快捷面板的列表行与卡片档都接了卡片进度（qpRenderRow / qpRenderCard → WpCardProgress）',
+    (qp.match(/React\.createElement\(WpCardProgress, \{ key: "we-wp", item: w \}\)/g) || []).length >= 2);
   const build = readFileSync(join(ROOT, 'scripts', 'build-client.mjs'), 'utf8');
   check('⑧ 已登记进 INLINE_MODULES（漏登记 = 文件存在但从不进产物）',
     /file: 'src\/wallpaper-progress\.js'/.test(build));

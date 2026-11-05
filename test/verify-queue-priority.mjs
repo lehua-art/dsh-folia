@@ -21,9 +21,10 @@
  *   E. 「前面还有 N 个」= `queuedAhead`（0 基）且与假队列顺序一致（含跨 kind）；
  *   F. 「清空未开始队列」把 queued→pending，不动 running / done / failed；
  *   G. 暂停全部：不再取任务 / 正在跑的回到 queued / 恢复后能下完；
- *   H. 升级迁移：4.23.16 形态坏 job（变体 URL + 原画 sha + expectBytes=0）⇒ 加载后
- *      `expectSha=变体 sha`、重置 queued、**能正常 done**；幂等；清单不可达时跳过不崩；
- *      另有**源码变异负对照**（删掉迁移调用 ⇒ 同一条断言必须红）。
+ *   H. 4.23.22 结构修复：期望值**只在下载完成那一刻**问当前清单（job 上不再持久化）。
+ *      旧 job 的 expectSha 被忽略仍能 done；清单旧/站点新 ⇒ 强刷清单后通过；刷新后仍不符
+ *      才 failed（带 refreshAttempted）；清单不可达 ⇒ verified=none 不失败；另有源码变异
+ *      负对照（把"用 job 的 expectSha"贴回 ⇒ 第一条必红）。
  *
  * 隔离 home（`%TEMP%\folia-test-*`）：本判据会真建临时队列/临时 http 源，绝不碰用户库。
  * Usage: `node test/verify-queue-priority.mjs`
@@ -229,18 +230,24 @@ try {
     up.close();
   }
 
-  /* ══ D. 预取最多 2 个、low；pending 不算"已在队列" ════════════════════════ */
-  console.log('\nD. 预取：最多 2 个、low；pending 可被预取重新入队');
+  /* ══ D. 预取张数：stream-first 2 / download-first 3，一律 low ═══════════════ */
+  console.log('\nD. 预取：stream-first 2 张 / download-first 3 张；一律 low；pending 可被重新入队');
   {
     const lf = readFileSync(join(ROOT, 'src', 'local-first.js'), 'utf8');
-    check('D1 预取张数常量 = 2', /const LF_PREFETCH_COUNT = 2;/.test(lf));
+    check('D1 预取张数：旧行为 2，download-first 3（两档都由 lfPrefetchCount 现算）',
+      /const LF_PREFETCH_COUNT = 2;/.test(lf)
+      && /const LF_PREFETCH_COUNT_DOWNLOAD_FIRST = 3;/.test(lf)
+      && /function lfPrefetchCount\(\)/.test(lf)
+      && /dfPolicyOf\(selection\) === "download-first"/.test(lf));
     check('D2 预取入队 priority="low"（不抢点击的 high）',
       /kind: "wallpaper", url: next\.media, priority: "low"/.test(lf)
       && /fresh\.map\(\(c\) => \(\{ kind: "wallpaper", url: c\.media, priority: "low" \}\)\)/.test(lf));
     check('D3 pending 不算"已在队列"（否则启动后的下一张永远不会被预取）',
       /const taken = new Set\(\["queued", "running", "done"\]\);/.test(lf)
       && /taken\.has\(String\(j\.status \|\| ""\)\)/.test(lf));
-    check('D4 负对照：预取张数写成 3 会被判出来', !/LF_PREFETCH_COUNT = 3/.test(lf));
+    check('D4 负对照：把 download-first 的张数写成 2（不扩大预取）会被判出来',
+      /LF_PREFETCH_COUNT_DOWNLOAD_FIRST = 3;/.test(lf)
+      && !/LF_PREFETCH_COUNT_DOWNLOAD_FIRST = 2;/.test(lf));
     check('D5 负对照：预取 priority 改成 high 会被判出来',
       !/kind: "wallpaper", url: next\.media, priority: "high"/.test(lf));
   }
@@ -360,34 +367,40 @@ try {
     up.close();
   }
 
-  /* ══ H. 升级迁移：旧 job 的错误期望值 ═══════════════════════════════════════ */
-  console.log('\nH. 升级迁移：变体 URL + 原画哈希 + expectBytes=0 ⇒ 重算并自动重试');
+  /* ══ H. 4.23.22 结构修复：期望值只在完成那一刻问当前清单 ═════════════════════
+   *
+   * 旧判据（H 组）守的是"迁移旧 expectSha"。用户否定了这个方向：迁移只是给
+   * "把期望值持久化"打补丁 —— 清单再变一次，同样的 hash-mismatch 又回来。
+   * 现在的判据直接守根因：
+   *   H1/H2 旧 job 里残留的期望值被**忽略**，下载仍能 done；
+   *   H3 校验记录的是**完成时**的当前清单 sha（带时间戳），不是入队时的；
+   *   H4 清单旧、站点新 ⇒ 强制刷新清单后校验通过（不误报）；
+   *   H5 刷新后仍不符 ⇒ 才 failed，且 verifyDetail 带 refreshAttempted；
+   *   H6 清单不可达 ⇒ 退化为长度 + 结构，verified=none，不失败；
+   *   H7 负对照（源码变异）：把"用 job 持久化的 expectSha"贴回 ⇒ H1 必红。
+   */
+  console.log('\nH. 校验只在完成那一刻问当前清单（不再持久化 expectSha）');
   {
-    const home = freshDir('migrate');
     const body = Buffer.alloc(96 * 1024, 0x5a);
     const variantSha = sha256(body);
     const originalSha = sha256(Buffer.from('original-bytes-different'));
     const up = await serveBytes(body, 0);
-    const variantUrl = up.origin + '/media/abc.1080p.mp4';
-    const originalUrl = up.origin + '/media/abc.mp4';
+    // 用 .zip：与用户实测的皮肤包同形态，跳过"媒体结构"判据，只守内容哈希路径。
+    const variantUrl = up.origin + '/media/abc.1080p.zip';
+    const originalUrl = up.origin + '/media/abc.zip';
     const items = [{
-      id: 'folia-migrate', title: 'migrate', media: originalUrl,
+      id: 'folia-current', title: 'current', media: originalUrl,
       bytes: 123456, sha256: originalSha,
       variants: [{ label: '1080p', height: 1080, bytes: body.length, url: variantUrl, sha256: variantSha }],
     }];
-    const dest = join(home, 'variant.mp4');
-    /** 4.23.16 形态的坏 job：变体 URL + 原画哈希 + expectBytes=0 + hashSource=original。 */
-    const badJobFor = (destPath) => ({
-      id: 'bad-old-job', url: variantUrl, dest: destPath, kind: 'wallpaper', total: 0,
-      status: 'failed', error: 'hash-mismatch: 传输内容与站点不一致', at: 1,
-      priority: 'low',
+    const staleId = sha256(variantUrl).slice(0, 32);   // 与队列 urlKey() 同一个键
+    /** 旧形态 job：期望值三件套都在文件里（4.23.21 及以前）—— 现在必须被**忽略**。 */
+    const staleJobFor = (destPath) => ({
+      id: staleId, url: variantUrl, dest: destPath, kind: 'wallpaper', total: 0,
+      status: 'pending', at: 1, priority: 'low',
       sha256: originalSha, expectSha: originalSha, expectBytes: 0, hashSource: 'original',
       chosenVariant: 'original',
     });
-    writeFileSync(join(home, 'downloads.json'), JSON.stringify({
-      version: 1,
-      jobs: [badJobFor(dest)],
-    }), 'utf8');
 
     // H0：纯函数本身：命中原画 / 命中变体 / 查不到。
     const expVar = resolveJobExpectationFromItems({ url: variantUrl }, items);
@@ -399,81 +412,153 @@ try {
       expOrig && expOrig.source === 'original' && expOrig.sha256 === originalSha,
       JSON.stringify(expOrig));
     check('H0c 纯函数：清单里没有 ⇒ null（不拿原画哈希去套变体）',
-      resolveJobExpectationFromItems({ url: 'https://nope.test/x.1080p.mp4' }, items) === null);
+      resolveJobExpectationFromItems({ url: 'https://nope.test/x.1080p.zip' }, items) === null);
 
+    // H1/H2：旧 job 的 expectSha 是**错的**（原画 sha + expectBytes=0）。修好之后下载
+    // 完成时问当前清单，拿变体自己的 sha ⇒ done；旧字段完全不参与。
+    const home = freshDir('no-migrate');
+    const dest = join(home, 'variant.zip');
+    writeFileSync(join(home, 'downloads.json'), JSON.stringify({ version: 1, jobs: [staleJobFor(dest)] }), 'utf8');
     const q = createDownloadQueue({
       home, log: () => {},
-      migrateExpectation: (job) => resolveJobExpectationFromItems(job, items),
+      resolveExpectation: (job) => resolveJobExpectationFromItems(job, items),
+      refreshExpectation: async (job) => resolveJobExpectationFromItems(job, items),
     });
-    // 迁移后 job 会被 pump 立刻取走，所以"迁移字段"可能在 running/done 上读 —— 都算同一事实。
-    const migrated = q.snapshot().find((j) => j.id === 'bad-old-job');
-    check('H1 加载后 expectSha = 变体 sha（不是原画）',
-      migrated?.expectSha === variantSha, migrated && String(migrated.expectSha).slice(0, 12));
-    check('H2 expectBytes = 变体字节 / hashSource=variant / chosenVariant=1080p',
-      migrated?.expectBytes === body.length && migrated?.hashSource === 'variant' && migrated?.chosenVariant === '1080p',
-      JSON.stringify({ bytes: migrated?.expectBytes, source: migrated?.hashSource, v: migrated?.chosenVariant }));
-    check('H3 迁移后自动重试（不再是 failed）',
-      migrated && migrated.status !== 'failed', migrated && migrated.status);
-    const stats = q.migrationStats();
-    check('H4 迁移统计：migrated=1 / retried=1', stats.migrated === 1 && stats.retried === 1,
-      JSON.stringify(stats));
+    const loaded = q.snapshot().find((j) => j.id === staleId);
+    check('H1 旧 job 的 expectSha/expectBytes 不被读回（加载后仍是 pending，不预填旧值）',
+      loaded && loaded.status === 'pending' && loaded.expectSha == null && loaded.expectBytes === 0,
+      loaded && JSON.stringify({ st: loaded.status, sha: loaded.expectSha, bytes: loaded.expectBytes }));
+    q.add({ url: variantUrl, dest, kind: 'wallpaper', priority: 'high' });
+    const settled = await waitFor(() => {
+      const s = q.snapshot().find((j) => j.id === staleId)?.status;
+      return s === 'done' || s === 'failed';
+    }, 15000);
+    const final = q.snapshot().find((j) => j.id === staleId);
+    check('H1b 旧的错误期望不阻塞下载：最终 done', settled && final?.status === 'done', final && final.status);
+    check('H2 落地字节与当前清单一致（sha/bytes 都取自完成时的清单）',
+      final?.status === 'done' && statSync(dest).size === body.length
+        && sha256(readFileSync(dest)) === variantSha
+        && final.expectSha === variantSha && final.expectBytes === body.length,
+      final && JSON.stringify({ sha: String(final.expectSha).slice(0, 12), bytes: final.expectBytes }));
 
-    const done = await waitFor(() => q.snapshot().find((j) => j.id === 'bad-old-job')?.status === 'done'
-      || q.snapshot().find((j) => j.id === 'bad-old-job')?.status === 'failed', 15000);
-    const final = q.snapshot().find((j) => j.id === 'bad-old-job');
-    check('H5 迁移后能正常 done（用本地假源）', done && final?.status === 'done', final && final.status);
-    check('H6 落地文件字节 = 假源（内容正确）',
-      final?.status === 'done' && statSync(dest).size === body.length && sha256(readFileSync(dest)) === variantSha,
-      final && final.status);
+    // H3：校验记录的是"完成那一刻实际用了什么" + 时间戳。
+    check('H3 /downloads/list 的 expectSha = 最近一次校验实际使用的 sha（verifiedAt>0）',
+      final?.verified === 'sha256' && final?.verifiedAt > 0 && final?.expectShaAt === final?.verifiedAt,
+      final && JSON.stringify({ verified: final.verified, at: final.verifiedAt }));
 
-    // 幂等：同一 home 再建一次（job 已 done、字段已正）⇒ migrated=0。
-    const q2 = createDownloadQueue({
-      home, log: () => {},
-      migrateExpectation: (job) => resolveJobExpectationFromItems(job, items),
-    });
-    const again = q2.migrationStats();
-    check('H7 幂等：第二次加载 migrated=0', again.migrated === 0, JSON.stringify(again));
+    // H4：本地清单旧（旧 sha）、站点已是新内容 ⇒ 强制刷新清单后校验通过，不误报。
+    {
+      const home4 = freshDir('stale-manifest');
+      const dest4 = join(home4, 'new.zip');
+      const newSha = sha256(Buffer.from('site-rotated-content'));
+      const body4 = Buffer.from('site-rotated-content');
+      const up4 = await serveBytes(body4, 0);
+      const url4 = up4.origin + '/media/rotated.zip';
+      const oldSha = sha256(Buffer.from('old-content'));
+      let manifestSha = oldSha;
+      let refreshes = 0;
+      const q4 = createDownloadQueue({
+        home: home4, log: () => {},
+        resolveExpectation: () => ({ sha256: manifestSha, bytes: 0, source: 'original', at: Date.now() - 3600_000 }),
+        refreshExpectation: async () => {
+          refreshes += 1;
+          manifestSha = newSha; // 刷新后站点清单给出了新 sha
+          return { sha256: newSha, bytes: body4.length, source: 'original', at: Date.now() };
+        },
+      });
+      q4.add({ url: url4, dest: dest4, kind: 'wallpaper', priority: 'high' });
+      const ok4 = await waitFor(() => q4.snapshot().find((j) => j.url === url4)?.status === 'done'
+        || q4.snapshot().find((j) => j.url === url4)?.status === 'failed', 15000);
+      const f4 = q4.snapshot().find((j) => j.url === url4);
+      check('H4 清单旧 sha + 站点新字节 ⇒ 刷新清单后校验通过（不失败）',
+        ok4 && f4?.status === 'done' && f4?.expectSha === newSha && refreshes === 1,
+        f4 && JSON.stringify({ st: f4.status, sha: String(f4.expectSha).slice(0, 12), refreshes }));
+      up4.close();
+    }
 
-    // 清单不可达（回调返回 null）⇒ 跳过、不崩、不无限重试；失败原因原样保留。
-    const home2 = freshDir('migrate-skip');
-    writeFileSync(join(home2, 'downloads.json'), JSON.stringify({
-      version: 1, jobs: [badJobFor(join(home2, 'variant.mp4'))],
-    }), 'utf8');
-    const q3 = createDownloadQueue({ home: home2, log: () => {}, migrateExpectation: () => null });
-    const skipped = q3.snapshot().find((j) => j.id === 'bad-old-job');
-    check('H8 清单不可达 ⇒ 跳过迁移、不崩、job 仍 failed', skipped?.status === 'failed',
-      skipped && skipped.status);
-    check('H9 跳过时统计 skipped=1 / migrated=0',
-      q3.migrationStats().skipped === 1 && q3.migrationStats().migrated === 0,
-      JSON.stringify(q3.migrationStats()));
-    const again3 = q3.migrate();
-    check('H10 跳过不是无限重试：再迁一次仍是 0 / skipped=1',
-      again3.migrated === 0 && again3.skipped === 1, JSON.stringify(again3));
+    // H5：刷新后仍与字节不符 ⇒ 才 failed；verifyDetail 带 refreshAttempted / expected / actual。
+    {
+      const home5 = freshDir('still-bad');
+      const dest5 = join(home5, 'still.zip');
+      const wrongSha = sha256(Buffer.from('manifest-still-wrong'));
+      const up5 = await serveBytes(Buffer.from('actual-bytes'), 0);
+      const url5 = up5.origin + '/media/still.zip';
+      const q5 = createDownloadQueue({
+        home: home5, log: () => {},
+        resolveExpectation: () => ({ sha256: sha256(Buffer.from('manifest-old-wrong')), bytes: 0, source: 'original', at: Date.now() }),
+        refreshExpectation: async () => ({ sha256: wrongSha, bytes: 0, source: 'original', at: Date.now() }),
+      });
+      q5.add({ url: url5, dest: dest5, kind: 'wallpaper', priority: 'high' });
+      const bad5 = await waitFor(() => q5.snapshot().find((j) => j.url === url5)?.status === 'failed', 20000);
+      const f5 = q5.snapshot().find((j) => j.url === url5);
+      check('H5 刷新后仍不符 ⇒ failed(hash-mismatch)，且错误/详情带 refreshAttempted:true',
+        bad5 && /hash-mismatch/i.test(String(f5?.error))
+          && f5?.verifyDetail?.refreshAttempted === true
+          && f5?.verifyDetail?.actual === sha256(Buffer.from('actual-bytes')),
+        f5 && JSON.stringify({ err: f5.error, detail: f5.verifyDetail }));
+      up5.close();
+    }
 
-    // 负对照（源码变异）：把 load() 之后的迁移调用删掉 ⇒ 同一条断言必须红。
-    const mutRoot = freshDir('mut');
-    mkdirSync(join(mutRoot, 'lib'), { recursive: true });
-    copyFileSync(join(ROOT, 'lib', 'media-verify.js'), join(mutRoot, 'lib', 'media-verify.js'));
-    // 4.23.19：download-queue 现在 import media-state（startupStatusFor）—— 变异副本也要带上，
-    // 否则这条负对照会以 ERR_MODULE_NOT_FOUND 崩掉（不是判据红，是测试自己坏）。
-    copyFileSync(join(ROOT, 'lib', 'media-state.js'), join(mutRoot, 'lib', 'media-state.js'));
-    const src = readFileSync(join(ROOT, 'lib', 'download-queue.js'), 'utf8');
-    const mutatedSrc = src.replace(/\n\s*migrateLegacyExpectations\(\);\n\s*pump\(\);/, '\n  pump();');
-    writeFileSync(join(mutRoot, 'lib', 'download-queue.js'), mutatedSrc, 'utf8');
-    const mutated = await import(pathToFileURL(join(mutRoot, 'lib', 'download-queue.js')).href + '?v=' + Date.now());
-    const home3 = freshDir('mut-home');
-    writeFileSync(join(home3, 'downloads.json'), JSON.stringify({
-      version: 1, jobs: [badJobFor(join(home3, 'variant.mp4'))],
-    }), 'utf8');
-    const q4 = mutated.createDownloadQueue({
-      home: home3, log: () => {},
-      migrateExpectation: (job) => resolveJobExpectationFromItems(job, items),
-    });
-    const stale = q4.snapshot().find((j) => j.id === 'bad-old-job');
-    check('H11 负对照：删掉迁移调用 ⇒ 旧 expectSha 仍是原画（H1 会红）',
-      stale?.expectSha === originalSha && stale?.status === 'failed',
-      stale && (String(stale.expectSha).slice(0, 12) + '/' + stale.status));
-    q4.setPaused(false);
+    // H6：清单不可达 ⇒ 只做长度 + 结构；done + verified=none，不失败、不猜哈希。
+    {
+      const home6 = freshDir('manifest-down');
+      const dest6 = join(home6, 'down.zip');
+      const up6 = await serveBytes(Buffer.from('whatever-bytes'), 0);
+      const url6 = up6.origin + '/media/down.zip';
+      const logs6 = [];
+      const q6 = createDownloadQueue({
+        home: home6, log: (m) => logs6.push(String(m)),
+        resolveExpectation: () => null,
+        refreshExpectation: async () => null,
+      });
+      q6.add({ url: url6, dest: dest6, kind: 'wallpaper', priority: 'high' });
+      const ok6 = await waitFor(() => q6.snapshot().find((j) => j.url === url6)?.status === 'done'
+        || q6.snapshot().find((j) => j.url === url6)?.status === 'failed', 15000);
+      const f6 = q6.snapshot().find((j) => j.url === url6);
+      check('H6 清单不可达 ⇒ done + verified=none(manifest-unreachable)，不判失败',
+        ok6 && f6?.status === 'done' && f6?.verified === 'none' && f6?.verifyReason === 'manifest-unreachable',
+        f6 && JSON.stringify({ st: f6.status, verified: f6.verified, why: f6.verifyReason }));
+      check('H6b 静默跳过校验会打 warn（长度/结构层仍生效）',
+        logs6.some((l) => /verified=none/.test(l) && /manifest-unreachable/.test(l)),
+        logs6.filter((l) => /verified=/.test(l)).slice(-2).join(' | '));
+      up6.close();
+    }
+
+    // H7 负对照（源码变异）：把"用 job 里持久化的 expectSha"贴回校验路径 ⇒ H1 必须红。
+    {
+      const mutRoot = freshDir('mut');
+      mkdirSync(join(mutRoot, 'lib'), { recursive: true });
+      copyFileSync(join(ROOT, 'lib', 'media-verify.js'), join(mutRoot, 'lib', 'media-verify.js'));
+      copyFileSync(join(ROOT, 'lib', 'media-state.js'), join(mutRoot, 'lib', 'media-state.js'));
+      const src = readFileSync(join(ROOT, 'lib', 'download-queue.js'), 'utf8');
+      let mutatedSrc = src.replace(
+        'let exp = currentExpectation(job);',
+        'let exp = { sha256: normalizeSha256(job.expectSha), bytes: 0, source: \'original\', at: 0 };',
+      );
+      // 同时让 load() 把旧字段读回来（旧设计的形态），否则 job 上根本没有 expectSha。
+      mutatedSrc = mutatedSrc.replace(
+        'verified: typeof j.verified === \'string\' ? j.verified : null,',
+        'verified: typeof j.verified === \'string\' ? j.verified : null,\n          expectSha: normalizeSha256(j.expectSha || j.sha256),',
+      );
+      check('H7 负对照变异真的命中了源码（两处替换都生效）', mutatedSrc !== src
+        && /job\.expectSha/.test(mutatedSrc) && /expectSha: normalizeSha256\(j\.expectSha/.test(mutatedSrc));
+      writeFileSync(join(mutRoot, 'lib', 'download-queue.js'), mutatedSrc, 'utf8');
+      const mutated = await import(pathToFileURL(join(mutRoot, 'lib', 'download-queue.js')).href + '?v=' + Date.now());
+      const home7 = freshDir('mut-home');
+      const dest7 = join(home7, 'variant.zip');
+      writeFileSync(join(home7, 'downloads.json'), JSON.stringify({ version: 1, jobs: [staleJobFor(dest7)] }), 'utf8');
+      const q7 = mutated.createDownloadQueue({
+        home: home7, log: () => {},
+        resolveExpectation: (job) => resolveJobExpectationFromItems(job, items),
+      });
+      q7.add({ url: variantUrl, dest: dest7, kind: 'wallpaper', priority: 'high' });
+      await waitFor(() => q7.snapshot().find((j) => j.id === staleId)?.status === 'failed', 20000);
+      const stale = q7.snapshot().find((j) => j.id === staleId);
+      check('H7b 负对照：用 job 里的旧 expectSha ⇒ 旧 job 仍然 failed（H1 会红）',
+        stale?.status === 'failed' && /hash-mismatch/i.test(String(stale.error)),
+        stale && (String(stale.expectSha).slice(0, 12) + '/' + stale.status));
+      q7.setPaused(false);
+    }
     up.close();
   }
 

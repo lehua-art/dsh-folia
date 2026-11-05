@@ -94,13 +94,18 @@ function makeEl(tag) {
       load() { el._loadCount = (el._loadCount || 0) + 1; },
       play() {
         el._playCalls += 1;
-        if (el._playRejects) {
-          // A string means "reject with this DOMException name" (e.g.
-          // 'AbortError' = interrupted by load/pause/src swap, transient);
-          // `true` = the browser simply refuses to start it.
-          const name = typeof el._playRejects === 'string' ? el._playRejects : 'NotSupportedError';
-          return Promise.reject(Object.assign(new Error('refused'), { name }));
+        // `_playRejects`:
+        //   false / null ⇒ 正常
+        //   true         ⇒ 一直拒绝（NotSupportedError）
+        //   'AbortError' ⇒ 一直 AbortError
+        //   [name, …]    ⇒ 逐个消费（4.23.22 的 name 分类 + 重试判据用得到）
+        let name = null;
+        if (Array.isArray(el._playRejects)) {
+          name = el._playRejects.length ? el._playRejects.shift() : null;
+        } else if (el._playRejects) {
+          name = typeof el._playRejects === 'string' ? el._playRejects : 'NotSupportedError';
         }
+        if (name) return Promise.reject(Object.assign(new Error('refused'), { name }));
         el.paused = false;
         return Promise.resolve();
       },
@@ -286,6 +291,13 @@ async function main() {
   findButton(renderTree(), 'we-picker__btn', '返回').props.onClick();
   renderTree();
   let video = layerVideo();
+  // require-atomic-updates：await 之后直接写共享 mock 会被 lint 判成竞态；把写操作收进
+  // 同步小助手（本测试里没有真并发，只是为了不让门禁计数超基线）。
+  const setPlayRejects = (v) => { video._playRejects = v; };
+  const setMuted = (v) => { video.muted = v; };
+  const setVideoError = (v) => { video.error = v; };
+  const setPaused = (v) => { video.paused = v; };
+  const adoptLayerVideo = () => { video = layerVideo(); };
   check('A3 applying it mounts the wallpaper layer + <video> (no blank background)', !!video);
   assert(video, 'video element mounted for the uploaded wallpaper');
   check('A4 the uploaded media URL is used', video.src === '/folia/media/up1', video.src);
@@ -310,7 +322,7 @@ async function main() {
   // ── B3. A REFUSED play() must not leave the UI claiming 「播放中」 ──────────
   findButton(tree, 'we-picker__btn', '暂停').props.onClick(); // pause
   await tick(20);
-  video._playRejects = true; // browser refuses to start it (policy / codec)
+  setPlayRejects(true); // browser refuses to start it (policy / codec)
   // 数的是这次拒绝触发的**增量**，不是本测试自己累积的 _playCalls 历史
   // （把「前面已经成功 play 过几次」当成被拒后的重试就会放过"根本没重试"）。
   const retriedAfterRefusal = (before, after) => after - before >= 1;
@@ -327,12 +339,12 @@ async function main() {
     !retriedAfterRefusal(callsAfterRefusal, callsAfterRefusal));
   check('B4 the element is still paused, so the UI must NOT claim 「播放中」',
     video.paused === true && toggleLabel(tree) === '播放', 'label=' + toggleLabel(tree));
-  check('B5 the refusal reason is surfaced to the user',
-    treeText().includes('浏览器拒绝了播放请求'));
+  check('B5 a NotSupportedError refusal is classified as "cannot decode" (not the generic refusal)',
+    treeText().includes('无法解码') && !treeText().includes('浏览器拒绝了播放请求'), treeText().slice(0, 120));
   check('B6 the control stays enabled so it can be retried', toggleButton(tree).props.disabled === false);
 
   // Retry now that the element accepts playback again.
-  video._playRejects = false;
+  setPlayRejects(false);
   findButton(renderTree(), 'we-picker__btn', '播放').props.onClick();
   await tick(30);
   tree = renderTree();
@@ -345,19 +357,82 @@ async function main() {
   // An AbortError is transient, so it must NOT block the ready-event retry.)
   findButton(renderTree(), 'we-picker__btn', '暂停').props.onClick(); // pause
   await tick(20);
-  video._playRejects = 'AbortError';
+  setPlayRejects('AbortError');
   findButton(renderTree(), 'we-picker__btn', '播放').props.onClick(); // aborted start
   await tick(30);
   check('B9a an aborted start reports 「已暂停」 with a resumable control',
     toggleLabel(renderTree()) === '播放' && video.paused === true);
-  video._playRejects = false;
+  setPlayRejects(false);
   video._fire('loadeddata'); // media became ready afterwards
   await tick(30);
   check('B9b it resumes by itself once the media is ready',
     video.paused === false && toggleLabel(renderTree()) === '暂停', 'paused=' + video.paused);
 
+  // ── B10. 4.23.22：AbortError（换源/快速切换打断）⇒ 静默重试一次，不显示错误 ──
+  findButton(renderTree(), 'we-picker__btn', '暂停').props.onClick();
+  await tick(20);
+  setPlayRejects(['AbortError']);            // 第一次被 load 打断，重试时已空 ⇒ 成功
+  const loadsBeforeAbort = video._loadCount || 0;
+  findButton(renderTree(), 'we-picker__btn', '播放').props.onClick();
+  await tick(40);
+  check('B10 AbortError ⇒ 自动 load→play 重试一次后开始播放（不显示错误）',
+    video.paused === false && (video._loadCount || 0) > loadsBeforeAbort
+      && !treeText().includes('播放失败') && !treeText().includes('浏览器拒绝'),
+    'paused=' + video.paused + ' loads=' + (video._loadCount || 0) + ' text=' + treeText().slice(0, 100));
+
+  // ── B11. NotAllowedError ⇒ 先 muted=true 再 play，成功即静默恢复 ──────────
+  findButton(renderTree(), 'we-picker__btn', '暂停').props.onClick();
+  await tick(20);
+  setMuted(false);
+  setPlayRejects(['NotAllowedError']);       // 第一次被自动播放策略拒，静音重试成功
+  findButton(renderTree(), 'we-picker__btn', '播放').props.onClick();
+  await tick(40);
+  check('B11 NotAllowedError ⇒ 置 muted 后重试成功（不打扰用户）',
+    video.paused === false && video.muted === true
+      && !treeText().includes('已静音自动播放被系统拒绝'),
+    'paused=' + video.paused + ' muted=' + video.muted + ' text=' + treeText().slice(0, 100));
+
+  // ── B12. NotAllowedError 静音后仍失败 ⇒ 才显示「已静音…请点播放」 ─────────
+  findButton(renderTree(), 'we-picker__btn', '暂停').props.onClick();
+  await tick(20);
+  setPlayRejects(['NotAllowedError', 'NotAllowedError']);
+  findButton(renderTree(), 'we-picker__btn', '播放').props.onClick();
+  await tick(40);
+  check('B12 静音重试仍失败 ⇒ 「已静音自动播放被系统拒绝，请点播放」',
+    treeText().includes('已静音自动播放被系统拒绝，请点播放') && video.paused === true,
+    'paused=' + video.paused);
+
+  // ── B13. 其它 DOMException.name ⇒ 保留 name（排障不需要猜）──────────────
+  // 当前是「播放」按钮（B12 的失败态）：这一击会清标记并重新 play，play 抛 SecurityError。
+  setPlayRejects(['SecurityError']);
+  findButton(renderTree(), 'we-picker__btn', '播放').props.onClick();
+  await tick(30);
+  check('B13 其它 name ⇒ 「播放失败（SecurityError）」（保留原始 name）',
+    treeText().includes('播放失败（SecurityError）'), treeText().slice(0, 120));
+
+  // ── B14. 连续 5 次 AbortError（模拟并发 play/快速切换）⇒ 全程无错误、最终能播 ──
+  // B13 之后是失败态（暂停）。若当前正在播，先暂停；否则直接进入中止序列。
+  const pauseBeforeAbort = findButton(renderTree(), 'we-picker__btn', '暂停');
+  if (pauseBeforeAbort) pauseBeforeAbort.props.onClick();
+  // 清掉 B13 留下的拒绝标记（等价于用户点了「播放」，但这里直接进中止序列）。
+  delete video.dataset.wePlayRefused;
+  delete video.dataset.wePlayAbortRetried;
+  setPaused(true);
+  await tick(20);
+  setPlayRejects(['AbortError', 'AbortError', 'AbortError', 'AbortError', 'AbortError']);
+  for (let i = 0; i < 5; i += 1) { video._fire('loadeddata'); await tick(15); }
+  check('B14a 连续 5 次 AbortError ⇒ 没有任何错误提示',
+    !treeText().includes('播放失败') && !treeText().includes('浏览器拒绝')
+      && !treeText().includes('已静音自动播放被系统拒绝'),
+    treeText().slice(0, 120));
+  setPlayRejects(false);
+  video._fire('loadeddata');
+  await tick(40);
+  check('B14b 中止源恢复后最终正常播放', video.paused === false && toggleLabel(renderTree()) === '暂停',
+    'paused=' + video.paused + ' label=' + toggleLabel(renderTree()));
+
   // ── C. A codec the browser cannot decode ─────────────────────────────────
-  video.error = { code: 4 }; // MEDIA_ERR_SRC_NOT_SUPPORTED
+  setVideoError({ code: 4 }); // MEDIA_ERR_SRC_NOT_SUPPORTED
   video._fire('error');
   await tick(20);
   tree = renderTree();
@@ -365,7 +440,7 @@ async function main() {
     treeText().includes('已暂停') && toggleLabel(tree) === '播放', 'label=' + toggleLabel(tree));
   check('C2 the reason names the codec problem and suggests H.264',
     treeText().includes('无法解码') && treeText().includes('H.264'));
-  video.error = null;
+  setVideoError(null);
   findButton(renderTree(), 'we-picker__btn', '播放').props.onClick();
   await tick(30);
   tree = renderTree();
@@ -380,7 +455,7 @@ async function main() {
   weCard.props.onClick();
   await tick(30);
   closeLibrary(); // 播放控制与被拒原因住在页签内容里
-  video = layerVideo();
+  adoptLayerVideo();
   tree = renderTree();
   check('D1 a wallpaper switch while paused mounts the new video paused (not playing)',
     video.paused === true);
@@ -456,6 +531,57 @@ async function main() {
   check('F5 switching the filter back restores the card without touching playback',
     !!findWallpaperCard(tree, 'My Upload Video')
     && layerVideo() && layerVideo().paused === false && !treeText().includes('过滤排除'));
+
+  /* ── G. 4.23.22 错误映射表 + 负对照（把"一律浏览器拒绝"贴回 ⇒ 第一条红）────
+   *
+   * 文案只由 `playRefusalMessage(video)` 产出；这里把函数体单独取出来真跑
+   * （同一份源码，不另抄一份），并做一次源码变异：把所有 name 一律翻成
+   * 「浏览器拒绝了播放请求」—— 与用户截图里的旧行为逐字等价。
+   */
+  {
+    const bundle = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8');
+    const bodyOf = (text) => {
+      const i = text.indexOf('function playRefusalMessage(video) {');
+      if (i < 0) return '';
+      let depth = 0;
+      const start = text.indexOf('{', i);
+      for (let k = start; k < text.length; k += 1) {
+        if (text[k] === '{') depth += 1;
+        else if (text[k] === '}') { depth -= 1; if (depth === 0) return text.slice(i, k + 1); }
+      }
+      return '';
+    };
+    const T = (key, vars) => String(key).replace(/\{(\w+)\}/g, (m, k) => (
+      vars && Object.prototype.hasOwnProperty.call(vars, k) ? String(vars[k]) : m));
+    const makeMap = (src) => {
+      const fn = new Function('weT', 'video',
+        bodyOf(src) + '\nreturn playRefusalMessage(video);');
+      return (name) => { video.dataset.wePlayRefused = name; return fn(T, video); };
+    };
+    const runWith = makeMap(bundle);
+    check('G1 AbortError ⇒ 不显示任何错误（空串）', runWith('AbortError') === '');
+    check('G2 NotAllowedError ⇒ 「已静音自动播放被系统拒绝，请点播放」',
+      runWith('NotAllowedError').includes('已静音自动播放被系统拒绝'));
+    check('G3 NotSupportedError ⇒ 走已有"无法解码"分类（不是泛化拒绝）',
+      runWith('NotSupportedError').includes('无法解码'));
+    check('G4 其它 name ⇒ 「播放失败（{name}）」保留原始 name',
+      runWith('SecurityError').includes('SecurityError'));
+    delete video.dataset.wePlayRefused;
+
+    const legacy = bundle.replace(
+      'if (!name || name === "AbortError") return "";',
+      'if (!name) return "";',
+    ).replace(
+      'if (name === "NotAllowedError") return weT("已静音自动播放被系统拒绝，请点播放");',
+      'if (name) return weT("浏览器拒绝了播放请求");',
+    );
+    check('G5 负对照变异命中了源码（两处替换）', legacy !== bundle
+      && legacy.includes('if (name) return weT("浏览器拒绝了播放请求");'));
+    const legacyAbort = makeMap(legacy)('AbortError');
+    check('G6 负对照：把"一律翻译成浏览器拒绝"贴回 ⇒ G1（Abort 不显示）必须红',
+      legacyAbort === '浏览器拒绝了播放请求', legacyAbort);
+    delete video.dataset.wePlayRefused;
+  }
 
   const failed = results.filter((r) => !r.ok);
   console.log('\n' + (failed.length === 0

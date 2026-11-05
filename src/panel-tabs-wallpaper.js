@@ -5,7 +5,9 @@
  * 与另四个同族模块共享同一契约：只读 ctx、不写 selection、不调 emit（判据扫全族并集）。
  */
   function renderWallpaperCurrentSection(ctx) {
-    const { current, isLiveScene, onClear, onOpenPicker, onRefresh, onToggleAudio, onTogglePlay, onTogglePropsPanel, playbackLive, propsPanelOpen, renderUserPropsPanel, sel, setPickerOpener } = ctx;
+    const { current, isLiveScene, onCacheRetry, onClear, onOpenPicker, onRefresh, onToggleAudio, onTogglePlay, onTogglePropsPanel, onUseStreaming, playbackLive, propsPanelOpen, renderUserPropsPanel, sel, setPickerOpener } = ctx;
+    // 4.23.23：download-first 的可见状态优先于 <video> 真实播放态（caching 时尚无 <video>）。
+    const cacheState = String(sel.playbackState || "");
     return React.createElement(React.Fragment, null,
     // ── 当前壁纸: vinyl record beside the selection, in both card styles. ──
     React.createElement("div", { className: "we-picker__section" },
@@ -26,7 +28,9 @@
               current
                 ? weT("{type}{status}", {
                     type: { video: weT("视频壁纸"), web: weT("网页壁纸"), image: weT("图片壁纸"), scene: weT(isLiveScene ? "场景壁纸（实时渲染）" : "场景壁纸（静态帧）") }[current.type] || weT("壁纸"),
-                    status: weT(playbackLive ? " · 播放中" : " · 已暂停"),
+                    status: cacheState === "caching" ? weT(" · 缓存中")
+                      : cacheState === "streaming" ? weT(" · 边下边播")
+                      : weT(playbackLive ? " · 播放中" : " · 已暂停"),
                   })
                 : weT("尚未选择壁纸"))),
           // 失败/被过滤的原因说明包一层：抽屉里该层用 display:contents 展开成
@@ -38,6 +42,24 @@
           // 4.23.15：**自愈/本地优先**的信息类提示（"已自动切换 1080p""正在下载到本地 45%"…）。
           // 与上面那条分开：那条是"红了"，这条是"正在处理/已经换好了"。
           sel.mediaNote && React.createElement("div", { className: "we-picker__hint" }, sel.mediaNote),
+          // 4.23.23：长等待保护（预计 > 12 秒，或 > 40 MB 且 < 1 MB/s）——
+          // 按钮只在用户真的会干等时出现；点了才走 CDN 流，**不自动降级**。
+          cacheState === "caching" && sel.cacheCanStream && React.createElement("div", { className: "we-picker__row" },
+            React.createElement("button", {
+              className: "we-picker__btn", type: "button",
+              title: weT("这次下载预计还要很久：改用站点流立即播放，下载仍会在后台完成并自动切到本地"),
+              onClick: onUseStreaming,
+            }, weT("改用边下边播"))),
+          // 下载失败：明确原因（上面 videoError 红色行）+ 重试 + 可选的边下边播。
+          cacheState === "failed" && React.createElement("div", { className: "we-picker__row" },
+            React.createElement("button", {
+              className: "we-picker__btn we-picker__btn--primary", type: "button",
+              onClick: onCacheRetry,
+            }, weT("重试")),
+            React.createElement("button", {
+              className: "we-picker__btn", type: "button",
+              onClick: onUseStreaming,
+            }, weT("改用边下边播"))),
           // 选择被过滤条件排除（#84）: 明确指出是哪一项过滤挡住了、怎么恢复
           sel.blockedNote && React.createElement("div", { className: "we-picker__current-error" }, sel.blockedNote),
           // 实时渲染失败原因（自动回退到旧链时显示）：让「为什么黑」可见 ——

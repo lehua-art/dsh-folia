@@ -265,8 +265,21 @@ const LF_PREFETCH = {
  * 之前只预取 1 张，于是"下一张 → 再点一下下一张"的第二下必然落在冷源上；
  * 取 2 张把这条链也盖住，代价只是多一个 low 优先级任务（不抢用户点击的槽）。
  * 顺序即优先级：第 1 张是**紧邻的下一张**，第 2 张才是再下一张。
+ *
+ * 4.23.23：download-first 下"下一张"的价值更高（点击后要等整份下载才播）⇒ 取 **3** 张；
+ * stream-first 保持 2（旧行为逐字回滚）。两者都仍是 **low**（预取永远不抢用户点击的 high）。
  */
 const LF_PREFETCH_COUNT = 2;
+const LF_PREFETCH_COUNT_DOWNLOAD_FIRST = 3;
+/** 预取张数：策略只有一处判定（`dfPolicyOf` 与设置键 playbackPolicy 同源）。 */
+function lfPrefetchCount() {
+  try {
+    if (typeof dfPolicyOf === "function" && dfPolicyOf(selection) === "download-first") {
+      return LF_PREFETCH_COUNT_DOWNLOAD_FIRST;
+    }
+  } catch { /* 状态机不可用 ⇒ 按旧口径 */ }
+  return LF_PREFETCH_COUNT;
+}
 
 function lfCancelPrefetch() {
   if (LF_PREFETCH.timer) { try { clearTimeout(LF_PREFETCH.timer); } catch { /* ignore */ } }
@@ -300,11 +313,13 @@ async function lfPrefetchNext(afterId, playingId) {
       if (i >= 0) { pool = p; at = i; break; }
     }
     if (!pool) return;
-    // **按列表顺序取前 2 张**（4.23.8 / 需求 C8）：顺序即优先级 —— 第 1 张就是"下一张"。
+    // **按列表顺序取前 N 张**（4.23.8 / 需求 C8；N 由 lfPrefetchCount() 现算）：
+    // 顺序即优先级 —— 第 1 张就是"下一张"。
     // 跳过：非站点条目 / 族级已落地（`localReady`，已缓存的不必预取）/ 正在播的那张 /
     // 本次会话已经预取过的。
     const picks = [];
-    for (let k = at + 1; k < pool.length && k <= at + 8 && picks.length < LF_PREFETCH_COUNT; k += 1) {
+    const prefetchCount = lfPrefetchCount();
+    for (let k = at + 1; k < pool.length && k <= at + 8 && picks.length < prefetchCount; k += 1) {
       const cand = pool[k];
       if (!cand || !cand.mediaProxy) continue;
       if (cand.localReady === true || cand.local === true) continue;
@@ -329,8 +344,8 @@ async function lfPrefetchNext(afterId, playingId) {
     if (!fresh.length) return;
     for (const c of fresh) LF_PREFETCH.seen.add(String(c.id));
     // 第 1 张就是"**下一张**"（顺序即优先级）。单张走既有那条口径（priority=low，
-    // 不抢用户点击的 high）；只有真的取到 2 张时才批量发一次 —— 宿主 `/downloads/add`
-    // 本来就收数组，2 张 = 2 个 low 任务，不会变成 high。
+    // 不抢用户点击的 high）；多张时批量发一次 —— 宿主 `/downloads/add` 本来就收数组，
+    // 每条都是 low，不会变成 high。
     const next = fresh[0];
     if (fresh.length === 1) {
       await apiPostJson("/downloads/add", { items: [{ kind: "wallpaper", url: next.media, priority: "low" }] }, { parse: "always" });
