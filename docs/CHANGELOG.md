@@ -1,5 +1,14 @@
 # 变更记录（Changelog）
 
+### v4.23.24（2026-11-05，发布号重切；代码与判据 = 4.23.23）
+
+> npm 把 4.23.23 记为 **staged**（再发报 `Cannot publish over previously staged version "4.23.23"`，
+> 但 `npm stage list` 里又看不到它）；按 4.23.15 → 4.23.16 的既有先例重切一个发布号。
+> **代码 / 构建产物与 4.23.23 逐字节相同**（两个 tarball 除 `package.json` 的 version 外，
+> 全文件 SHA-256 对拍一致）。`--tag next` 的发布候选是 4.23.24；npm 现在要求**人工 OTP 审批**
+> 才能把 staged 版本转正（`npm stage approve <id>`），审批前 `next` 仍指向 4.23.21。
+> 4.23.23 的 tarball 与 shasum 同样留在交付记录里。
+
 ### v4.23.23（2026-11-05，download-first 播放策略 + 4.23.22 同版合并；发布到 next，latest 保持 4.23.21）
 
 > 本轮把两路成果合并成**一个**版本：① download-first（用户本轮明确要求的新默认播放策略）；
