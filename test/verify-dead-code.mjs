@@ -107,6 +107,38 @@ const DEAD = [
     why: '4.23.18 的 `migrate()`（把旧 job 的 expectSha 改成当前清单值）。4.23.22 起不需要，已删；'
       + '文件里只留了"为什么没有它"的说明。',
   },
+  /* ── 4.25.5：用户要求彻底删掉「改用边下边播」（点开即播站点流的那一档）───────────
+   * 下面四条是本轮拆掉的整条链路。任何一条回来都说明"秒开档"被贴回去了：
+   * 它会让 `<video>` 在下载完成前指向站点媒体地址 —— 正是用户明确不要的形态。 */
+  {
+    name: 'useStreamingNow()',
+    re: /\buseStreamingNow\b/,
+    why: '4.23.23 的"改用边下边播"处理器（按钮点击 → 写 streaming 态 → 按 forceStream 重挂）。'
+      + '4.25.5 按用户要求整条删除：播放只有"下载完 + 校验通过 ⇒ 本地播"一条链。',
+  },
+  {
+    name: 'dfUseStream()',
+    re: /\bdfUseStream\b/,
+    why: '上面的处理器在状态机里的那一半（caching/failed → idle + streaming）。同上删除。',
+  },
+  {
+    name: 'stream-first 第二档',
+    re: /\bstream-first\b|\bDF_POLICY_STREAM\b|\bdfNormalizePolicy\b|\bdfPolicyOf\b|\bdfPolicyLabel\b/,
+    why: '播放策略的第二档（回滚到"点击即站点流"）。4.25.5 收敛为唯一路径 `download-first`：'
+      + '设置键保留、白名单只剩一档（老存档由 sanitize 夹回默认），代码里不再有任何分支读它。',
+  },
+  {
+    name: 'dfLongWait() 长等待保护',
+    re: /\bdfLongWait\b|\bDF_LONG_WAIT_/,
+    why: '长等待（>12s / >40MB 且 <1MB/s）→ 显示「改用边下边播」按钮的阈值判据。'
+      + '按钮删除后它就没有消费者了；留着就是"零引用的实现"。',
+  },
+  {
+    name: '「边下边播」界面文案',
+    re: /边下边播/,
+    why: '用户明确要求删掉的词（按钮 / 提示 / 标题栏状态）。4.25.5 起界面上不再出现；'
+      + '源码里只允许出现在注释（本守卫已剥注释）。',
+  },
 ];
 
 /** 旧实现里对 **job 上持久化期望值** 的读取（4.23.22 结构性删除）。 */
@@ -141,7 +173,7 @@ console.log('\nA. 已删符号不得重新出现（只看代码，注释不算�
       hits.push(relative(ROOT, f) + ' → ' + item.name);
     }
   }
-  check('A1 8 个已删符号 + 2 条已删形态一处都不剩', hits.length === 0,
+  check('A1 ' + DEAD.length + ' 个已删符号 + ' + DEAD_PATTERNS.length + ' 条已删形态一处都不剩', hits.length === 0,
     hits.length ? hits.slice(0, 8).join(' | ') : '0 处');
   check('A2 扫描面非空（找不到源码 = 判据失效，必须红）',
     FILES.length >= 100 && CODE.size === FILES.length,

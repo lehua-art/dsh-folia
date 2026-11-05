@@ -1,21 +1,23 @@
 #!/usr/bin/env node
 /**
- * verify-download-first.mjs — **4.23.23：download-first 播放策略 + 切走降级**。
+ * verify-download-first.mjs — **download-first：站点壁纸唯一播放路径 + 切走降级**。
  *
- * 用户口径（本轮明确拍板）：
+ * 用户口径（4.23.23 拍板，4.25.5 收敛为**唯一路径**）：
  *   ① 点未缓存壁纸 ⇒ 卡片 pressed + **海报立刻上屏**（不黑屏）；
  *   ② 进度行「正在缓存 x%（a/b MB · 约剩 N 秒）」；
  *   ③ **整份下载完 + 校验通过后**才从 `/folia/local-media/<id>` 播；期间 `<video>` 的 src
- *      绝不指向站点媒体地址（不是"边下边播"）；
- *   ④ 等太久（预计 >12s 或 >40MB 且 <1MB/s）⇒ 出现「改用边下边播」按钮，**不自动降级**；
+ *      绝不指向站点媒体地址（站点流不是播放源）；
+ *   ④ 4.25.5：用户明确要求**删掉「改用边下边播」** ⇒ 「长等待保护」按钮、`stream-first` 档、
+ *      `useStreamingNow()` / `dfUseStream()` / `dfPolicyOf()` / `dfLongWait()` 整条链路一并删除。
+ *      设置键 `playbackPolicy` 保留但白名单只剩 `download-first`（老存档的 `stream-first`
+ *      由 sanitize 夹回默认值 —— 键消失才是"配置读错"）。
  *   ⑤ 切走 ⇒ 该条降为 **low 继续下载**（不暂停/不取消，job id 与已下字节不变）；
- *      点回 ⇒ 升回 **high**；已完成 ⇒ 直接播本地；
- *   ⑥ `playbackPolicy=stream-first` ⇒ 恢复旧行为（站点代理流）。
+ *      点回 ⇒ 升回 **high**；已完成 ⇒ 直接播本地。
  *
  * 判据组织：
- *   A. 策略判定（纯函数）· B. 进度/ETA/长等待（纯函数）· C. 状态机 + 假 DOM（caching 不建 video）
+ *   A. 判定（纯函数；唯一策略）· B. 进度/等待文案（纯函数）· C. 状态机 + 假 DOM（caching 不建 video）
  *   D. 切走/切回（优先级 low / 回到 high / 字节不归零）· E. 宿主队列真实行为（setPriority）
- *   F. 设置项 + 面板 + 预取 3 + 结构接线（负对照：把"点击即播站点流"贴回去 ⇒ B 组必红）
+ *   F. 设置项 + 面板 + 预取 3 + 结构接线（负对照：把"第二档策略"贴回去 ⇒ A/F 组必红）
  *   G. 同版合并：错误分类（AbortError / NotAllowedError / 其它保留 name）+ 期望值不持久化。
  *
  * Usage: `node test/verify-download-first.mjs`
@@ -101,53 +103,77 @@ function isSiteMediaUrl(url) {
   return s.indexOf('/site-media') >= 0 || s.indexOf('/media/wallpapers') >= 0;
 }
 
-/* ══ A. 策略判定（纯函数）══════════════════════════════════════════════════ */
-console.log('\nA. playbackPolicy：默认 download-first / stream-first 回滚');
+/* ══ A. 判定（纯函数）：只有一档策略 ═════════════════════════════════════════ */
+console.log('\nA. 判定：未缓存的站点视频 ⇒ download-first（**唯一**策略，没有第二档）');
 {
-  check('A1 缺省 / 非法值都落到 download-first（新默认）',
-    DF.dfNormalizePolicy(undefined) === 'download-first'
-    && DF.dfNormalizePolicy('') === 'download-first'
-    && DF.dfNormalizePolicy('nonsense') === 'download-first',
-    DF.dfNormalizePolicy(undefined));
-  check('A2 stream-first 原样保留（旧行为可回滚）',
-    DF.dfNormalizePolicy('stream-first') === 'stream-first');
-  check('A3 未缓存的站点视频 ⇒ 该走 download-first',
-    DF.dfShouldCache(ITEM_A, { playbackPolicy: 'download-first' }) === true);
-  check('A4 已缓存（localReady/local）⇒ 不再拦截',
-    DF.dfShouldCache({ ...ITEM_A, localReady: true }, { playbackPolicy: 'download-first' }) === false
-    && DF.dfShouldCache({ ...ITEM_A, local: true }, { playbackPolicy: 'download-first' }) === false);
-  check('A5 stream-first ⇒ 不拦截（旧路径）',
-    DF.dfShouldCache(ITEM_A, { playbackPolicy: 'stream-first' }) === false);
-  check('A6 本机条目 / 图片 / scene 不拦截',
-    DF.dfShouldCache({ ...ITEM_A, mediaProxy: '' }, { playbackPolicy: 'download-first' }) === false
-    && DF.dfShouldCache({ ...ITEM_A, type: 'image' }, { playbackPolicy: 'download-first' }) === false);
-  check('A7 完成后交接（fromDownloadFirst）不重复拦截',
-    DF.dfShouldCache(ITEM_A, { playbackPolicy: 'download-first' }, { fromDownloadFirst: true }) === false);
+  check('A1 未缓存的站点视频 ⇒ 该走 download-first',
+    DF.dfShouldCache(ITEM_A) === true);
+  check('A2 已缓存（localReady/local）⇒ 不再拦截',
+    DF.dfShouldCache({ ...ITEM_A, localReady: true }) === false
+    && DF.dfShouldCache({ ...ITEM_A, local: true }) === false);
+  check('A3 本机条目 / 图片 ⇒ 不拦截',
+    DF.dfShouldCache({ ...ITEM_A, mediaProxy: '' }) === false
+    && DF.dfShouldCache({ ...ITEM_A, type: 'image' }) === false);
+  check('A4 完成后交接（fromDownloadFirst）不重复拦截',
+    DF.dfShouldCache(ITEM_A, { fromDownloadFirst: true }) === false);
+  check('A5 判定不再读播放策略（传什么都一样：唯一路径）',
+    DF.dfShouldCache(ITEM_A, { playbackPolicy: 'stream-first' }) === true
+    && DF.dfShouldCache(ITEM_A, { playbackPolicy: 'download-first' }) === true);
+  /* ── 源码级：第二条路（策略/长等待/秒开）的符号一个都不许留 ── */
+  const src = read('src/download-first.js');
+  const schema = read('lib/settings-schema.js');
+  const STREAM_SYMBOLS = ['dfNormalizePolicy', 'dfPolicyOf', 'dfPolicyLabel', 'dfLongWait', 'dfUseStream',
+    'DF_POLICY_DEFAULT', 'DF_POLICY_STREAM', 'DF_LONG_WAIT'];
+  const left = STREAM_SYMBOLS.filter((s) => new RegExp('\\b' + s + '\\b').test(src));
+  check('A6 源码级：策略/长等待/秒开这些符号在 src/download-first.js 里一个都不剩',
+    left.length === 0, left.join(',') || '0 个');
+  check('A7 设置项保留但白名单只剩 download-first（老存档 stream-first 由 sanitize 夹回默认）',
+    /const PLAYBACK_POLICY_VALUES = \['download-first'\];/.test(schema)
+    && /playbackPolicy: "download-first"/.test(schema)
+    && /playbackPolicy: \{ kind: 'enum', values: PLAYBACK_POLICY_VALUES \}/.test(schema));
+  /* ── 负对照：把"第二档策略"贴回源码 ⇒ A6/A7 的判据必须变假 ── */
+  const legacySrc = src + '\nconst DF_POLICY_STREAM = "stream-first";\nfunction dfUseStream() { return 1; }\n';
+  const legacySchema = schema.replace(
+    "const PLAYBACK_POLICY_VALUES = ['download-first'];",
+    "const PLAYBACK_POLICY_VALUES = ['download-first', 'stream-first'];");
+  check('A8 负对照：贴回 stream-first 档 ⇒ A6 命中 2 个符号、A7 的白名单判据为假',
+    STREAM_SYMBOLS.filter((s) => new RegExp('\\b' + s + '\\b').test(legacySrc)).length >= 2
+    && !/const PLAYBACK_POLICY_VALUES = \['download-first'\];/.test(legacySchema));
 }
 
-/* ══ B. 进度文案 / ETA / 长等待保护 ═════════════════════════════════════════ */
-console.log('\nB. 进度文案 + 长等待保护（>12s 或 >40MB 且 <1MB/s）');
+/* ══ B. 进度文案 / 等待文案（纯函数）═════════════════════════════════════════ */
+console.log('\nB. 进度 + 等待文案（total 已知给百分比；未知给阶段；pending 不说"正在缓存"）');
 {
   const text = DF.dfProgressText(12.3 * 1048576, 45.8 * 1048576, 18);
   check('B1 完整文案：正在缓存 x%（a/b MB · 约剩 N 秒）',
     text === '正在缓存 27%（12.3/45.8 MB · 约剩 18 秒）', text);
-  check('B2 总量未知 ⇒ 只给「正在缓存…」（不编数字）',
+  check('B2 总量未知且无状态 ⇒ 只给「正在缓存…」（点击瞬间的乐观形态）',
     DF.dfProgressText(1024, 0, 0) === '正在缓存…');
   check('B3 没有速度样本 ⇒ 省略「约剩 N 秒」',
     DF.dfProgressText(1048576, 4194304, 0) === '正在缓存 25%（1.0/4.0 MB）',
     DF.dfProgressText(1048576, 4194304, 0));
   check('B4 百分比钳在 0..100',
     DF.dfProgressText(2 * 1048576, 1048576, 0) === '正在缓存 100%（2.0/1.0 MB）');
-  check('B5 >12 秒 ⇒ 显示「改用边下边播」',
-    DF.dfLongWait({ etaSec: 13, total: 5 * 1048576, bps: 2 * 1048576 }) === true);
-  check('B6 12 秒整 ⇒ 不显示（严格大于）',
-    DF.dfLongWait({ etaSec: 12, total: 5 * 1048576, bps: 2 * 1048576 }) === false);
-  check('B7 >40MB 且 <1MB/s ⇒ 显示（即使 ETA 未知）',
-    DF.dfLongWait({ etaSec: 0, total: 41 * 1048576, bps: 0.9 * 1048576 }) === true);
-  check('B8 39MB / 0.5MB/s ⇒ 不显示（体积门槛）',
-    DF.dfLongWait({ etaSec: 0, total: 39 * 1048576, bps: 0.5 * 1048576 }) === false);
-  check('B9 50MB / 2MB/s ⇒ 不显示（速率够快）',
-    DF.dfLongWait({ etaSec: 0, total: 50 * 1048576, bps: 2 * 1048576 }) === false);
+  check('B5 running + total 未知 ⇒「正在连接…」（不是「已下载 X MB」冒充进度）',
+    DF.dfProgressText(0, 0, 0, 'running') === '正在连接…', DF.dfProgressText(0, 0, 0, 'running'));
+  check('B6 已等待秒数来自服务端 job.at ⇒「正在连接…（已等待 5 秒）」',
+    DF.dfProgressText(0, 0, 0, 'running', 5) === '正在连接…（已等待 5 秒）',
+    DF.dfProgressText(0, 0, 0, 'running', 5));
+  check('B7 pending（被 burst 上限挤回）⇒「未缓存（点击继续）」，绝不说「正在缓存」',
+    DF.dfProgressText(0, 0, 0, 'pending') === '未缓存（点击继续）'
+    && !/正在缓存/.test(DF.dfProgressText(0, 0, 0, 'pending')),
+    DF.dfProgressText(0, 0, 0, 'pending'));
+  check('B8 dfWaitSecOf 只认服务端 at：有 at ⇒ 秒数；没 at / 未来时间 ⇒ 0（不编数字）',
+    DF.dfWaitSecOf({ at: 1000 }, 6000) === 5
+    && DF.dfWaitSecOf({}, 6000) === 0
+    && DF.dfWaitSecOf({ at: 9000 }, 6000) === 0,
+    JSON.stringify([DF.dfWaitSecOf({ at: 1000 }, 6000), DF.dfWaitSecOf({}, 6000)]));
+  /* ── 负对照：旧实现 pending 也给「正在缓存…」/ total 未知只说「正在缓存…」── */
+  const legacyText = (status) => (status === 'running' ? '连接中' : '正在缓存…');
+  check('B9 负对照：旧实现 pending ⇒「正在缓存…」、running ⇒「连接中」（B5/B7 必红）',
+    legacyText('pending') === '正在缓存…' && legacyText('running') === '连接中'
+    && DF.dfProgressText(0, 0, 0, 'pending') !== legacyText('pending')
+    && DF.dfProgressText(0, 0, 0, 'running') !== legacyText('running'));
 }
 
 /* ══ C. 状态机：caching → 进度 → done+verified → playing（本地地址）════════ */
@@ -169,7 +195,7 @@ try {
   check('C5 未下完时不存在任何 video.src（负对照：不是站点媒体地址）',
     !builtCache.layer.children.some((c) => c.tag === 'video' && isSiteMediaUrl(c.src)));
 
-  // 下到 45%：progress + ETA + 长等待按钮（模拟 1s 增量 1MB，剩余 48MB ⇒ ~48s）
+  // 下到 45%：progress + ETA（模拟 1s 增量 1MB，剩余 48MB ⇒ ~48s）
   const t0 = Date.now();
   DF.dfApplyJob({ id: 'j1', status: 'running', received: 1 * 1048576, total: 100 * 1048576 }, t0);
   DF.dfApplyJob({ id: 'j1', status: 'running', received: 2 * 1048576, total: 100 * 1048576 }, t0 + 1000);
@@ -177,9 +203,11 @@ try {
   check('C6 running 时进度前进且给出 ETA',
     snap.percent >= 1 && snap.etaSec > 12 && /约剩 \d+ 秒/.test(snap.text),
     snap.percent + '% / eta=' + snap.etaSec + ' / ' + snap.text);
-  check('C7 预计 >12s ⇒ 出现「改用边下边播」按钮（不自动降级）',
-    snap.showStream === true && snap.state === 'caching' && snap.streaming === false);
-  check('C8 「改用边下边播」是显式动作：未点击时 state 仍是 caching', snap.state === 'caching');
+  check('C7 快照里**没有**"可切流"的字段（4.25.5：那条路整体删除）',
+    !('showStream' in snap) && !('canStream' in snap) && !('streaming' in snap),
+    Object.keys(snap).join(','));
+  check('C8 负对照：把 showStream 塞回快照 ⇒ C7 的判据变假',
+    (() => { const legacy = { ...snap, showStream: true }; return 'showStream' in legacy; })());
 
   // 完成 + verified：3 秒内 → playing（local-media）
   const tDone = Date.now();
@@ -200,15 +228,16 @@ try {
   check('C12 从下载完成到 local 播放 ≤ 3 秒（同步迁移）', Date.now() - tDone < 3000,
     (Date.now() - tDone) + 'ms');
 
-  // 失败：原因 + 重试 + 改用边下边播
+  // 失败：原因 + 重试（4.25.5：没有"切流"那颗备用按钮了）
   DF.dfBegin(ITEM_A);
   DF.dfApplyJob({ id: 'j2', status: 'failed', error: 'http-404' });
   snap = DF.dfSnapshot();
   check('C13 下载失败 ⇒ state=failed + 明确原因（不是裸 failed）',
     snap.state === 'failed' && /404/.test(snap.error), snap.error);
-  check('C14 失败 ⇒ 「重试」与「改用边下边播」按钮都出现',
-    snap.showRetry === true && snap.showStream === true);
-  check('C15 未点击按钮时不会自动走站点流', snap.streaming === false && snap.state === 'failed');
+  check('C14 失败 ⇒ 只剩「重试」（showRetry），没有可切的流分支',
+    snap.showRetry === true && !('showStream' in snap));
+  check('C15 失败后不会自己走站点流：state 仍是 failed（只有用户点重试才重新入队）',
+    snap.state === 'failed' && !('streaming' in snap));
 
   // 切走 + 切回（未完成 ⇒ 继续显示进度；已完成 ⇒ 直接本地）
   DF.dfBegin(ITEM_A);
@@ -243,22 +272,27 @@ try {
     resumeDone.state === 'playing' && resumeDone.localUrl === '/folia/local-media/j3',
     resumeDone.state + ':' + resumeDone.localUrl);
 
-  // stream-first：旧行为 = 直接站点流（显式喂一个空闲快照，不受前面状态机影响）
-  const streamSnap = { state: 'idle', localUrl: '' };
-  const builtStream = buildLayerStub(ITEM_A, { playbackPolicy: 'stream-first' }, streamSnap);
-  check('C16 stream-first ⇒ 走站点代理流（旧行为逐字保留）',
-    builtStream.plan.mode === 'video'
-    && builtStream.layer.children[0].tag === 'video'
-    && builtStream.layer.children[0].src.indexOf('/folia/site-media/') >= 0,
-    builtStream.layer.children[0].src);
+  // pending 快照：层里同样只有海报（任务在、但没在排队 ⇒ 绝不建 <video>）
+  const pendingSnap = { state: 'pending', localUrl: '' };
+  const builtPending = buildLayerStub(ITEM_A, null, pendingSnap);
+  check('C16 pending 快照同样只放海报（不建 <video>、不碰站点流）',
+    builtPending.plan.mode === 'poster'
+    && !builtPending.layer.children.some((c) => c.tag === 'video'),
+    builtPending.plan.mode + ' / ' + JSON.stringify(builtPending.layer.children.map((c) => c.tag)));
+  check('C16b 负对照：把 pending 当 idle（dfLayerPlan 不看它）⇒ 会建一个指向站点流的 <video>',
+    (() => {
+      const legacy = { state: 'idle', localUrl: '' };
+      const l = buildLayerStub(ITEM_A, null, legacy);
+      return l.plan.mode === 'video' && isSiteMediaUrl(l.layer.children[0].src);
+    })());
 
   // 负对照：把"点击即用站点流"贴回媒体层 ⇒ C2/C5 的那条判据必须红。
   const mediaPrep = read('src/media-prep.js');
-  const guardOf = (src) => /const dfGate = [\s\S]{0,260}dfShouldCache\(w, selection, opts\)/.test(src)
+  const guardOf = (src) => /const dfGate = [\s\S]{0,260}dfShouldCache\(w, opts\)/.test(src)
     && /if \(dfGate\) \{[\s\S]{0,700}playMode = dfPlan\.mode/.test(src);
-  check('C17 负对照：真实源码在 caching 分支前有 dfShouldCache 拦截', guardOf(mediaPrep) === true);
+  check('C17 真实源码在 caching 分支前有 dfShouldCache 拦截', guardOf(mediaPrep) === true);
   check('C18 负对照：把拦截条件改成 false ⇒ 判据当场变红',
-    guardOf(mediaPrep.replace('? dfShouldCache(w, selection, opts) : false', '? false : false')) === false);
+    guardOf(mediaPrep.replace('? dfShouldCache(w, opts) : false', '? false : false')) === false);
 } finally {
   dom.restore();
 }
@@ -354,27 +388,28 @@ console.log('\nE. 宿主队列 setPriority：降级不取消、字节不归零�
 }
 
 /* ══ F. 设置项 / 面板 / 预取 / 结构接线 ═════════════════════════════════════ */
-console.log('\nF. playbackPolicy 设置项 + 面板控件 + 预取 3 + 结构接线');
+console.log('\nF. playbackPolicy 键保留（白名单一档）+ 面板无该控件 + 预取 3 + 结构接线');
 {
   const schema = read('lib/settings-schema.js');
   const effects = read('src/panel-tabs-effects.js');
   const lf = read('src/local-first.js');
   const build = read('scripts/build-client.mjs');
   const host = read('lib/routes/downloads.js');
-  check('F1 DEFAULTS.playbackPolicy = download-first（新默认）',
+  check('F1 DEFAULTS.playbackPolicy = download-first（唯一默认）',
     /playbackPolicy: "download-first"/.test(schema));
-  check('F2 KINDS 白名单：两档 enum（download-first / stream-first）',
-    /PLAYBACK_POLICY_VALUES = \['download-first', 'stream-first'\]/.test(schema)
+  check('F2 KINDS 白名单只剩一档（键保留；老存档的 stream-first 会被 sanitize 夹回默认）',
+    /PLAYBACK_POLICY_VALUES = \['download-first'\];/.test(schema)
     && /playbackPolicy: \{ kind: 'enum', values: PLAYBACK_POLICY_VALUES \}/.test(schema));
-  check('F3 设置分区 core + 页签重置 playback 都登记了该键',
+  check('F3 设置分区 core + 页签重置 playback 都登记了该键（键没被删）',
     /SETTINGS_NAMESPACES = \{[\s\S]{0,700}'playbackRate', 'playbackPolicy'/.test(schema)
     && /playback: \[[\s\S]{0,260}'playbackRate', 'playbackPolicy'/.test(schema));
-  check('F4 面板「播放」页签有播放策略控件 + 两档文案（省流量 / 秒开）',
-    /key: "playback-policy"/.test(effects)
-    && /onPlaybackPolicy\(policy\)/.test(effects)
-    && /dfPolicyLabel\(policy\)/.test(effects)
-    && /下载完再播（省流量）/.test(read('src/download-first.js'))
-    && /边下边播（秒开）/.test(read('src/download-first.js')));
+  check('F4 面板「播放」页签**没有**播放策略控件（一档没有可选项 ⇒ 整行不画）',
+    !/key: "playback-policy"/.test(effects)
+    && !/onPlaybackPolicy/.test(effects)
+    && !/dfPolicyLabel/.test(effects)
+    && !/dfPolicyLabel/.test(read('src/download-first.js')));
+  check('F4b 负对照：把旧控件贴回渲染器 ⇒ F4 的判据变假',
+    /key: "playback-policy"/.test(effects + '\nkey: "playback-policy"'));
   check('F5 预取（4.24.1 起）：默认 0 张、只认宿主下发、上限 3，且一律 low',
     /const LF_PREFETCH_MAX = 3;/.test(lf)
     && /function lfPrefetchCount\(hostValue\)/.test(lf)

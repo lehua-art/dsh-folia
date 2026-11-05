@@ -218,7 +218,7 @@ let b3RowA;
   check('B3f 源码级：dfLeaveSelection 只发 low，不调用 cancel/pause',
     (() => {
       const src = readFileSync(join(ROOT, 'src', 'download-first.js'), 'utf8');
-      const block = between(src, 'function dfLeaveSelection(', '/** 用户点「改用边下边播」');
+      const block = between(src, 'function dfLeaveSelection(', '/** 结算为 playing');
       return /priority:\s*["']low["']/.test(block) && !/\.cancel\s*\(/.test(block) && !/\.pause\s*\(/.test(block);
     })());
 }
@@ -734,8 +734,8 @@ console.log('\nT3. total 未知 ⇒ 排队中 / 连接中 / 已下载 X MB；tot
   const jobKnown = { id: 't3-c', kind: 'wallpaper', url: hangUrl('t3-c'), status: 'running', total: 100 * MB, received: 50 * MB, percent: 50 };
   check('T3 queued + total=0 ⇒「排队中」（不是空白/0%）',
     DF.dfProgressText(0, 0, 0, 'queued') === '排队中', DF.dfProgressText(0, 0, 0, 'queued'));
-  check('T3b running + total=0 + 未收到字节 ⇒「连接中」',
-    DF.dfProgressText(0, 0, 0, 'running') === '连接中', DF.dfProgressText(0, 0, 0, 'running'));
+  check('T3b running + total=0 + 未收到字节 ⇒「正在连接…」',
+    DF.dfProgressText(0, 0, 0, 'running') === '正在连接…', DF.dfProgressText(0, 0, 0, 'running'));
   check('T3c running + total=0 + 已收到字节 ⇒「已下载 17.3 MB」',
     DF.dfProgressText(17.3 * MB, 0, 0, 'running') === '已下载 17.3 MB', DF.dfProgressText(17.3 * MB, 0, 0, 'running'));
   check('T3d 拿到 total ⇒ 百分比 + 已下/总量（不再停在阶段文案）',
@@ -749,8 +749,8 @@ console.log('\nT3. total 未知 ⇒ 排队中 / 连接中 / 已下载 X MB；tot
   const v0 = WP.wpViewOf(item, [jobUnknown0], 0);
   const vN = WP.wpViewOf({ id: 't3-item-b', media: jobUnknownN.url, localReady: false }, [jobUnknownN], 0);
   const vK = WP.wpViewOf({ id: 't3-item-c', media: jobKnown.url, localReady: false }, [jobKnown], 0);
-  check('T3f 卡片：total=0 ⇒ 阶段文案（连接中 / 已下载 X MB），不是「缓存中 0%」',
-    v0 && v0.card === '连接中' && vN && vN.card === '已下载 17.3 MB',
+  check('T3f 卡片：total=0 ⇒ 阶段文案（正在连接… / 已下载 X MB），不是「缓存中 0%」',
+    v0 && v0.card === '正在连接…' && vN && vN.card === '已下载 17.3 MB',
     JSON.stringify({ zero: v0 && v0.card, progressing: vN && vN.card }));
   check('T3g 卡片：total 已知 ⇒「缓存中 50%」', vK && vK.card === '缓存中 50%', vK && vK.card);
   /* 负对照：旧实现 total=0 时给「正在缓存…」/「缓存中 0%」。 */
@@ -957,6 +957,273 @@ let u3Pending;
 
 try { hangServer.closeAllConnections(); } catch { /* ignore */ }
 await new Promise((resolveClose) => { hangServer.close(() => resolveClose()); });
+
+/* ══ V1–V5（4.25.5）：标题栏状态必须**始终**由服务端事实派生 ════════════════════
+ *
+ * 用户实测（本轮 P0）：点「明日方舟」⇒ job 被 burst 上限挤回 `pending`，界面却还停在点击
+ * 那一刻的乐观 `caching` ⇒ 只剩一个按钮、**没有一行状态文字**，而"缓存中"又永远没有百分比。
+ *
+ * 映射（唯一实现 = `src/wallpaper-progress.js` 的 `wpViewOf`）：
+ *   pending →「未缓存（点击继续）」· queued →「排队中：前面还有 N 个任务」·
+ *   running+total>0 →「缓存中 x%（a/b MB · 约剩 N 秒）」· running+total=0 →「正在连接…（已等待 N 秒）」·
+ *   failed →「下载失败：<原因>（点击重试）」· done+localReady → 不占标题栏。
+ * 每条都配**负对照**（把旧实现贴回去 ⇒ 必须红）。
+ */
+console.log('\nV1–V5. 标题栏状态全部由服务端事实派生（pending/queued/running/failed/800ms 回滚）');
+
+/* V 组用**真文案表**：上面 T3/U 组只要"有字"（桩返回 '排队中…' / '' 即可），这里要逐字
+   对服务端映射——排队位置、进度明细、失败原因都必须来自那三张共用表（不是本测试另写一份）。 */
+const V_DL_STUBS = { dlQueueDetail: globalThis.dlQueueDetail, dlProgressDetail: globalThis.dlProgressDetail, dlFailReason: globalThis.dlFailReason };
+globalThis.dlQueueDetail = (job) => {
+  const ahead = job && job.queuedAhead;
+  if (ahead != null && Number.isFinite(Number(ahead)) && Number(ahead) >= 0) {
+    return '排队中：前面还有 ' + Number(ahead) + ' 个任务';
+  }
+  const pos = Number(job && job.queuePos) || 0;
+  if (pos > 0) return '排队中：前面还有 ' + (pos - 1) + ' 个任务';
+  return '排队中';
+};
+globalThis.dlProgressDetail = (job, etaSec) => {
+  const recv = Math.max(0, Number(job && job.received) || 0);
+  const total = Math.max(0, Number(job && job.total) || 0);
+  const a = (recv / 1048576).toFixed(1);
+  const b = total > 0 ? (total / 1048576).toFixed(1) : '?';
+  const s = Math.max(0, Math.round(Number(etaSec) || 0));
+  return s > 0 ? a + '/' + b + ' MB · 约剩 ' + s + ' 秒' : a + '/' + b + ' MB';
+};
+globalThis.dlFailReason = (code) => (code === 'http-404'
+  ? '站点上没有这个文件（404，可能正在补传/已被删除）' : '下载失败：' + String(code || 'failed'));
+
+/** 描述对象树 → 可读文字（标题栏节点的 textContent 等价物）。 */
+function textOfNode(node) {
+  if (node == null || node === false) return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(textOfNode).join(' ');
+  return textOfNode(node.children);
+}
+
+/** 标题栏这一刻的 DOM 文字（`wpTitleRender` 真的画出来的那一行）。 */
+function titleTextOf(item, jobs, nowMs) {
+  const view = WP.wpViewOf(item, jobs, 0, nowMs);
+  return { view, text: textOfNode(WP.wpTitleRender(view, item)) };
+}
+
+/* ── V1. pending ⇒「未缓存（点击继续）」，DOM 里没有「缓存中」 ───────────────── */
+{
+  // 用户的现场：条目被 burst 上限挤回 pending（job 行还在，priority=high）。
+  const pendingItem = {
+    id: 'ark', media: 'https://site.test/media/ark.mp4', localReady: false,
+    mediaState: { key: 'https://site.test/media/ark.mp4', jobId: 'job-ark', jobStatus: 'pending', localReady: false, source: 'proxy' },
+    jobStatus: 'pending', jobPriority: 'high', pendingHigh: true,
+  };
+  const pendingRow = { id: 'job-ark', kind: 'wallpaper', itemKey: 'wallpaper:ark', url: pendingItem.media, status: 'pending', priority: 'high', pendingHigh: true, percent: 0 };
+  const v1 = titleTextOf(pendingItem, [pendingRow]);
+  check('V1 pending ⇒ 标题栏「未缓存（点击继续）」（不是空白，也不是「缓存中」）',
+    Boolean(v1.view) && v1.view.phase === 'pending' && v1.text.trim() === '未缓存（点击继续）'
+      && !/缓存中/.test(v1.text),
+    JSON.stringify({ phase: v1.view && v1.view.phase, text: v1.text }));
+  check('V1b pending 的标题栏是**一个真的 DOM 节点**（内联 hint），只给卡片的话用户看不到',
+    (() => {
+      const node = WP.wpTitleRender(v1.view, pendingItem);
+      return Boolean(node) && /we-picker__hint/.test(String(node.props && node.props.className))
+        && /we-wp-title/.test(String(node.props && node.props.className))
+        && String(node.props && node.props['data-we-wp']) === 'pending';
+    })());
+  // 服务端说 pending、但 /downloads/list 里**没有**这条 job（宿主重启 / 队列被清）⇒ 同样要说话。
+  const v1NoJob = titleTextOf(pendingItem, []);
+  check('V1c 没有队列行、只有清单的 mediaState.jobStatus=pending ⇒ 仍然是「未缓存（点击继续）」',
+    Boolean(v1NoJob.view) && v1NoJob.view.phase === 'pending' && v1NoJob.text.trim() === '未缓存（点击继续）',
+    JSON.stringify({ phase: v1NoJob.view && v1NoJob.view.phase, text: v1NoJob.text }));
+  // 元信息行不再替服务端断言缓存状态（客户端乐观状态不许出现在 DOM 里）。
+  const qpSrcV1 = stripComments(readFileSync(join(ROOT, 'src', 'quick-panel.js'), 'utf8'));
+  const panelSrcV1 = stripComments(readFileSync(join(ROOT, 'src', 'panel-tabs-wallpaper.js'), 'utf8'));
+  // 判据只钉"元信息行有没有替服务端断言缓存状态"这一件事：那两处旧写法是
+  //   quick-panel：`sel.playbackState === "caching" ? weT(" · 缓存中") : …`
+  //   panel：      `cacheState === "caching" ? weT(" · 缓存中") : …`
+  // （`playbackLive` 里那处 `sel.playbackState === "caching"` 是"caching 时不算播放中"，
+  //   与缓存状态文案无关，不在本判据里。）
+  const legacyCachingMeta = /(?:sel\.playbackState|cacheState)\s*===\s*"caching"\s*\)?\s*\?\s*weT\(\s*" · 缓存中"/;
+  check('V1d 元信息行不再输出「 · 缓存中」（快/慢两处都得删：它读的是客户端乐观状态）',
+    !/" · 缓存中"/.test(qpSrcV1) && !/" · 缓存中"/.test(panelSrcV1)
+      && !legacyCachingMeta.test(qpSrcV1) && !legacyCachingMeta.test(panelSrcV1));
+  check('V1d2 负对照：把那句旧元信息贴回合成源码 ⇒ V1d 的形态判据命中',
+    legacyCachingMeta.test('status: sel.playbackState === "caching" ? weT(" · 缓存中") : weT(" · 已暂停"),') === true);
+  /* ── 负对照：恢复"乐观 caching 常驻 + pending 标题栏 null"的旧形态 ⇒ V1 必红 ── */
+  const legacyMeta = ' · 缓存中';
+  const legacyTitle = null;
+  const legacyDom = legacyMeta + ' ' + (legacyTitle || '');
+  const v1Detector = (domText) => domText.trim() === '未缓存（点击继续）' && !/缓存中/.test(domText);
+  check('V1e 负对照：旧形态（meta「 · 缓存中」+ 标题栏 null）⇒ V1 的判据为假（不是恒真）',
+    v1Detector(legacyDom) === false && /缓存中/.test(legacyDom) && v1Detector(v1.text) === true,
+    JSON.stringify({ legacy: legacyDom, actual: v1.text }));
+}
+
+/* ── V2. queued ⇒「排队中：前面还有 N 个」 ───────────────────────────────── */
+{
+  const itemQ = { id: 'q', media: 'https://site.test/media/q.mp4', localReady: false };
+  const queuedRow = { id: 'job-q', kind: 'wallpaper', url: itemQ.media, status: 'queued', queuedAhead: 2, percent: 0 };
+  const v2 = titleTextOf(itemQ, [queuedRow]);
+  check('V2 queued ⇒ 标题栏「排队中：前面还有 2 个任务」（N 来自 queuedAhead）',
+    Boolean(v2.view) && v2.view.phase === 'queued' && /排队中：前面还有 2 个/.test(v2.text),
+    JSON.stringify({ phase: v2.view && v2.view.phase, text: v2.text }));
+  // 老宿主没有 queuedAhead 时按 queuePos-1 兜底（两种宿主都能报数字）。
+  const v2b = titleTextOf(itemQ, [{ ...queuedRow, queuedAhead: undefined, queuePos: 4 }]);
+  check('V2b 缺 queuedAhead ⇒ 按 queuePos 兜底成「前面还有 3 个」',
+    /排队中：前面还有 3 个/.test(v2b.text), v2b.text);
+  /* ── 负对照：旧实现只写「排队中」三个字（不报位置）⇒ V2 必红 ── */
+  const legacyQueued = '排队中';
+  check('V2c 负对照：旧文案「排队中」（没有 N）⇒ V2 的判据为假',
+    !/前面还有 2 个/.test(legacyQueued) && /排队中：前面还有 2 个/.test(v2.text));
+}
+
+/* ── V3. running + total=0 ⇒「正在连接…（已等待 Ns）」；拿到 total ⇒ 立刻百分比 ── */
+{
+  const itemR = { id: 'r', media: 'https://site.test/media/r.mp4', localReady: false };
+  const now = 1_000_000;
+  const runningNoTotal = { id: 'job-r', kind: 'wallpaper', url: itemR.media, status: 'running', total: 0, received: 0, at: now - 5000 };
+  const v3 = titleTextOf(itemR, [runningNoTotal], now);
+  check('V3 running + total=0 ⇒ 标题栏「正在连接…（已等待 5 秒）」（秒数来自服务端 job.at）',
+    Boolean(v3.view) && v3.view.phase === 'running' && /^正在连接…（已等待 5 秒）$/.test(v3.text),
+    v3.text);
+  const v3NoAt = titleTextOf(itemR, [{ ...runningNoTotal, at: 0 }], now);
+  check('V3b 宿主没给 at ⇒ 只报「正在连接…」，不编秒数', /^正在连接…$/.test(v3NoAt.text), v3NoAt.text);
+  /* 拿到 total ⇒ **同一次快照**就切成百分比（没有第二个计时器，也没有 1.5s 的等待） */
+  const totalRow = { ...runningNoTotal, total: 100 * MB, received: 50 * MB, percent: 50, at: now - 5000 };
+  const t0 = Date.now();
+  let seen = null;
+  const offR = WP.wpSubscribe(itemR, (v) => { seen = v; });
+  WP.wpPushJobs([totalRow], now);
+  offR();
+  const elapsed = Date.now() - t0;
+  check('V3c 拿到 total ⇒ 1 秒内变百分比「缓存中 50%（50.0/100.0 MB）」',
+    Boolean(seen) && seen.phase === 'running' && seen.percent === 50
+      && /缓存中 50%/.test(seen.title || '') && elapsed < 1000,
+    JSON.stringify({ title: seen && seen.title, ms: elapsed }));
+  /* ── 负对照：旧实现 total=0 时给「连接中」/「已下载 X MB」，且不报等待秒数 ⇒ V3 必红 ── */
+  const legacyRunning = (recv) => (recv > 0 ? '已下载 5.0 MB' : '连接中');
+  check('V3d 负对照：旧文案「连接中」/「已下载 X MB」⇒ V3 的「正在连接…（已等待 N 秒）」判据为假',
+    legacyRunning(0) !== v3.text && legacyRunning(0) === '连接中'
+      && /正在连接…（已等待 5 秒）/.test(v3.text));
+}
+
+/* ── V4. failed ⇒「下载失败：<原因>（点击重试）」 ──────────────────────────── */
+{
+  const itemF = { id: 'f', media: 'https://site.test/media/f.mp4', localReady: false };
+  const failedRow = { id: 'job-f', kind: 'wallpaper', url: itemF.media, status: 'failed', error: 'http-404' };
+  const v4 = titleTextOf(itemF, [failedRow]);
+  // ⚠️ 走 `globalThis.`：本文件顶部的 `dlFailReason` 是**赋给全局**的桩（不是局部声明），
+  //    裸标识符会被 ESLint 判 no-undef（棘轮基线只差这一条）。
+  const why = globalThis.dlFailReason('http-404');
+  check('V4 failed ⇒ 标题栏「下载失败：<原因>（点击重试）」，原因复用 dlFailReason',
+    Boolean(v4.view) && v4.view.phase === 'failed'
+      && v4.view.title === '下载失败：' + why + '（点击重试）'
+      && /404/.test(v4.text) && /点击重试/.test(v4.text),
+    v4.text);
+  check('V4b 标题栏同时给出可点的「重试」按钮（文字里说了"点击重试"，手上也要有那颗按钮）',
+    (() => {
+      const node = WP.wpTitleRender(v4.view, itemF);
+      const flat = JSON.stringify(node);
+      return Boolean(node) && /we-wp-failed__retry/.test(flat) && /"重试"/.test(flat);
+    })());
+  /* ── 负对照：旧实现标题只有原因（没有句式和动作）⇒ V4 必红 ── */
+  check('V4c 负对照：旧实现标题只写原因（无「下载失败：」「（点击重试）」）⇒ V4 的判据为假',
+    why !== v4.text && !/^下载失败：/.test(why) && /^下载失败：/.test(v4.text));
+}
+
+/* ── V5. 800ms 乐观窗口：到点没拿到 queued/running ⇒ 以服务端为准回滚 ────────── */
+{
+  const clientSrc = readFileSync(join(ROOT, 'src', 'client.js'), 'utf8');
+  const block = between(clientSrc, 'function dfCurrentItem() {', 'function dfFinishToLocal(');
+  check('V5 能取出 client.js 的 download-first store 写入块（dfOptimistic* + dfApplyUiSnapshot）',
+    /function dfOptimisticArm\(/.test(block) && /function dfOptimisticExpire\(/.test(block)
+      && /function dfApplyUiSnapshot\(/.test(block), String(block.length) + ' chars');
+
+  /** 在沙箱里真跑那段源码：计时器、emit、selection 全部注入（不改真实现）。 */
+  function runClientBlock(srcText, opts) {
+    const o = opts || {};
+    const selection = o.selection || {
+      id: 'ark', playbackState: 'caching', cacheState: 'caching', cachePercent: 0,
+      cacheFailReason: '', mediaNote: '正在缓存…', inventory: { wallpapers: o.items || [] },
+    };
+    const state = { emits: 0, armed: [], cleared: [], callbacks: [] };
+    const api = new Function(
+      'selection', 'emit', 'weT', 'dfServerConfirmed', 'DF_OPTIMISTIC_MS', 'dfFail', 'msNoteJob',
+      'setTimeout', 'clearTimeout',
+      srcText + '\nreturn { dfApplyUiSnapshot, dfOptimisticArm, dfOptimisticExpire, dfOptimisticClear };',
+    )(
+      selection, () => { state.emits += 1; }, weT,
+      (item) => Boolean(o.confirmed && o.confirmed(item)),
+      Number(o.ms) || 800,
+      () => ({ state: 'failed', id: selection.id, error: 'stub' }),
+      () => {},
+      (cb, ms) => { state.armed.push(ms); state.callbacks.push(cb); return { tid: state.callbacks.length }; },
+      (t) => { state.cleared.push(t && t.tid); },
+    );
+    return { api, selection, state };
+  }
+
+  const h = runClientBlock(block, { confirmed: () => false, items: [] });
+  h.api.dfOptimisticArm('ark');
+  check('V5a 点击瞬间开一个 800ms 的乐观窗口（DF_OPTIMISTIC_MS）',
+    h.state.armed.length === 1 && h.state.armed[0] === 800, JSON.stringify(h.state.armed));
+  // 到点：服务端没确认（清单里这条 mediaState.jobStatus=pending）⇒ 回滚。
+  h.selection.inventory.wallpapers.push({
+    id: 'ark', media: 'https://site.test/media/ark.mp4', localReady: false,
+    mediaState: { jobStatus: 'pending', localReady: false },
+  });
+  h.api.dfOptimisticExpire('ark');
+  check('V5b 800ms 到点仍未拿到 queued/running ⇒ 回滚：「未缓存（点击继续）」，不再说「缓存中」',
+    h.selection.playbackState === 'pending' && h.selection.cacheState === 'pending'
+      && /未缓存（点击继续）/.test(h.selection.mediaNote) && !/缓存中/.test(h.selection.mediaNote)
+      && h.state.emits >= 1,
+    JSON.stringify({ playbackState: h.selection.playbackState, note: h.selection.mediaNote, emits: h.state.emits }));
+  // 服务端确实收到了（queued/running）⇒ 不许回滚，继续由服务端驱动。
+  const h2 = runClientBlock(block, {
+    confirmed: () => true,
+    items: [{ id: 'ark', media: 'https://site.test/media/ark.mp4', mediaState: { jobStatus: 'running' } }],
+  });
+  h2.api.dfOptimisticArm('ark');
+  h2.api.dfOptimisticExpire('ark');
+  check('V5c 服务端已确认 queued/running ⇒ 到点**不**回滚（仍是 caching）',
+    h2.selection.playbackState === 'caching', h2.selection.playbackState);
+  // 快照直接说 pending（/downloads/list 那一拍）：立刻切 pending + 清掉乐观计时器。
+  const h3 = runClientBlock(block, { confirmed: () => false, items: [] });
+  h3.api.dfOptimisticArm('ark');
+  const changed = h3.api.dfApplyUiSnapshot({ id: 'ark', state: 'pending', jobStatus: 'pending', text: '未缓存（点击继续）', percent: 0 });
+  check('V5d 队列快照说 pending ⇒ store 立刻切 pending 并停掉乐观计时器（不必等 800ms）',
+    changed === true && h3.selection.playbackState === 'pending'
+      && /未缓存（点击继续）/.test(h3.selection.mediaNote) && h3.state.cleared.length === 1,
+    JSON.stringify({ changed, st: h3.selection.playbackState, cleared: h3.state.cleared }));
+  const h4 = runClientBlock(block, { confirmed: () => true, items: [] });
+  h4.api.dfOptimisticArm('ark');
+  h4.api.dfApplyUiSnapshot({ id: 'ark', state: 'caching', jobStatus: 'queued', text: '排队中：前面还有 2 个任务', percent: 0 });
+  check('V5e 快照说 queued ⇒ 保持 caching、文案随服务端、乐观计时器被清',
+    h4.selection.playbackState === 'caching' && /排队中/.test(h4.selection.mediaNote)
+      && h4.state.cleared.length === 1,
+    JSON.stringify({ st: h4.selection.playbackState, note: h4.selection.mediaNote }));
+  /* ── 负对照：把「到点回滚」删掉（旧实现：乐观 caching 常驻）⇒ V5b 必红 ── */
+  const legacyBlock = block.replace('function dfOptimisticExpire(id) {', 'function dfOptimisticExpire(id) { return;');
+  check('V5f 负对照：删掉"到点回滚"（乐观 caching 常驻）⇒ 同一个 800ms 断言读到 caching（V5b 必红）',
+    legacyBlock !== block
+      && (() => {
+        const L = runClientBlock(legacyBlock, { confirmed: () => false, items: [] });
+        L.api.dfOptimisticArm('ark');
+        L.api.dfOptimisticExpire('ark');
+        return L.selection.playbackState === 'caching';
+      })());
+  // 源码级：`DF_OPTIMISTIC_MS` 真的是 800，且 applySelection 的 store 写入处确实用它起了表。
+  const dfSrcV5 = readFileSync(join(ROOT, 'src', 'download-first.js'), 'utf8');
+  check('V5g 乐观窗口常量 = 800ms，且 client.js 在点击/重试两条路都 arm 了它',
+    /const DF_OPTIMISTIC_MS = 800;/.test(dfSrcV5)
+      && (clientSrc.match(/dfOptimisticArm\(it\.id\);/g) || []).length >= 2
+      && /function dfOptimisticArm\(id\) \{/.test(clientSrc));
+}
+
+/* V 组用完把上面 T3/U 组用的桩还回去（同一个进程里后面的收尾判据仍按老口径）。 */
+globalThis.dlQueueDetail = V_DL_STUBS.dlQueueDetail;
+globalThis.dlProgressDetail = V_DL_STUBS.dlProgressDetail;
+globalThis.dlFailReason = V_DL_STUBS.dlFailReason;
+
 
 /* ══ 汇总 ═══════════════════════════════════════════════════════════════════ */
 cleanupTestHome(TEST_HOME);

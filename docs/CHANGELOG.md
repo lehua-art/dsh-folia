@@ -1,5 +1,75 @@
 # 变更记录（Changelog）
 
+### v4.25.5（2026-11-05，**删掉「改用边下边播」+ 缓存进度必须有明确状态**；发布到 next，latest 保持 4.25.4）
+
+> 用户的两条要求：① **按用户要求删掉「改用边下边播」**——播放只留"下载完 + 校验通过 ⇒ 本地播"
+> 一条链，没有第二档；② 修好**"缓存中但没有进度数字"**：点「明日方舟」后 job 被 burst 上限挤回
+> `pending`，界面却停在客户端乐观状态 `caching`，而 `wpTitleRender()` 对 pending 返回 `null`
+> ⇒ **只剩一个按钮、没有一行状态文字**。标题栏状态改为**全部由服务端事实派生**。
+> 判据：`test/verify-wallpaper-core.mjs` 104 → **128 条**（新增 V1–V5 + 每条配负对照，仍进 verify 硬档）。
+
+**A. 删除「改用边下边播」（任务 1）**
+
+- 快捷面板标题栏（`src/quick-panel.js` 的 `qpRenderCurrent()`）：删掉两颗「改用边下边播」按钮
+  （`caching + cacheCanStream` 与 `failed` 两处），以及元信息行里 ` · 缓存中` / ` · 未缓存（点击继续）` /
+  ` · 边下边播` 三个分支 —— 那一行读的是**客户端乐观状态**，正是"永远显示缓存中"的来源。
+- 设置面板「壁纸库」页签（`src/panel-tabs-wallpaper.js` 的 `renderWallpaperCurrentSection()`）：
+  同样两颗按钮 + 同一组元信息分支，连 `onUseStreaming` 的 ctx 解构一起删；失败只剩「重试」。
+- 设置面板「播放」页签（`src/panel-tabs-effects.js`）：**「播放策略」控件整项移除**（两档分段 +
+  长说明 + 底部提示）。一档没有可选项就不画，避免留一颗点了没作用的按钮。
+- `src/client.js`：删 `useStreamingNow()`、`onPlaybackPolicy()`、ctx 里的 `onUseStreaming` /
+  `onPlaybackPolicy`、`forceStream` 重挂路径与 `cacheCanStream` 字段。
+- `src/download-first.js`：删 `dfUseStream()` / `dfPolicyOf()` / `dfNormalizePolicy()` /
+  `dfPolicyLabel()` / `dfLongWait()` / `DF_POLICY_*` / `DF_LONG_WAIT_*`，以及快照里的
+  `canStream` / `showStream` / `streaming`；`dfShouldCache()` 不再读策略（签名收敛为 `(item, opts)`），
+  `dfLayerPlan()` 不再有 streaming 分支。
+- `src/media-prep.js`：删 `opts.forceStream` 的两处判断；`cacheCanStream` 的读写全部消失。
+- i18n：**11 条孤儿键一并删除**（`改用边下边播` / `边下边播（秒开）` / `下载完再播（省流量）` /
+  `播放策略` / `省流量 vs 秒开` / 长说明 / `这次下载预计还要很久…` / `已改用边下边播…` /
+  `下载队列不可用…可改用边下边播` / `下载中断，请重试或改用边下边播` / ` · 边下边播`），
+  另删 ` · 缓存中`、` · 未缓存（点击继续）`、`连接中` 三条同族键（界面已不再使用这些说法）。
+- **`playbackPolicy` 设置键保留、白名单只剩 `download-first` 一档**（`lib/settings-schema.js`）：
+  键消失会让老存档读成一个空值/未知键，那是"配置读错"；收窄 enum 则让老存档里的 `stream-first`
+  走既有的 `sanitizeFromSchema` 矫正回默认值，一次正常的值不再合法，而不是一次读错。
+- `test/verify-dead-code.mjs` 把 `useStreamingNow` / `dfUseStream` / `stream-first 第二档` /
+  `dfLongWait` / `「边下边播」文案` 五条加进**黑名单**：贴回来即红。
+
+**B. 缓存进度必须始终有明确状态（任务 2）**
+
+- 根因（用户实测）：`dfApplyJob()` 把 `pending` 也当成 `caching` ⇒ store 写 `caching`、文案写
+  「正在缓存…」；`wpStateOf()` 只看 `/downloads/list` 能不能找到 job；`wpViewOf()` 在 `pending`
+  时返回 `title: null` ⇒ 标题栏**一个节点都不画**，只剩下面那颗按钮。
+- `src/download-first.js`：新增 `dfServerJobStatusOf(item)` / `dfServerConfirmed(item)`（读
+  `item.mediaState.jobStatus`，其次 `item.jobStatus`）；`dfApplyJob()` 增加 `pending` 出口
+  （state=`pending`、文案「未缓存（点击继续）」）；`queued` 直接复用 `dlQueueDetail()`（报前面还有几个）；
+  `running + total=0` 用**服务端 `job.at`** 算「正在连接…（已等待 N 秒）」（`dfWaitSecOf`，不在本地起表）。
+- `src/wallpaper-progress.js`：`wpStateOf()` 在没有队列行时**兜底读服务端 jobStatus**；
+  `wpViewOf()` 的映射收成一条（pending ⇒「未缓存（点击继续）」· queued ⇒「排队中：前面还有 N 个任务」·
+  running+total>0 ⇒「缓存中 x%（a/b MB · 约剩 N 秒）」· running+total=0 ⇒「正在连接…（已等待 N 秒）」·
+  failed ⇒「下载失败：<原因>（点击重试）」· done+localReady ⇒ 不占标题栏）；
+  `wpTitleRender()` 为 `pending` 真的画一行（`data-we-wp="pending"`）。
+  新增 `wpNoteJob()`：把 `/downloads/add` 回执与 download-first 的 1s 轮询**并进快照**
+  （不是第二套轮询，只是让标题栏早 1.5 秒说真话）。
+- `src/client.js`：新增 **800ms 乐观窗口**（`DF_OPTIMISTIC_MS`）：点击/重试那一刻写 `caching`，
+  `dfOptimisticArm` 起表；拿到服务端 `queued`/`running`（或进入终态）就 `dfOptimisticClear`；
+  到点仍没有服务端确认 ⇒ `dfOptimisticExpire` 以服务端事实回滚成「未缓存（点击继续）」
+  （服务端确实已确认时**不**回滚）。
+- 判据（`test/verify-wallpaper-core.mjs` 的 V 组，每条都配负对照）：
+  V1 pending ⇒「未缓存（点击继续）」且 DOM 里没有「缓存中」、标题栏是真节点；
+  V1c 只有清单 `mediaState.jobStatus=pending`（没有队列行）也同样说得出话；
+  V1d 元信息行不再输出「 · 缓存中」（快/慢两处 + 源码形态负对照）；
+  V2 queued ⇒「排队中：前面还有 N 个任务」（`queuedAhead`，缺字段按 `queuePos-1` 兜底）；
+  V3 running+total=0 ⇒「正在连接…（已等待 5 秒）」，拿到 total **同一次快照**就变百分比（<1s）；
+  V4 failed ⇒「下载失败：<原因>（点击重试）」+ 可点「重试」按钮；
+  V5 800ms 未调度 ⇒ 回滚为 pending 文案；服务端已确认则不回滚；负对照（删掉回滚 ⇒ 乐观 caching 常驻）必红。
+
+**C. 门禁**
+
+- `node scripts/build-client.mjs` 重新生成 `lib/client.js`；`build-client.mjs` 的锚点同步：
+  `src/download-first.js` 换成 `DF_OPTIMISTIC_MS` / `dfServerJobStatusOf` / `dfServerConfirmed`，
+  `src/wallpaper-progress.js` 加 `wpNoteJob`，`src/panel-tabs-wallpaper.js` 的 ctx 锚点去掉 `onUseStreaming`。
+- verify 链 **132 步**跑完全程；`run-audit` **0 失败**；`verify-static` 不高于基线。
+
 ### v4.25.4（2026-11-05）
 > 插件简介改为用户选定的 B 版（更短、只讲能力）：DSH 壁纸引擎：本机 WE 壁纸实时渲染，视频/网页/开机动画/桌宠皮肤，一键拉取在线素材。 无功能变更。
 

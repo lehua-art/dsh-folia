@@ -25,6 +25,15 @@
  *     客户端 bundle 的工厂作用域；名字一律 `wp` / `Wp` 前缀，避免与既有 prelude 撞名。
  *   · 文案全部走 `weT(...)`（中文原文为键，英文词表在 src/i18n-copy-panel.js）。
  *   · 不改既有断言：本文件只**新增**节点（无内容时返回 null），模态框标记等价 golden 不变。
+ *
+ * ══ 4.25.5（用户核心诉求）═══════════════════════════════════════════════════════════
+ *   标题栏的状态**只能**由服务端事实派生（inventory 的 `mediaState.jobStatus` +
+ *   `/downloads/list` 的进度数字）。客户端的乐观状态（`selection.playbackState`）不进这里。
+ *   映射（`wpViewOf`）：pending ⇒「未缓存（点击继续）」· queued ⇒「排队中：前面还有 N 个任务」·
+ *   running+total>0 ⇒「缓存中 x%（a/b MB · 约剩 N 秒）」· running+total=0 ⇒「正在连接…（已等待 N 秒）」·
+ *   failed ⇒「下载失败：<原因>（点击重试）」· done+localReady ⇒ 不占标题栏（角标「已缓存」）。
+ *   `src/download-first.js` 的 1s 轮询与 `/downloads/add` 回执经 `wpNoteJob()` 并进快照 ——
+ *   不是第二套轮询，只是让标题栏早 1.5 秒说真话。
  */
 
 /** 队列快照 + 每张卡的最新视图通知。 */
@@ -140,11 +149,35 @@ function wpJobForItem(jobs, item) {
   return pick(groups.key) || pick(groups.url) || pick(groups.family);
 }
 
-/** job.percent（0..100 整数）。**只读列表里的数**，绝不按时间自己涨。 */
+/** job.percent（0..100 整数）。**只读列表里的数**，绝不按时间自己涨。
+ *
+ * 4.25.5：`/downloads/add` 的回执是队列内部的 job 对象（没有 snapshot 时算出来的
+ * `percent`）⇒ 缺这一个字段时按 `received / total` 现算 —— 仍然是服务端的字节数，
+ * 不是本地计时器推出来的估计值。
+ */
 function wpPercentOf(job) {
-  const n = Number(job && job.percent);
-  if (!Number.isFinite(n)) return 0;
+  const total = Math.max(0, Number(job && job.total) || 0);
+  const recv = Math.max(0, Number(job && job.received) || 0);
+  const raw = Number(job && job.percent);
+  const n = Number.isFinite(raw) ? raw : (total > 0 ? Math.round((recv / total) * 100) : 0);
   return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+/**
+ * **服务端**的条目级 job 状态（`pending` / `queued` / `running` / `done` / `failed`）。
+ *
+ * 唯一来源是宿主随清单下发的两个字段（同一件事的两种读法）：
+ *   · `item.mediaState.jobStatus`（对账器的状态表，`lib/routes/inventory.js` 的 `refreshLocalFields`）；
+ *   · `item.jobStatus`（`jobFieldsOf()` 的扁平字段，老清单/夹具只给这个）。
+ *
+ * ⚠️ **客户端的乐观状态（`selection.playbackState`）永远不参与标题栏判断** ——
+ * 4.25.5 的用户实测就是它造成的：「点了明日方舟 ⇒ job 被 burst 上限挤回 pending，
+ * 界面却停在点击那一刻的 caching ⇒「缓存中」永远没有百分比」。
+ */
+function wpServerJobStatusOf(item) {
+  const w = item || {};
+  const ms = (w.mediaState && typeof w.mediaState === "object") ? w.mediaState : null;
+  return String((ms && ms.jobStatus) || w.jobStatus || "").trim();
 }
 
 /**
@@ -175,8 +208,13 @@ function wpCachedOf(item) {
  * 卡片状态机（纯函数）：
  *   cached（`localReady` 族命中） ⇒ 「已缓存」——**最高优先级**，压过任何 job 状态
  *   running / queued（队列里还有活） ⇒ 进度
- *   failed（job 明确失败且这张卡还没缓存） ⇒ 原因 +「重试」
+ *   pending（任务在、但不在排队） ⇒ 「未缓存（点击继续）」
+ *   failed（明确失败且这张卡还没缓存） ⇒ 原因 +「重试」
  *   none（没有 job 且没缓存） ⇒ 什么都不画（避免噪音）
+ *
+ * 4.25.5：`status` 的**兜底**来自服务端（`item.mediaState.jobStatus` / `item.jobStatus`），
+ * 不再只看 `/downloads/list` 里"能不能按 URL 找到那条 job" —— 宿主把条目折成 pending、
+ * 或 job 刚从列表里消失时，标题栏也要说得出「未缓存（点击继续）」。
  */
 function wpStateOf(item, jobs) {
   const w = item || {};
@@ -184,13 +222,20 @@ function wpStateOf(item, jobs) {
   // "已经缓存了却显示缓存中/排队中"（用户截图里那两张卡就是这个形态）。
   if (wpCachedOf(w)) return { phase: "cached", job: null, percent: 100, cached: true };
   const job = wpJobForItem(jobs, w);
-  const status = String((job && job.status) || "");
-  if (status === "running") return { phase: "running", job, percent: wpPercentOf(job), cached: false };
+  // 队列行（更实时）优先；没有行时才读清单里的服务端事实。
+  const status = String((job && job.status) || "") || wpServerJobStatusOf(w);
+  if (status === "running") return { phase: "running", job, percent: job ? wpPercentOf(job) : 0, cached: false };
   if (status === "queued") return { phase: "queued", job, percent: 0, cached: false };
   // 4.23.18：`pending` = 记录在、成品不在、**没有排队**（启动时不再批量入队）。
-  // UI 只说「未缓存」，没有进度条；点它 / 预取 / 当前在播才会重新入队。
+  // 4.25.5：UI 必须说清「未缓存（点击继续）」—— 只剩一个按钮、没有文字是用户实测的故障。
   if (status === "pending") return { phase: "pending", job, percent: 0, cached: false };
-  if (status === "failed") return { phase: "failed", job, percent: 0, code: String(job.error || "failed") };
+  if (status === "failed") {
+    return {
+      phase: "failed", job, percent: 0,
+      // 失败原因：队列行有 `error` 用它；只有清单事实时退回 `mediaState.reason`（宿主给的码）。
+      code: String((job && job.error) || (w.mediaState && w.mediaState.reason) || "failed"),
+    };
+  }
   // ⚠️ `done` **不**等于已缓存（4.24.1 的判据收紧）：`done` 是"字节下完了"，`localReady` 是
   // "对账后确认可播"。两者在稳态下同时为真，但把 `done` 当成已缓存就又造了第二份判据 ——
   // 用户实测里正是这种"另一份判据"让角标与 localReady 分叉。
@@ -232,7 +277,26 @@ function wpEtaOfItem(item, jobs) {
 function wpStageText(job) {
   const got = Math.max(0, Number(job && job.received) || 0);
   if (got > 0) return weT("已下载 {mb} MB", { mb: (got / 1048576).toFixed(1) });
-  return weT("连接中");
+  return weT("正在连接…");
+}
+
+/**
+ * `running` 但**总量未知**时的标题文案（4.25.5）：「正在连接…（已等待 N 秒）」。
+ *
+ * 秒数**只读服务端 `job.at`**（入队时间戳）—— 客户端不自己起表：
+ *   · 宿主没给 `at` / 时钟倒挂 ⇒ 只报「正在连接…」，不编数字；
+ *   · 一旦 `total` 到手，`wpViewOf` 立刻切成百分比（同一个快照里就有，不必等下一拍）。
+ */
+function wpWaitingText(job, nowMs) {
+  const at = Number(job && job.at) || 0;
+  const now = Number(nowMs) || Date.now();
+  const wait = (at > 0 && at <= now) ? Math.max(0, Math.round((now - at) / 1000)) : 0;
+  return wait > 0 ? weT("正在连接…（已等待 {n} 秒）", { n: wait }) : weT("正在连接…");
+}
+
+/** 失败标题："下载失败：<原因>（点击重试）" —— 原因复用 `dlFailReason` 那张表，不另写一句。 */
+function wpFailTitle(why) {
+  return weT("下载失败：{why}（点击重试）", { why: String(why || "") });
 }
 
 /**
@@ -242,14 +306,28 @@ function wpStageText(job) {
  * `card`（卡片：短）/ `title`（标题栏：带已下/总量与约剩）/ `phase` / `percent` / `reason`。
  * 文案全部来自既有的 `dlQueueDetail` / `dlProgressDetail` / `dlFailReason`（四模块共用一张表），
  * 本文件不另造数字、不另写失败原因。
+ *
+ * 4.25.5 的状态机映射（标题栏，**全部由服务端事实派生**）：
+ *
+ *   pending              → 「未缓存（点击继续）」
+ *   queued               → 「排队中：前面还有 N 个任务」
+ *   running + total > 0  → 「缓存中 x%（a/b MB · 约剩 N 秒）」
+ *   running + total = 0  → 「正在连接…（已等待 N 秒）」
+ *   failed               → 「下载失败：<原因>（点击重试）」
+ *   done + localReady    → 不画标题栏（卡片角标「已缓存」已经是明确状态）
+ *
+ * `nowMs` 只用于「已等待 N 秒」（可注入；缺省 Date.now()）。
  */
-function wpViewOf(item, jobs, etaSec) {
+function wpViewOf(item, jobs, etaSec, nowMs) {
   const s = wpStateOf(item, jobs);
   if (s.phase === "running") {
-    // 4.25.1：总量未知 ⇒ 阶段文案（连接中 / 已下载 X MB），拿到 total 才切百分比。
+    // 4.25.1：总量未知 ⇒ 阶段文案（正在连接… / 已下载 X MB），拿到 total 才切百分比。
     if (!(Number(s.job && s.job.total) > 0)) {
-      const text = wpStageText(s.job);
-      return { phase: "running", percent: 0, card: text, title: text };
+      return {
+        phase: "running", percent: 0,
+        card: wpStageText(s.job),
+        title: wpWaitingText(s.job, nowMs),
+      };
     }
     const p = s.percent;
     const detail = dlProgressDetail(s.job, Number(etaSec) || 0);
@@ -267,18 +345,19 @@ function wpViewOf(item, jobs, etaSec) {
   // 4.23.18：未缓存（pending）—— 卡片只给一个静态小标，**不画进度条、不报排队位置**。
   // 4.25.1：其中 pending + high = 上次点击没下完（启动/清队列留下）⇒ 明说「点击继续」，
   // 但**仍然不自动下载**（B1）。
+  // 4.25.5（P0）：**标题栏也必须说话**。旧实现这里 `title: null` ⇒ 用户点完只剩一个按钮、
+  // 一行字都没有（"缓存中"还是客户端乐观状态残留的）。现在标题栏给出服务端判定的那一句。
   if (s.phase === "pending") {
-    if (s.job && String(s.job.priority || "") === "high") {
-      return { phase: "pending", percent: 0, card: weT("未缓存（点击继续）"), title: null };
-    }
-    return { phase: "pending", percent: 0, card: weT("未缓存"), title: null };
+    const title = weT("未缓存（点击继续）");
+    const high = Boolean(s.job && String(s.job.priority || "") === "high");
+    return { phase: "pending", percent: 0, card: high ? title : weT("未缓存"), title };
   }
   if (s.phase === "cached") {
     return { phase: "cached", percent: 100, card: weT("已缓存"), title: null };
   }
   if (s.phase === "failed") {
     const why = dlFailReason(s.code);
-    return { phase: "failed", percent: 0, card: weT("重试"), title: why, reason: why };
+    return { phase: "failed", percent: 0, card: weT("重试"), title: wpFailTitle(why), reason: why };
   }
   return null;
 }
@@ -286,7 +365,7 @@ function wpViewOf(item, jobs, etaSec) {
 /** 当前快照下的视图（订阅回调用它：切回来第一帧就是 `/downloads/list` 的真实值）。 */
 function wpSnapshotOf(item) {
   const jobs = WP_STORE.jobs;
-  return wpViewOf(item, jobs, wpEtaOfItem(item, jobs));
+  return wpViewOf(item, jobs, wpEtaOfItem(item, jobs), Date.now());
 }
 
 /** 视图签名：只有**显示内容**变了才通知订阅者（同一百分比重复推送不触发渲染）。 */
@@ -360,8 +439,38 @@ function wpPushJobs(jobs, nowMs) {
   wpSampleEta(list, Number(nowMs) || Date.now());
   // 4.24.1（P0-5）：先把"清单可能过期"这件事处理掉，再按最新快照推视图。
   wpRequestInventoryRefresh(list);
+  wpNotifySubscribers(nowMs);
+}
+
+/**
+ * **单条**服务端 job 快照（`/downloads/add` 回执、或 `src/download-first.js` 自己的 1s 轮询）
+ * ⇒ 并入快照并立即通知（4.25.5）。
+ *
+ * 为什么要有这条旁路：标题栏的状态必须由服务端事实派生，而队列那条轮询是 1.5s —— 用户点下
+ * 一张壁纸后，宿主**立刻**就知道它是 `queued` 还是被 burst 上限挤回了 `pending`。等下一拍
+ * 才改标题，那 1.5 秒里界面就该显示点什么的这段时间会停在乐观状态（用户实测的故障窗口）。
+ *
+ * 它**不是**第二套轮询（没有 timer、没有请求）：只是一次「把已知的服务端事实并进快照」。
+ * 行按 `at` 倒序插回（与 `snapshot()` 同序），同一 id 覆盖旧的。
+ */
+function wpNoteJob(job, nowMs) {
+  const id = String((job && job.id) || "");
+  if (!id) return false;
+  const row = Object.assign({}, job, { id, kind: String((job && job.kind) || "wallpaper") });
+  const rest = (Array.isArray(WP_STORE.jobs) ? WP_STORE.jobs : [])
+    .filter((j) => String((j && j.id) || "") !== id);
+  WP_STORE.jobs = [row].concat(rest)
+    .sort((a, b) => (Number(b && b.at) || 0) - (Number(a && a.at) || 0));
+  wpNotifySubscribers(nowMs);
+  return true;
+}
+
+/** 按当前快照给**所有订阅的卡**推一次视图（显示内容没变的不通知：签名去重）。 */
+function wpNotifySubscribers(nowMs) {
+  const list = WP_STORE.jobs;
+  const at = Number(nowMs) || Date.now();
   for (const rec of [...WP_STORE.subs.values()]) {
-    const view = wpViewOf(rec.item, list, wpEtaOfItem(rec.item, list));
+    const view = wpViewOf(rec.item, list, wpEtaOfItem(rec.item, list), at);
     const sig = wpSigOf(view);
     if (sig === rec.sig) continue;
     rec.sig = sig;
@@ -501,10 +610,18 @@ function WpCardProgress(props) {
   return wpCardRender(view, item);
 }
 
-/** 标题栏（当前壁纸那一行）：只画"进度/排队/失败"，已缓存/无 job 时返回 null。 */
+/**
+ * 标题栏（当前壁纸那一行）：这一行**必须始终说得出状态**（4.25.5 用户口径）。
+ *
+ *   running / queued ⇒ 进度 / 排队（带数字）
+ *   pending          ⇒ 「未缓存（点击继续）」—— 这是 4.25.5 新增的一格：旧实现返回 null，
+ *                      于是"点完被挤回 pending"的用户只剩一个按钮、没有文字
+ *   failed           ⇒ 「下载失败：<原因>（点击重试）」+「重试」按钮
+ *   cached / 无 job  ⇒ null（卡片角标「已缓存」已经是明确状态，不重复占一行）
+ */
 function wpTitleRender(view, item) {
   if (!view) return null;
-  if (view.phase === "running" || view.phase === "queued") {
+  if (view.phase === "running" || view.phase === "queued" || view.phase === "pending") {
     return React.createElement("div", {
       className: "we-picker__hint we-wp-title",
       "data-we-wp": view.phase,
@@ -517,7 +634,7 @@ function wpTitleRender(view, item) {
       "data-we-wp": "failed",
       title: view.reason,
     },
-      React.createElement("span", { className: "we-wp-title__why" }, view.reason),
+      React.createElement("span", { className: "we-wp-title__why" }, view.title || view.reason),
       React.createElement("button", {
         className: "we-wp-failed__retry", type: "button", title: weT("重试"),
         onClick: (e) => { if (e && typeof e.stopPropagation === "function") e.stopPropagation(); wpRetryDownload(item); },
@@ -533,10 +650,12 @@ export {
   wpJobForItem,
   wpPercentOf,
   wpCachedOf,
+  wpServerJobStatusOf,
   wpStateOf,
   wpViewOf,
   wpSnapshotOf,
   wpPushJobs,
+  wpNoteJob,
   wpRequestInventoryRefresh,
   setWpInventoryRefresher,
   wpSubscribe,

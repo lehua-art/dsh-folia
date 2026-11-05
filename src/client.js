@@ -429,14 +429,15 @@ const selection = {
   playSrc: null,
   playMode: null,
   // 4.23.23：download-first 的可见状态机（transient）：
-  //   playbackState = `caching` | `playing` | `failed` | "（空 = 旧路径 / 无壁纸）
+  //   playbackState = `caching` | `pending` | `playing` | `failed` | ""（空 = 无壁纸）
   //   cacheState 与它同值（历史字段名，卡片的缓存语义读它；两者由同一处写）
-  //   cachePercent / cacheCanStream / cacheFailReason 供「进度行 + 改用边下边播 / 重试」按钮。
+  //   cachePercent / cacheFailReason 供「进度行 / 重试」。
+  // ⚠️ 4.25.5：`caching` 是**乐观**状态，最多保留 DF_OPTIMISTIC_MS（800ms）——到点仍未从
+  //   服务端拿到 queued/running ⇒ 回滚成服务端事实（多半是 pending，见 dfOptimisticExpire）。
   // 关键不变量：`caching` 时 `playMode` 必为 `poster`，`<video>` 的 src 绝不是站点媒体地址。
   playbackState: "",
   cacheState: "",
   cachePercent: 0,
-  cacheCanStream: false,
   cacheFailReason: "",
   // WE 官方资源路径编辑器（transient）：开态 + 草稿路径 + 上次错误。
   // 生效状态（目录/可用性）由 inventory 携带（host 是唯一真相）。
@@ -3283,26 +3284,6 @@ function onToggleSceneLive(e) {
 function onLiveBootDelay(secs) { setSetting("liveBootDelay", secs); emit(); }
 function onSceneLiveFps(f) { setSetting("sceneLiveFps", f); syncLayers(); emit(); }
 function onPlaybackRate(rate) { setSetting("playbackRate", rate); emit(); }
-/**
- * 播放策略两档（4.23.23）：
- *   · download-first：先完整下载 + 校验，再播本地（默认）；
- *   · stream-first：旧行为，点击即站点流（回滚档）。
- * 切到 stream-first 时若**正在缓存**当前这张 ⇒ 立刻按新策略重挂一次（用户明确选了旧行为，
- * 不该继续干等）；后台下载不动（下完仍会由既有的本地交接切过去）。
- */
-function onPlaybackPolicy(policy) {
-  const next = typeof dfNormalizePolicy === "function" ? dfNormalizePolicy(policy) : policy;
-  setSetting("playbackPolicy", next);
-  if (next === "stream-first" && selection.playbackState === "caching" && selection.id) {
-    try { dfUseStream(); } catch { /* 状态机不可用也照样重挂 */ }
-    selection.playbackState = "playing";
-    selection.cacheState = "";
-    selection.cacheCanStream = false;
-    selection.mediaNote = "";
-    applySelection(selection.id, { forceStream: true });
-  }
-  emit();
-}
 function onFpsCap(cap) {
   // 用户主动改上限：这一轮抽帧升级允许当场换源（自动触发的那一轮不允许，见 upgradeByUser）。
   try { noteFpsCapChange(); } catch { /* ignore */ }
@@ -3963,19 +3944,93 @@ function dfMarkItemLocalReady(id, job) {
   };
 }
 
+/**
+ * 4.25.5：**乐观窗口**（点击瞬间写下的 `caching` 最多保留 `DF_OPTIMISTIC_MS`）。
+ *
+ * 用户实测（任务 2 的根因）：点「明日方舟」⇒ job 被 burst 上限挤回 `pending`，而界面还
+ * 停在点击那一刻的 `caching` ⇒ 一直显示「缓存中」却永远没有百分比。乐观状态是**为了
+ * 点击立刻有反应**才存在的，但它必须短命：到点还没拿到服务端的 `queued` / `running`，
+ * 就以服务端事实回滚（`dfServerConfirmed` 是唯一判据）。
+ *
+ * 三个入口：`dfOptimisticArm`（点击/重试）、`dfOptimisticClear`（拿到服务端确认或进入终态）、
+ * `dfOptimisticExpire`（到点判决）。计时器是 `setTimeout`，`clearTimeout` 之后 seq 递增 ⇒
+ * 迟到的旧回调不会再改状态。
+ */
+let dfOptimisticTimer = 0;
+let dfOptimisticId = "";
+let dfOptimisticSeq = 0;
+
+/** 停掉乐观窗口（进入终态 / 服务端确认时调用；换条目由 `dfOptimisticExpire` 的 id 守卫兜底）。 */
+function dfOptimisticClear() {
+  dfOptimisticSeq += 1;
+  dfOptimisticId = "";
+  if (!dfOptimisticTimer) return;
+  try { clearTimeout(dfOptimisticTimer); } catch { /* ignore */ }
+  dfOptimisticTimer = 0;
+}
+
+/** 从"这一刻"开始给这条壁纸计乐观窗口（不是等 `/downloads/add` 回来才计）。 */
+function dfOptimisticArm(id) {
+  dfOptimisticClear();
+  const wantId = String(id || "");
+  if (!wantId) return;
+  const seq = dfOptimisticSeq;
+  dfOptimisticId = wantId;
+  const ms = Math.max(0, Number(typeof DF_OPTIMISTIC_MS === "number" ? DF_OPTIMISTIC_MS : 800));
+  dfOptimisticTimer = setTimeout(() => {
+    dfOptimisticTimer = 0;
+    if (seq !== dfOptimisticSeq) return;                     // 已经被清掉/重挂
+    dfOptimisticExpire(dfOptimisticId);
+  }, ms);
+}
+
+/**
+ * 乐观窗口到点：**服务端没确认 ⇒ 以服务端为准回滚**。
+ *
+ * 三个守卫缺一不可：还是这条壁纸、还停在 `caching`、服务端确实没有 queued/running/done/failed。
+ * 回滚文案与标题栏同一句（「未缓存（点击继续）」），绝不留一个空白的「缓存中」。
+ */
+function dfOptimisticExpire(id) {
+  if (!id || String(selection.id || "") !== String(id)) return;
+  if (selection.playbackState !== "caching") return;   // 已进 running/queued/playing/failed
+  const item = dfCurrentItem();
+  if (item && typeof dfServerConfirmed === "function" && dfServerConfirmed(item)) return;
+  selection.playbackState = "pending";
+  selection.cacheState = "pending";
+  selection.cachePercent = 0;
+  selection.cacheFailReason = "";
+  selection.mediaNote = weT("未缓存（点击继续）");
+  emit();
+}
+
 /** 进度 / 终态的 store 写入（只在 `selection.id` 仍是这条时生效）。 */
 function dfApplyUiSnapshot(snap) {
   if (!snap || String(selection.id || "") !== String(snap.id || "")) return false;
   if (snap.state === "caching") {
+    // 服务端确实把它放进了队列 ⇒ 乐观窗口的使命结束（状态由服务端继续驱动）。
+    if (snap.jobStatus === "queued" || snap.jobStatus === "running") dfOptimisticClear();
     selection.playbackState = "caching";
     selection.cacheState = "caching";
     selection.cachePercent = Number(snap.percent) || 0;
-    selection.cacheCanStream = snap.canStream === true;
     selection.mediaNote = String(snap.text || "");
     selection.cacheFailReason = "";
     // 4.24.0（P0-A）：**不再推给居中浮层**。进度只出现在两处行内位置：
     //   ① 面板「当前壁纸」那一行的 `mediaNote`（本字段）；
     //   ② 快捷面板标题栏元信息区的 `wpTitleRender()`（读同一个 `/downloads/list` 真源）。
+    return true;
+  }
+  /**
+   * 4.25.5：`pending` 是"任务在、但没在排队"（被 burst 上限挤回 / 上次点击没下完）。
+   * 它**不是** caching —— 界面必须跟着回到「未缓存（点击继续）」，否则就是一个永远
+   * 没有百分比的「缓存中」。
+   */
+  if (snap.state === "pending") {
+    dfOptimisticClear();
+    selection.playbackState = "pending";
+    selection.cacheState = "pending";
+    selection.cachePercent = 0;
+    selection.cacheFailReason = "";
+    selection.mediaNote = String(snap.text || weT("未缓存（点击继续）"));
     return true;
   }
   return false;
@@ -3999,10 +4054,10 @@ function dfFinishToLocal(snap, job) {
   selection.playbackState = "playing";
   selection.cacheState = "playing";
   selection.cachePercent = 100;
-  selection.cacheCanStream = false;
   selection.cacheFailReason = "";
   selection.videoError = "";
   selection.mediaNote = "";
+  dfOptimisticClear();
   try { weSwitchOverlayHide(); } catch { /* ignore */ }
   try { dfMarkPlaying(localUrl); } catch { /* 纯状态机，失败不影响落地 */ }
   // 强制一次 200ms fade（用户的过场可能是"硬切"，海报→首帧硬切会闪）。
@@ -4010,9 +4065,10 @@ function dfFinishToLocal(snap, job) {
   applySelection(selection.id, { fromDownloadFirst: true });
 }
 
-/** 失败：原因可见 + 「重试」+「改用边下边播」（按用户要求，绝不自动降级）。 */
+/** 失败：原因可见 + 「重试」（4.25.5 起没有"改用边下边播"这条路，只剩下载重试）。 */
 function dfApplyFailure(snap) {
   if (!snap || String(selection.id || "") !== String(snap.id || "")) return;
+  dfOptimisticClear();
   selection.playbackState = "failed";
   selection.cacheState = "failed";
   selection.cacheFailReason = String(snap.error || "");
@@ -4020,7 +4076,6 @@ function dfApplyFailure(snap) {
   // syncLayers 会按上一张视频的失败态把 videoError 清掉（那张壁纸并不在场）。
   selection.videoError = "";
   selection.mediaNote = String(snap.error || "");
-  selection.cacheCanStream = true;
   try { weSwitchOverlayHide(); } catch { /* ignore */ }
   emit();
 }
@@ -4034,6 +4089,8 @@ function startDownloadFirst(item, opts) {
   const it = item || dfCurrentItem();
   const clicked = !opts || opts.clicked !== false;
   if (!it) return Promise.resolve(null);
+  // 4.25.5：乐观窗口从**点击这一刻**起算（见 DF_OPTIMISTIC_MS 的注释）。
+  dfOptimisticArm(it.id);
   const hooks = {
     enqueue: async () => {
       const resp = await apiPostJson("/downloads/add", {
@@ -4054,37 +4111,23 @@ function startDownloadFirst(item, opts) {
   };
   return Promise.resolve()
     .then(() => dfLoad(it, hooks))
-    .catch(() => { dfApplyFailure(dfFail(weT("下载中断，请重试或改用边下边播"))); });
+    .catch(() => { dfApplyFailure(dfFail(weT("下载中断，请重试"))); });
 }
 
 /** 「重试」：重新以 high 入队同一条，状态回到 caching（job 的已下字节会被续传复用）。 */
 function retryDownloadFirst() {
   const it = dfCurrentItem();
   if (!it) return;
+  // 重试也是一次"现在就该有进度"的乐观起点：同样受 800ms 窗口约束。
+  dfOptimisticArm(it.id);
   selection.playbackState = "caching";
   selection.cacheState = "caching";
   selection.cachePercent = 0;
-  selection.cacheCanStream = false;
   selection.cacheFailReason = "";
   selection.videoError = "";
   selection.mediaNote = weT("正在缓存…");
   emit();
   startDownloadFirst(it);
-}
-
-/** 「改用边下边播」：用户显式点了才走站点代理流；后台下载继续（下完仍会自动切本地）。 */
-function useStreamingNow() {
-  const id = String(selection.id || "");
-  if (!id) return;
-  try { dfUseStream(); } catch { /* 状态机不可用时也照样重挂 */ }
-  selection.playbackState = "streaming";
-  selection.cacheState = "streaming";
-  selection.cacheCanStream = false;
-  selection.cacheFailReason = "";
-  selection.videoError = "";
-  selection.mediaNote = weT("已改用边下边播（下载仍会在后台完成）");
-  emit();
-  applySelection(id, { forceStream: true, fromDownloadFirstStream: true });
 }
 // 播放/暂停: 意图 =「播放」但元素并没有真的在播时（被拒 / 解码失败 /
 // 被浏览器暂停），点击必须【重试播放】而不是把意图翻成 false —— 否则这个
@@ -5498,7 +5541,7 @@ function WallpaperPicker() {
     if (activeTab === "playback") return React.createElement(React.Fragment, null,
       renderEffectsTab({
         setSetting, setTransient,
-        onBackgroundBrightness, onBackgroundContrast, onBackgroundSaturate, onClearCustomFrame, onClearGpuFrame, onCustomFrameFile, onFlip, onFpsCap, onLayerPositionX, onLayerPositionY, onLayerReset, onLayerScale, onLiveBootDelay, onObjectFit, onOpenPicker, onPlaybackPolicy, onPlaybackRate, onRecaptureGpuFrame, onRefreshFrame, onSceneLiveFps, onScrim, onToggleSceneLive, onWallpaperBlur, onWallpaperOpacity, sel, setPickerOpener,
+        onBackgroundBrightness, onBackgroundContrast, onBackgroundSaturate, onClearCustomFrame, onClearGpuFrame, onCustomFrameFile, onFlip, onFpsCap, onLayerPositionX, onLayerPositionY, onLayerReset, onLayerScale, onLiveBootDelay, onObjectFit, onOpenPicker, onPlaybackRate, onRecaptureGpuFrame, onRefreshFrame, onSceneLiveFps, onScrim, onToggleSceneLive, onWallpaperBlur, onWallpaperOpacity, sel, setPickerOpener,
       }),
       renderAudioTab({
         setSetting, setTransient,
@@ -5533,7 +5576,7 @@ function WallpaperPicker() {
     );
     return renderWallpaperTab({
       setSetting, setTransient,
-      INTERVALS, armedConfirm: sel.armedConfirm, cdMode, current, editing, editorPageView, group, groups, isLiveScene, onArmConfirm: armConfirm, onArmDeleteGroup, onCacheRetry: retryDownloadFirst, onCancelEditUploadDir, onCancelEditWeAssetsDir, onClear, onDeleteGroup, onDisarmConfirm: disarmConfirm, onEditInterval, onEditName, onEditOrder, onEditTrigger, onGroupChange, onGroupInterval, onGroupTrigger, onOpenPicker, onOpenPickerDraft, onRefresh, onStartEditUploadDir, onStartEditWeAssetsDir, onSwitchTransition, onSwitchTransitionDir, onSwitchTransitionSpeed, onToggleAudio, onTogglePlay, onTogglePropsPanel, onToggleRotation, onUploadDirDraft, onWeAssetsDirDraft, onUseStreaming: useStreamingNow, pagerRow, playableCount, playableList, playbackLive, propsPanelOpen, renderUserPropsPanel, sel, setPickerOpener, uploadedList,
+      INTERVALS, armedConfirm: sel.armedConfirm, cdMode, current, editing, editorPageView, group, groups, isLiveScene, onArmConfirm: armConfirm, onArmDeleteGroup, onCacheRetry: retryDownloadFirst, onCancelEditUploadDir, onCancelEditWeAssetsDir, onClear, onDeleteGroup, onDisarmConfirm: disarmConfirm, onEditInterval, onEditName, onEditOrder, onEditTrigger, onGroupChange, onGroupInterval, onGroupTrigger, onOpenPicker, onOpenPickerDraft, onRefresh, onStartEditUploadDir, onStartEditWeAssetsDir, onSwitchTransition, onSwitchTransitionDir, onSwitchTransitionSpeed, onToggleAudio, onTogglePlay, onTogglePropsPanel, onToggleRotation, onUploadDirDraft, onWeAssetsDirDraft, pagerRow, playableCount, playableList, playbackLive, propsPanelOpen, renderUserPropsPanel, sel, setPickerOpener, uploadedList,
     });
   };
   const tabIdx = Math.max(0, visibleTabs.findIndex((t) => t.id === activeTab));

@@ -122,7 +122,9 @@ const urlFor = (p) => 'http://127.0.0.1:' + port + p;
   const lf = readFileSync(join(ROOT, 'src', 'local-first.js'), 'utf8');
   check('⑥ 客户端侧有 localFirstApply（点击即入队、完成后再应用）', /function localFirstApply\(/.test(lf));
   check('⑥ 客户端侧轮询 job 状态（进度可见）', /function lfPoll\(/.test(lf));
-  check('⑥ 客户端侧只入队、不拦截本次播放（点了就能看，下载并行）', /只入队、不拦截本次播放/.test(readFileSync(join(ROOT, 'src', 'media-prep.js'), 'utf8')));
+  check('⑥ 客户端侧点击就入队（`localFirstApply` 在 applySelection 里、非 download-first 交接路径）',
+    /if \(id && opts && opts\.fromManual && !opts\.fromDownloadFirst[\s\S]{0,120}localFirstApply\(id\)/.test(
+      readFileSync(join(ROOT, 'src', 'media-prep.js'), 'utf8')));
 }
 
 upstream.close();

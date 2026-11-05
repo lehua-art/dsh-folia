@@ -550,11 +550,12 @@ const WE_I18N_EN_PANEL = {
   // 4.23.18：pending = 记录在、成品不在、**没有排队**（启动不批量入队）。没有进度条。
   "未缓存": "Not cached",
   "未缓存（点它才开始下载）": "Not cached (click it to start downloading)",
-  // 4.25.1：total 未知时的阶段文案 / 启动遇 pending+high 的"点击继续"。
+  // 4.25.1：启动遇 pending+high 的"点击继续"。
+  // 4.25.5：`pending` 的**标题栏**也用这一句（旧实现 title=null ⇒ 只剩按钮、没有文字）。
   "未缓存（点击继续）": "Not cached (click to continue)",
-  " · 未缓存（点击继续）": " · Not cached (click to continue)",
-  "连接中": "Connecting",
   "已下载 {mb} MB": "Downloaded {mb} MB",
+  // 4.25.5：failed 的标题栏文案（原因复用 dlFailReason 那张表，这里只拼句式）。
+  "下载失败：{why}（点击重试）": "Download failed: {why} (click to retry)",
 
 
   // ── 四模块统一的卡片状态机（4.23.4）────────────────────────────────────

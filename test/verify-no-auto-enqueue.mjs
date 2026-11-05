@@ -263,9 +263,10 @@ console.log('\nF. pending 卡片 =「未缓存」（不显示"前面还有 N 个
 {
   const wp = readFileSync(join(ROOT, 'src', 'wallpaper-progress.js'), 'utf8');
   const lf = lfSrc;
-  check('F1 pending ⇒ 卡片文案「未缓存」且 title=null（不画进度条、不报排队位置）',
+  check('F1 pending ⇒ 卡片「未缓存」、标题栏「未缓存（点击继续）」（不画进度条、不报排队位置）',
     /if \(status === "pending"\)/.test(wp)
-      && /return \{ phase: "pending", percent: 0, card: weT\("未缓存"\), title: null \};/.test(wp));
+      && /phase === "pending"\) \{\s*\n\s*const title = weT\("未缓存（点击继续）"\)/.test(wp)
+      && /card: high \? title : weT\("未缓存"\), title \}/.test(wp));
   check('F2 「前面还有 N 个」只在 queued/running 的文案路径上（pending 不经过 dlQueueDetail）',
     /if \(s\.phase === "queued"\) \{\s*\n\s*const text = dlQueueDetail\(s\.job\);/.test(wp)
       && !/phase === "pending"[\s\S]{0,120}dlQueueDetail/.test(wp));

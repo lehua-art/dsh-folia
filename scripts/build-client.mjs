@@ -334,7 +334,7 @@ const INLINE_MODULES = [
     file: 'src/panel-tabs-wallpaper.js',
     why: '「壁纸库」页签的四个节渲染器（原 src/panel-tabs.js 的 38–508 行原样搬移）',
     markers: ['function renderWallpaperCurrentSection(ctx) {',
-      '    const { current, isLiveScene, onCacheRetry, onClear, onOpenPicker, onRefresh, onToggleAudio, onTogglePlay, onTogglePropsPanel, onUseStreaming, playbackLive, propsPanelOpen, renderUserPropsPanel, sel, setPickerOpener } = ctx;'],
+      '    const { current, isLiveScene, onCacheRetry, onClear, onOpenPicker, onRefresh, onToggleAudio, onTogglePlay, onTogglePropsPanel, playbackLive, propsPanelOpen, renderUserPropsPanel, sel, setPickerOpener } = ctx;'],
   },
   {
     file: 'src/panel-tabs-appearance.js',
@@ -445,13 +445,16 @@ const INLINE_MODULES = [
   },
   {
     // **download-first**（4.23.23）：未缓存的站点视频先整份下载 + 校验，再从本地文件播。
+    // 4.25.5：这是**唯一**播放路径 —— 用户要求删掉"点开即播站点流"那一档，
+    // 所以 `DF_POLICY_*` / `dfLongWait` / `dfUseStream` 连同它们的锚点一起下架了；
+    // 现在多锚一条「800ms 乐观窗口」与「服务端 jobStatus 读取口」，删掉它们判据就失效。
     // 排在 `src/local-first.js` 之后：运行时的失败文案复用 `dlFailReason`（按名调用，无 TDZ）；
     // 它自己的策略/文案/阈值是纯函数，`test/verify-download-first.mjs` 可独立 import 断言。
     file: 'src/download-first.js',
-    why: 'download-first：策略判定 / 进度+ETA 文案 / 长等待保护 / caching→playing 状态机 / 切走降级',
-    markers: ['const DF_POLICY_DEFAULT = "download-first";', 'function dfShouldCache(',
-      'function dfProgressText(', 'function dfLongWait(', 'function dfLeaveSelection(',
-      'function dfLoad(', 'function dfLayerPlan('],
+    why: 'download-first：单一路径判定 / 进度+等待文案 / caching→pending→playing 状态机 / 切走降级 / 服务端状态派生',
+    markers: ['const DF_OPTIMISTIC_MS = 800;', 'function dfShouldCache(',
+      'function dfProgressText(', 'function dfServerJobStatusOf(', 'function dfServerConfirmed(',
+      'function dfLeaveSelection(', 'function dfLoad(', 'function dfLayerPlan('],
   },
   {
     // **壁纸缓存进度**（4.23.17）：卡片底部小进度条 +「缓存中 62%」/「已缓存」/「重试」，
@@ -460,9 +463,9 @@ const INLINE_MODULES = [
     // `useDownloadJobs()`（同一个轮询器，1.5s、无活跃 job 停表）—— 不新建第二套轮询。
     // 排在 `src/picker-modal.js` / `src/quick-panel.js` **之前**：两个渲染点按名字用它。
     file: 'src/wallpaper-progress.js',
-    why: '壁纸缓存进度：/downloads/list 真源 → 卡片/标题栏视图（进度 / 已缓存 / 排队 / 失败重试），按卡订阅、不整列表重渲染',
+    why: '壁纸缓存进度：/downloads/list 真源 → 卡片/标题栏视图（进度 / 排队 / 未缓存 / 失败重试），按卡订阅、不整列表重渲染',
     markers: ['function wpJobForItem(', 'function wpStateOf(', 'function wpViewOf(',
-      'function WpJobsBridge(', 'function WpCardProgress(', 'function useWallpaperProgress('],
+      'function wpNoteJob(', 'function WpJobsBridge(', 'function WpCardProgress(', 'function useWallpaperProgress('],
   },
   {
     // 标签筛选的纯函数族（4.23.9）：facets → 下拉分组 / OR 参数 / 持久化。

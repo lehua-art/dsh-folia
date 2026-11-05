@@ -549,10 +549,10 @@
         React.createElement("div", { className: "we-qp__meta" },
           current
             ? qpTypeLabel(current, sel)
-              + (sel.playbackState === "caching" ? weT(" · 缓存中")
-                : sel.playbackState === "pending" ? weT(" · 未缓存（点击继续）")
-                : sel.playbackState === "streaming" ? weT(" · 边下边播")
-                : weT(playbackLive ? " · 播放中" : " · 已暂停"))
+              // 4.25.5：这里**只报类型 + 播放态**。缓存状态（缓存中 / 排队中 / 未缓存 / 失败）
+              // 一律由下面那一行走服务端视图（`wpTitleRender`）—— 旧实现读 `sel.playbackState`
+              // 这个**客户端乐观状态**，job 被 burst 上限挤回 pending 时会永远显示「缓存中」。
+              + weT(playbackLive ? " · 播放中" : " · 已暂停")
               // 4.23.4：这条走的是 1080p 变体（宿主按速度/体积/设置选的）⇒ 明确标出来。
               // 不标的话用户只会觉得"怎么比我预期的小/糊"，而不知道这是省流量档。
               + (current.chosenVariant === "1080p" ? weT(" · 1080p") : "")
@@ -562,23 +562,13 @@
         // 数据来自宿主 `/folia/site-media-stats`；拿不到就**什么都不显示**（绝不因此报错）。
         // 4.23.17：正在缓存时这一行换成「缓存中 62%（12.3/20 MB · 约剩 8 秒）」，下完回落原文案。
         React.createElement(QpCacheHint, { item: current }),
-        // 4.23.23：长等待保护 / 失败重试。按钮只在两个条件下出现，绝不自动降级：
-        //   caching + cacheCanStream（预计 >12s 或 >40MB 且 <1MB/s）；
-        //   failed（明确原因 + 重试 + 可选的边下边播）。
-        sel.playbackState === "caching" && sel.cacheCanStream && React.createElement("div", { className: "we-picker__row" },
-          React.createElement("button", {
-            className: "we-picker__btn", type: "button",
-            onClick: () => { try { useStreamingNow(); } catch { /* 处理器不可用不影响按钮 */ } },
-          }, weT("改用边下边播"))),
+        // 4.23.23 / 4.25.5：失败时给「重试」。**没有**"点开即播站点流"那条路了 ——
+        // 播放只有一条链：下载完 + 校验通过 ⇒ 本地播（用户明确要求删掉秒开档）。
         sel.playbackState === "failed" && React.createElement("div", { className: "we-picker__row" },
           React.createElement("button", {
             className: "we-picker__btn we-picker__btn--primary", type: "button",
             onClick: () => { try { retryDownloadFirst(); } catch { /* ignore */ } },
-          }, weT("重试")),
-          React.createElement("button", {
-            className: "we-picker__btn", type: "button",
-            onClick: () => { try { useStreamingNow(); } catch { /* ignore */ } },
-          }, weT("改用边下边播"))),
+          }, weT("重试"))),
       ),
       React.createElement("div", { className: "we-qp__current-actions" },
         // ⚠️ **不变量：这一行只放日常操作**（暂停 / 播放 · 刷新 · 清除；场景与网页壁纸再加
@@ -743,8 +733,6 @@
           // 与设置页同源的那几个播放控制：实时渲染总开关 / 启动等待 / 实时帧率 /
           // 倍速 / 适配 / 翻转（侧栏档真的会画到它们）。
           onToggleSceneLive, onLiveBootDelay, onSceneLiveFps, onPlaybackRate, onObjectFit, onFlip,
-          // 4.23.23：侧栏「播放」档同样画「播放策略」两档 ⇒ 必须传同源处理器（缺它就是空按钮）。
-          onPlaybackPolicy,
           onOpenPicker, setPickerOpener,
           // 侧栏档的空态 CTA：切到本面板的壁纸页（不是设置页的库下钻）。
           onPickWallpaper: () => switchQpTab("wallpaper"),

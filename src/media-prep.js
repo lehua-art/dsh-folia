@@ -457,13 +457,12 @@ function applySelection(id, opts) {
   if (!opts || !opts.fromRotation) releaseRotationAudioGate();
   selection.id = id || "";
   // 4.23.23：换一张普通壁纸 ⇒ 上一张的 download-first 可见状态作废。
-  // 两条例外：① 完成后的本地交接（fromDownloadFirst）刚把状态写成 playing；
-  //          ② 用户点「改用边下边播」（forceStream）刚把状态写成 streaming。
-  if (!(opts && (opts.fromDownloadFirst || opts.forceStream))) {
+  // 例外：完成后的本地交接（fromDownloadFirst）刚把状态写成 playing（4.25.5 起没有
+  // "改用边下边播"这条路，`forceStream` 分支随之删除）。
+  if (!(opts && opts.fromDownloadFirst)) {
     selection.playbackState = "";
     selection.cacheState = "";
     selection.cachePercent = 0;
-    selection.cacheCanStream = false;
     selection.cacheError = "";
   }
   /**
@@ -552,7 +551,7 @@ function applySelection(id, opts) {
     return;
   }
   /**
-   * 4.23.23：**download-first 拦截点**（默认策略）。
+   * 4.23.23：**download-first 拦截点**（4.25.5 起是唯一策略）。
    *
    * 未缓存的站点视频在「整份下载完 + 宿主校验通过」之前**不建 `<video>`、不碰站点流**：
    * 层里只放海报（`playMode: "poster"` ⇒ buildMedia 返回 `<img>`），状态写 `caching`；
@@ -560,10 +559,10 @@ function applySelection(id, opts) {
    *
    * 为什么拦截点必须在这里（而不是在点击 handler）：`applySelection` 是**选中项落地**的
    * 唯一入口，启动恢复 / 轮播 / revalidate 也走它；只改点击口会留下"别的路径照样先播站点流"。
-   * 判定本身是纯函数（`dfShouldCache`），stream-first 时恒 false ⇒ 旧行为逐字保留。
+   * 判定本身是纯函数（`dfShouldCache`）：4.25.5 起它**不再读播放策略** —— 没有第二档了。
    */
   const dfGate = (typeof dfShouldCache === "function" && !(opts && opts.fromDownloadFirst))
-    ? dfShouldCache(w, selection, opts) : false;
+    ? dfShouldCache(w, opts) : false;
   /**
    * 4.25.1：**启动遇到「上次点击未完成」的 pending + high ⇒ 不自动下载**。
    *
@@ -589,7 +588,6 @@ function applySelection(id, opts) {
     selection.playbackState = "pending";
     selection.cacheState = "pending";
     selection.cachePercent = 0;
-    selection.cacheCanStream = false;
     selection.cacheFailReason = "";
     selection.mediaNote = weT("未缓存（点击继续）");
     selection.videoError = "";
@@ -626,7 +624,6 @@ function applySelection(id, opts) {
     selection.cacheState = "caching";
     selection.playbackState = "caching";
     selection.cachePercent = dfSnap.percent;
-    selection.cacheCanStream = dfSnap.canStream;
     selection.cacheFailReason = "";
     selection.mediaNote = dfSnap.text;
     // 上一张视频留下的错误行不属于这一张（caching 期间层里也没有 <video>）。
@@ -650,10 +647,10 @@ function applySelection(id, opts) {
   }
   // 「先下载到本地，再本地渲染」+「点击即下载、连点即并发」（用户 2026-10-30 的规则）。
   //
-  // ⚠️ stream-first 下这里**只入队、不拦截本次播放**：本次照旧用现有地址起播（站点代理会
-  // 边下边播并落盘），同时把这条资源放进本地库队列。download-first 的拦截已在上面的
-  // dfGate 分支完成（那条路径不会走到这里）。
-  if (id && opts && opts.fromManual && !(opts.fromDownloadFirst || opts.forceStream)
+  // ⚠️ 只有 download-first 的拦截分支（上面的 dfGate）会走到这里之**前**；这一段的
+  // 入队是给「已经能播的条目」（本机 / 已缓存 / 图片 / 场景）补一次本地库入队，
+  // 它不参与"先下后播"的判定。
+  if (id && opts && opts.fromManual && !opts.fromDownloadFirst
       && typeof localFirstApply === "function") {
     try { localFirstApply(id); } catch { /* 下载链路不可用不影响本次播放 */ }
   }
@@ -662,7 +659,7 @@ function applySelection(id, opts) {
   // 同 id 的 revalidate 也走 —— 启动时 `revalidateSelection` 可能先把 selection.id 设好再调
   // `applySelection`，只认"id 变了"会漏掉这张。内置 5s 节流；条目从**内存 inventory**取，
   // 不再为提权多发 `/inventory`（test/verify-picker-upload 的"恰好一次重拉"依赖这一点）。
-  if (id && !(opts && opts.fromManual) && !(opts && (opts.fromDownloadFirst || opts.forceStream))
+  if (id && !(opts && opts.fromManual) && !(opts && opts.fromDownloadFirst)
       && typeof localFirstApply === "function") {
     // 从**已在内存里的 inventory** 拿条目，别为提权再发一次 `/inventory`（上传成功那条链
     // 自己已经重拉过一次；再查一次就是"恰好一次"判据变红的原因）。
@@ -673,7 +670,7 @@ function applySelection(id, opts) {
   }
   const savedVariant = Number(selection.frameVariants && selection.frameVariants[String(w.id)]) || 0;
   // 站点条目带 `mediaProxy`（宿主缓存代理，失败一律 302 回原 URL）⇒ 优先用它播放：
-  // 首次边下边播并落盘，之后同一张直接读磁盘，切换不再等网络。没有代理就直连 `w.media`。
+  // 命中代理缓存直接读磁盘，未命中由宿主代理去取；切换不再等网络。没有代理就直连 `w.media`。
   //
   // 4.23.19（P0）：**播哪个地址只由 `resolvePlaySrc(entry)` 决定**。它保证"本地地址只在
   // 宿主确认完整且有效时才返回"，其余一切（下载中 / pending / done-但缺失 / sha 不符）走站点流。

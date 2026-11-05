@@ -1,42 +1,43 @@
 /**
  * download-first.js — **站点壁纸「先完整下载 + 校验，再从本地文件播」**（4.23.23）。
  *
- * 用户口径（本次明确拍板）：
+ * 用户口径（4.25.5 收敛为**唯一路径**）：
  *   ① 点一张未缓存壁纸 ⇒ 卡片立刻 pressed、**封面/海报立刻上屏**（绝不黑屏）；
  *   ② 进度行必须说清「正在缓存 x%（a/b MB · 约剩 N 秒）」；
  *   ③ **等整份下载完、并通过宿主的校验（`job.verified`）后，才从 `/folia/local-media/<jobId>`
- *      开始播放** —— 默认**不走** CDN 边下边播；
- *   ④ 等太久（预计 > 12 秒，或 > 40 MB 且速率 < 1 MB/s）⇒ 进度行下方出现
- *      「改用边下边播」按钮，**用户点了才走 CDN 流**（绝不自动降级）；
- *   ⑤ 用户切走 ⇒ 这条只**降为 low 继续下载**（不暂停/不取消、已下字节不归零）；
- *      再点回来 ⇒ 立刻升回 high；已完成 ⇒ 直接播本地。
+ *      开始播放** —— 全仓**没有**第二条"点击即站点流"的路（4.25.5 按用户要求把
+ *      「改用边下边播」按钮、`stream-first` 档与 `useStreamingNow()` 整条链路删除了）；
+ *   ④ 用户切走 ⇒ 这条只**降为 low 继续下载**（不暂停/不取消、已下字节不归零）；
+ *      再点回来 ⇒ 立刻升回 high；已完成 ⇒ 直接播本地；
+ *   ⑤ 队列把这条挤回 `pending`（burst 上限）时，状态机必须**跟着回到 pending**
+ *      —— 不许停在「缓存中」而没有任何进度数字（4.25.5 的 P0）。
  *
  * 与既有模块的分工：
  *   · 队列 / job 形态 / 校验是宿主的事（`lib/download-queue.js` 4.23.22 起在完成那一刻
  *     按**当前清单**解析期望值；`job.verified` 是那次校验的结果）。
- *   · 本文件只做**客户端状态机 + 文案 + 策略判定**，不自己造第二条下载/轮询实现：
+ *   · 本文件只做**客户端状态机 + 文案**，不自己造第二条下载/轮询实现：
  *     轮询由调用方注入 `listJobs()`（生产走 `/folia/downloads/list`），
  *     入队由调用方注入 `enqueue()`（生产走 `/folia/downloads/add` 的 high）。
- *   · 纯函数（`dfProgressText` / `dfLongWait` / `dfShouldCache` …）可直接被
- *     `test/verify-download-first.mjs` import 断言；状态机零 DOM / 零网络。
+ *   · 纯函数（`dfProgressText` / `dfShouldCache` / `dfServerJobStatusOf` …）可直接被
+ *     `test/verify-download-first.mjs` / `test/verify-wallpaper-core.mjs` import 断言；
+ *     状态机零 DOM / 零网络。
  *
  * 不变量：
  *   · `state === "caching"` 时**绝不允许** `<video>` 指向站点媒体地址（`playMode = "poster"`）；
  *   · `state === "playing"` 只由「`done` + `verified` + 本地地址」这一条路径写入；
  *   · `dfLeaveSelection()` **不发** cancel/pause 请求，只发 low 提权请求（队列继续）；
- *   · 预取张数只有一处（`src/local-first.js` 的 `lfPrefetchCount()`），本文件只答"是不是
- *     download-first"。
+ *   · 预取张数只有一处（`src/local-first.js` 的 `lfPrefetchCount()`）。
  */
 
-/** 默认策略。缺省 / 非法值一律落到它（旧存档没有这个键 ⇒ 新默认）。 */
-const DF_POLICY_DEFAULT = "download-first";
-/** 旧行为：点击即播站点代理流（回滚档）。 */
-const DF_POLICY_STREAM = "stream-first";
-/** 长等待保护：预计剩余**大于**该秒数 ⇒ 显示「改用边下边播」。 */
-const DF_LONG_WAIT_ETA_SEC = 12;
-/** 长等待保护：文件大于 40 MB 且速率低于 1 MB/s ⇒ 显示按钮。 */
-const DF_LONG_WAIT_BYTES = 40 * 1024 * 1024;
-const DF_LONG_WAIT_SPEED_BPS = 1024 * 1024;
+/**
+ * 乐观窗口：点击瞬间写进 store 的 `caching` **最多保留**这么多毫秒。
+ *
+ * 为什么需要它（4.25.5 用户实测）：点「明日方舟」⇒ job 被 burst 上限挤回 `pending`，
+ * 而界面还停在点击那一刻写下的 `caching` ⇒ 一直显示「缓存中」却永远没有百分比。
+ * 800ms 是"宿主确实收到并调度了"的观测上限（`/downloads/add` + 一拍 1s 轮询之内）：
+ * 到点还没拿到 `queued` / `running` 就以服务端事实回滚（见 `dfServerJobStatusOf`）。
+ */
+const DF_OPTIMISTIC_MS = 800;
 /** 进度轮询间隔（与 4.23.17 的卡片进度同一条 1.5s 口径；这里更短一点让 ETA 更快出现）。 */
 const DF_POLL_MS = 1000;
 /** 「job 从列表里消失」连续次数上限：宿主重启 / 清队列之后不再无限等。 */
@@ -48,32 +49,45 @@ const DF_ETA_MIN_SPAN_MS = 600;
 const DF_ETA_MIN_SPEED_BPS = 1024;
 /** 本地副本地址的唯一拼法由 src/media-state.js 提供；本文件只按名调用（运行时才有）。 */
 const DF_STATE = {
-  state: "idle",       // idle | caching | playing | failed
+  state: "idle",       // idle | caching | pending | playing | failed
   id: "", url: "", title: "", poster: "",
   jobId: "", localUrl: "", verified: "",
+  jobStatus: "",       // 服务端那条 job 的 status（queued / running / pending / done / failed）
   received: 0, total: 0, percent: 0, etaSec: 0, bps: 0,
-  canStream: false, streaming: false, error: "",
+  error: "",
   text: "", startedAt: 0, token: 0, timer: 0, last: null,
   samples: [],
 };
 
-/** 策略值规范化：只有 `stream-first` 是旧行为，其余（含缺省/脏值）一律新默认。 */
-function dfNormalizePolicy(v) {
-  return String(v == null ? "" : v) === DF_POLICY_STREAM ? DF_POLICY_STREAM : DF_POLICY_DEFAULT;
+/**
+ * 服务端**唯一**的条目级状态（客户端乐观状态一律不参与）。
+ *
+ * 两处都来自宿主、同一件事的两种读法：
+ *   · `item.mediaState.jobStatus` —— inventory 里对账器给的条目级状态（`jobFieldsOf` 也下发同一份）；
+ *   · `item.jobStatus` —— `jobStateForItem()` 的扁平字段（老清单 / 测试夹具只给这个）。
+ * 拿不到就当空串（空串 ⇒ 不是任何在下载的状态，UI 按「无 job」处理）。
+ */
+function dfServerJobStatusOf(item) {
+  const w = item || {};
+  const ms = (w.mediaState && typeof w.mediaState === "object") ? w.mediaState : null;
+  return String((ms && ms.jobStatus) || w.jobStatus || "").trim();
 }
 
-/** 当前 store → 策略。`selection` 是内联作用域里的单例；单独 import 时由调用方显式传入。 */
-function dfPolicyOf(sel) {
-  const s = sel && typeof sel === "object" ? sel : null;
-  if (s) return dfNormalizePolicy(s.playbackPolicy);
-  try { return dfNormalizePolicy(selection && selection.playbackPolicy); } catch { return DF_POLICY_DEFAULT; }
+/**
+ * 服务端是否已经**确认**这条在下载（或已经到终态）。
+ *
+ * 这就是 800ms 乐观窗口到期时的判决依据：只有 `queued` / `running` / `done` / `failed`
+ * 才算"宿主收到了"；`pending`（被 burst 上限挤回）与空串都必须回滚。
+ */
+function dfServerConfirmed(item) {
+  const st = dfServerJobStatusOf(item);
+  return st === "queued" || st === "running" || st === "done" || st === "failed";
 }
 
-/** 这张壁纸该不该走「先下载完再播」：只认**未缓存的站点视频**。 */
-function dfShouldCache(item, sel, opts) {
+/** 这张壁纸该不该走「先下载完再播」：只认**未缓存的站点视频**（策略只有一档，不再读设置）。 */
+function dfShouldCache(item, opts) {
   const o = opts || {};
-  if (o.forceStream === true || o.fromDownloadFirst === true) return false;
-  if (dfPolicyOf(sel) !== DF_POLICY_DEFAULT) return false;
+  if (o.fromDownloadFirst === true) return false;
   const w = item || {};
   if (String(w.type || "") !== "video") return false;
   if (!w.mediaProxy) return false;                    // 本机条目没有站点代理
@@ -101,20 +115,27 @@ function dfPosterOf(item) {
 /** 「正在缓存 x%（a/b MB · 约剩 N 秒）」的唯一格式化口。
  *
  * 4.25.1：`total` 未知时**不许留空、也不许假装 0%**，按阶段说人话：
- *   queued ⇒「排队中」· running 且已收到字节 ⇒「已下载 X MB」· running 刚连上 ⇒「连接中」。
+ *   queued ⇒「排队中」· running 且已收到字节 ⇒「已下载 X MB」· running 刚连上 ⇒「正在连接…」。
+ * 4.25.5：再加两件事 ——
+ *   ① `pending`（被 burst 上限挤回队列外）⇒「未缓存（点击继续）」，**绝不**说「正在缓存」；
+ *   ② running + total 未知时带上**已等待秒数**（`waitSec`，来自服务端 `job.at`），
+ *      于是"连上了但还没有总量"和"卡住了"在界面上不再同形。
  * 一旦拿到 total ⇒ 立即切回百分比 + 剩余时间。`status` 缺省时保持旧文案（升级期兼容，
  * 也是 `dfBegin` 点击瞬间"还没拿到 job 状态"时的正确形态）。
  */
-function dfProgressText(recv, total, etaSec, status) {
+function dfProgressText(recv, total, etaSec, status, waitSec) {
   const r = Math.max(0, Number(recv) || 0);
   const t = Math.max(0, Number(total) || 0);
   if (!(t > 0)) {
     const st = String(status || "");
+    const wait = Math.max(0, Math.round(Number(waitSec) || 0));
+    if (st === "pending") return weT("未缓存（点击继续）");
     if (st === "queued") return weT("排队中");
     if (st === "running") {
-      return r > 0
+      const base = r > 0
         ? weT("已下载 {mb} MB", { mb: (r / 1048576).toFixed(1) })
-        : weT("连接中");
+        : weT("正在连接…");
+      return wait > 0 ? weT("{base}（已等待 {n} 秒）", { base, n: wait }) : base;
     }
     return weT("正在缓存…");
   }
@@ -125,6 +146,18 @@ function dfProgressText(recv, total, etaSec, status) {
   return s > 0
     ? weT("正在缓存 {p}%（{a}/{b} MB · 约剩 {s} 秒）", { p: pct, a, b, s })
     : weT("正在缓存 {p}%（{a}/{b} MB）", { p: pct, a, b });
+}
+
+/**
+ * 已等待秒数（纯函数，`nowMs` 可注入）—— **只读服务端 `job.at`**，不在本地起表。
+ *
+ * 宿主没给时间戳 / 时钟倒挂（`at` 在未来）⇒ 0（宁可不报数字，也不编一个）。
+ */
+function dfWaitSecOf(job, nowMs) {
+  const at = Number(job && job.at) || 0;
+  const now = Number(nowMs) || Date.now();
+  if (!(at > 0) || at > now) return 0;
+  return Math.max(0, Math.round((now - at) / 1000));
 }
 
 /**
@@ -149,19 +182,6 @@ function dfShouldHoldAutoStart(item, opts) {
   return !(opts && opts.fromManual === true);
 }
 
-/**
- * 长等待保护（纯函数）：预计剩余 > 12 秒 **或** 文件 > 40 MB 且速率 < 1 MB/s。
- * 速率未知（0）时只看 ETA；两条都不满足 ⇒ 不显示按钮（不打扰）。
- */
-function dfLongWait(o) {
-  const x = o || {};
-  const eta = Number(x.etaSec) || 0;
-  if (eta > DF_LONG_WAIT_ETA_SEC) return true;
-  const total = Number(x.total) || 0;
-  const bps = Number(x.bps) || 0;
-  return total > DF_LONG_WAIT_BYTES && bps > 0 && bps < DF_LONG_WAIT_SPEED_BPS;
-}
-
 /** `done` 是否算"通过校验"：4.23.22 起宿主机每行都带 `verified`；旧宿主缺省按通过。 */
 function dfVerifiedOf(job) {
   const v = job && job.verified;
@@ -175,6 +195,7 @@ function dfApplyJob(job, nowMs) {
   if (!job) return dfSnapshot();
   const now = Number(nowMs) || Date.now();
   st.jobId = String(job.id || st.jobId || "");
+  st.jobStatus = String(job.status || "");
   st.received = Math.max(0, Number(job.received) || 0);
   st.total = Math.max(0, Number(job.total) || 0);
   st.percent = st.total > 0 ? Math.max(0, Math.min(100, Math.round((st.received / st.total) * 100)))
@@ -189,7 +210,7 @@ function dfApplyJob(job, nowMs) {
     st.bps = (span >= DF_ETA_MIN_SPAN_MS && delta > 0) ? (delta / (span / 1000)) : 0;
     st.etaSec = (st.bps > DF_ETA_MIN_SPEED_BPS && st.total > st.received)
       ? Math.max(1, Math.round((st.total - st.received) / st.bps)) : 0;
-  } else if (job.status === "queued") {
+  } else if (job.status === "queued" || job.status === "pending") {
     st.bps = 0;
     st.etaSec = 0;
   }
@@ -197,14 +218,12 @@ function dfApplyJob(job, nowMs) {
     if (job.fileValid === false) {
       st.state = "failed";
       st.error = weT("下载完成但本地文件校验没通过，请重试");
-      st.canStream = true;
       st.text = "";
       return dfSnapshot();
     }
     if (!dfVerifiedOf(job)) {
       st.state = "failed";
       st.error = weT("下载完成但内容校验没通过，请重试");
-      st.canStream = true;
       st.text = "";
       return dfSnapshot();
     }
@@ -213,7 +232,6 @@ function dfApplyJob(job, nowMs) {
       ? msLocalMediaUrl(job.id) : "/folia/local-media/" + encodeURIComponent(String(job.id || ""));
     st.state = "playing";
     st.text = "";
-    st.canStream = false;
     st.error = "";
     return dfSnapshot();
   }
@@ -222,14 +240,30 @@ function dfApplyJob(job, nowMs) {
     st.error = (typeof dlFailReason === "function")
       ? dlFailReason(job.error || job.status)
       : String(job.error || job.status || "failed");
-    st.canStream = true;
     st.text = "";
     return dfSnapshot();
   }
+  /**
+   * 4.25.5（P0）：`pending` 是**"任务在、但没在排队"**（被 burst 上限挤回队列外，
+   * 或上次点击没下完留下的记录）—— 它**不是** caching。
+   *
+   * 用户实测：点「明日方舟」⇒ job 被挤回 pending，界面还停在点击那一刻的 caching
+   * ⇒「缓存中」永远没有百分比、只剩一个按钮。现在这一格直接落到 pending 文案，
+   * 与 `src/wallpaper-progress.js` 的标题栏视图同一个口径。
+   */
+  if (job.status === "pending") {
+    st.state = "pending";
+    st.text = dfProgressText(st.received, st.total, 0, "pending");
+    st.error = "";
+    return dfSnapshot();
+  }
   st.state = "caching";
-  // 4.25.1：total 未知时用阶段文案（排队中 / 连接中 / 已下载 X MB）；拿到 total 后切百分比。
-  st.text = dfProgressText(st.received, st.total, st.etaSec, job.status);
-  st.canStream = dfLongWait({ etaSec: st.etaSec, total: st.total, bps: st.bps });
+  // 4.25.1：total 未知时用阶段文案（排队中 / 已下载 X MB / 正在连接…（已等待 N 秒））；
+  // 拿到 total 后切百分比。排队位置优先走 `dlQueueDetail`（与标题栏同一张文案表）。
+  const waitSec = dfWaitSecOf(job, now);
+  st.text = (job.status === "queued" && typeof dlQueueDetail === "function")
+    ? dlQueueDetail(job)
+    : dfProgressText(st.received, st.total, st.etaSec, job.status, waitSec);
   st.error = "";
   return dfSnapshot();
 }
@@ -240,15 +274,15 @@ function dfSnapshot() {
   return {
     state: st.state, id: st.id, url: st.url, title: st.title, poster: st.poster,
     jobId: st.jobId, localUrl: st.localUrl, verified: st.verified,
+    jobStatus: st.jobStatus,
     received: st.received, total: st.total, percent: st.percent,
-    etaSec: st.etaSec, bps: st.bps, canStream: st.canStream, streaming: st.streaming,
+    etaSec: st.etaSec, bps: st.bps,
     error: st.error, text: st.text, startedAt: st.startedAt,
-    showStream: st.state === "failed" || (st.state === "caching" && st.canStream),
     showRetry: st.state === "failed",
   };
 }
 
-/** 点击未缓存壁纸 ⇒ 进入 caching（**同步**，先于任何网络）。 */
+/** 点击未缓存壁纸 ⇒ 进入 caching（**同步**，先于任何网络）。这是**乐观**状态，见 DF_OPTIMISTIC_MS。 */
 function dfBegin(item) {
   const st = DF_STATE;
   const w = item || {};
@@ -261,6 +295,7 @@ function dfBegin(item) {
   st.title = String(w.title || w.id || "");
   st.poster = dfPosterOf(w);
   st.jobId = same ? String(st.last.jobId || "") : "";
+  st.jobStatus = "";
   st.localUrl = "";
   st.verified = "";
   st.received = same ? Math.max(0, Number(st.last.received) || 0) : 0;
@@ -269,8 +304,6 @@ function dfBegin(item) {
   st.etaSec = 0;
   st.bps = 0;
   st.samples = [];
-  st.canStream = same ? Boolean(st.last.canStream) : false;
-  st.streaming = false;
   st.error = "";
   st.text = dfProgressText(st.received, st.total, 0);
   st.startedAt = Date.now();
@@ -289,7 +322,6 @@ function dfLeaveSelection(nextId, hooks) {
   };
   st.last = {
     id: st.id, jobId: st.jobId, received: st.received, total: st.total,
-    canStream: st.canStream,
   };
   st.token += 1;
   dfStopTimer();
@@ -298,6 +330,7 @@ function dfLeaveSelection(nextId, hooks) {
   st.error = "";
   st.id = "";
   st.jobId = "";
+  st.jobStatus = "";
   st.localUrl = "";
   if (hooks && typeof hooks.demote === "function") {
     try { hooks.demote({ id: rec.jobId, url: rec.url, kind: "wallpaper", itemKey: rec.itemKey, priority: "low" }); } catch { /* 降级失败不阻塞切走 */ }
@@ -305,39 +338,24 @@ function dfLeaveSelection(nextId, hooks) {
   return rec;
 }
 
-/** 用户点「改用边下边播」：只改状态，不自动发生（调用方随后按 forceStream 重挂播放）。 */
-function dfUseStream() {
-  const st = DF_STATE;
-  if (st.state !== "caching" && st.state !== "failed") return null;
-  st.state = "idle";
-  st.streaming = true;
-  st.text = "";
-  st.canStream = false;
-  dfStopTimer();
-  return dfSnapshot();
-}
-
 /** 结算为 playing（只在本地地址真的上屏之后由调用方写入）。 */
 function dfMarkPlaying(localUrl) {
   const st = DF_STATE;
   st.state = "playing";
   st.localUrl = String(localUrl || st.localUrl || "");
-  st.streaming = false;
   st.text = "";
-  st.canStream = false;
   st.error = "";
   dfStopTimer();
   return dfSnapshot();
 }
 
-/** 失败：原因 + 两个按钮（重试 / 改用边下边播），绝不静默。 */
+/** 失败：原因留在 `error`（UI 由 `dfApplyFailure` 写进 mediaNote），绝不静默。 */
 function dfFail(reason) {
   const st = DF_STATE;
   st.state = "failed";
   st.error = String(reason || "").trim()
     || dlFailReason("failed");
   st.text = "";
-  st.canStream = true;
   dfStopTimer();
   return dfSnapshot();
 }
@@ -361,10 +379,24 @@ function dfStopTimer() {
  *   · `timers` 注入（测试用）；缺省全局计时器
  * @returns {Promise<object>} 最终快照
  */
+/**
+ * 把刚拿到的**服务端** job 推给标题栏/卡片（`src/wallpaper-progress.js` 的 `wpNoteJob`）。
+ *
+ * 为什么值得这一根线（4.25.5）：标题栏的状态必须由服务端事实派生，而队列那条 1.5s 轮询
+ * 与这里的 1s 轮询是两条独立的表。点击那一刻 `/downloads/add` 的回执就是最新事实 ——
+ * 先推过去，用户就不用等下一拍才看见「排队中 / 未缓存（点击继续）」。
+ * 桥缺席（测试 / 老宿主）时静默跳过：它只是让界面更早说真话，不参与下载本身。
+ */
+function dfNoteJob(job) {
+  if (!job || !job.id) return;
+  try { if (typeof wpNoteJob === "function") wpNoteJob(job); } catch { /* 桥不可用不影响下载 */ }
+}
+
 function dfAttachJob(job, h, token) {
   const st = DF_STATE;
   st.jobId = String(job.id);
   const snap = dfApplyJob(job);
+  dfNoteJob(job);
   if (snap.state === "playing") {
     if (typeof h.onUpdate === "function") h.onUpdate(snap);
     if (typeof h.onDone === "function") h.onDone(snap, job);
@@ -393,6 +425,7 @@ function dfAttachJob(job, h, token) {
     }
     misses.n = 0;
     const next = dfApplyJob(hit);
+    dfNoteJob(hit);
     if (next.state === "playing") {
       if (typeof h.onUpdate === "function") h.onUpdate(next);
       if (typeof h.onDone === "function") h.onDone(next, hit);
@@ -425,10 +458,10 @@ async function dfLoad(item, hooks) {
   let job = null;
   try {
     job = typeof h.enqueue === "function" ? await h.enqueue(item) : null;
-  } catch { /* 队列不可用：下面按失败给出原因 + 流回退 */ }
+  } catch { /* 队列不可用：下面按失败给出原因（没有别的播放路径） */ }
   if (st.token !== token) return dfSnapshot();
   if (!job || !job.id) {
-    const snap = dfFail(weT("下载队列不可用（宿主没响应），可改用边下边播"));
+    const snap = dfFail(weT("下载队列不可用（宿主没响应），请稍后重试"));
     if (typeof h.onFail === "function") h.onFail(snap);
     return snap;
   }
@@ -438,25 +471,18 @@ async function dfLoad(item, hooks) {
 /** 纯函数：download-first 下点未缓存壁纸时，层里该放什么（poster ⇒ 不建 video）。 */
 function dfLayerPlan(item, sel, snap) {
   const s = snap || dfSnapshot();
-  if (s.state === "caching" || s.state === "failed") {
+  // 4.25.5：`pending`（任务在、但没在排队）与 caching 同形 —— 屏上只有静态海报。
+  if (s.state === "caching" || s.state === "pending" || s.state === "failed") {
     return { mode: "poster", src: dfPosterOf(item), state: s.state };
   }
   if (s.state === "playing" && s.localUrl) return { mode: "video", src: s.localUrl, state: "playing" };
-  const policy = dfPolicyOf(sel);
   const proxy = String((item && (item.mediaProxy || item.media)) || "");
-  return { mode: "video", src: proxy, state: policy === DF_POLICY_STREAM ? "streaming" : "idle" };
-}
-
-/** 面板两档的文案（键给渲染器查表，避免在 UI 里再写一份中文）。 */
-function dfPolicyLabel(policy) {
-  return dfNormalizePolicy(policy) === DF_POLICY_STREAM
-    ? weT("边下边播（秒开）")
-    : weT("下载完再播（省流量）");
+  return { mode: "video", src: proxy, state: "idle" };
 }
 
 export {
-  dfNormalizePolicy, dfPolicyOf, dfPolicyLabel, dfShouldCache,
-  dfProgressText, dfLongWait, dfApplyJob, dfSnapshot, dfBegin,
+  DF_OPTIMISTIC_MS, dfShouldCache, dfServerJobStatusOf, dfServerConfirmed,
+  dfProgressText, dfWaitSecOf, dfApplyJob, dfSnapshot, dfBegin,
   dfPendingClickOf, dfShouldHoldAutoStart,
-  dfLeaveSelection, dfUseStream, dfMarkPlaying, dfFail, dfLoad, dfLayerPlan,
+  dfLeaveSelection, dfMarkPlaying, dfFail, dfLoad, dfLayerPlan,
 };

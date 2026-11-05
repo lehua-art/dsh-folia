@@ -86,8 +86,8 @@ function loadProgress(srcOverride) {
       body + `
 return {
   WP_STORE, wpItemKey, wpItemUrls, wpJobForItem, wpPercentOf, wpStateOf, wpViewOf,
-  wpSnapshotOf, wpPushJobs, wpSubscribe, wpUnsubscribe, wpCardRender, wpTitleRender,
-  wpRetryDownload, useWallpaperProgress, WpJobsBridge, WpCardProgress,
+  wpSnapshotOf, wpPushJobs, wpNoteJob, wpServerJobStatusOf, wpSubscribe, wpUnsubscribe,
+  wpCardRender, wpTitleRender, wpRetryDownload, useWallpaperProgress, WpJobsBridge, WpCardProgress,
 };`,
     )(
       weT, React, LF.dlJobActive, LF.dlQueueDetail, LF.dlProgressDetail, LF.dlFailReason,
@@ -292,17 +292,23 @@ if (mod) {
     Boolean(findByClass(mod.wpCardRender(vSelf, itemC), 'we-wp-progress')
       && /93%/.test(textOf(mod.wpTitleRender(vSelf, itemC)))));
 
-  // ③：选中项 pending ⇒ 只给静态「未缓存」，没有假进度。
+  // ③：选中项 pending ⇒ 卡片「未缓存」，没有假进度。
+  // 4.25.5：**标题栏也必须说清状态**（旧实现 title=null ⇒ 用户点完只剩按钮、没有文字）。
   const pendingJob = Object.assign(runJob(itemC.media, 0), { status: 'pending', percent: 0 });
   const vPending = mod.wpViewOf(itemC, [pendingJob]);
-  check('⑨③ 选中项 pending ⇒ 卡片「未缓存」、标题栏不显示、无百分比',
+  check('⑨③ 选中项 pending ⇒ 卡片「未缓存」、标题栏「未缓存（点击继续）」、无百分比',
     Boolean(vPending && vPending.phase === 'pending' && vPending.card === '未缓存'
-      && vPending.title == null && !/%/.test(vPending.card)),
-    JSON.stringify(vPending && { phase: vPending.phase, card: vPending.card }));
+      && vPending.title === '未缓存（点击继续）' && !/%/.test(vPending.card)),
+    JSON.stringify(vPending && { phase: vPending.phase, card: vPending.card, title: vPending.title }));
   const cardPending = mod.wpCardRender(vPending, itemC);
   check('⑨③ pending 卡片是静态角标（we-wp-pending，没有进度条）',
     Boolean(findByClass(cardPending, 'we-wp-pending') && !findByClass(cardPending, 'we-wp-progress')),
     textOf(cardPending));
+  const titlePending = mod.wpTitleRender(vPending, itemC);
+  check('⑨③ pending 的标题栏真的画出那一行（不是只有按钮/空白）',
+    Boolean(titlePending) && /未缓存（点击继续）/.test(textOf(titlePending))
+    && !/缓存中/.test(textOf(titlePending)),
+    textOf(titlePending));
 }
 
 /* ══ ⑥ failed ⇒ 「重试」+ 原因（复用 dlFailReason）════════════════════════════ */
@@ -310,9 +316,12 @@ if (mod) {
   const job = Object.assign(runJob(ORIG, 0), { status: 'failed', error: 'http-404' });
   const view = mod.wpViewOf(itemA, [job]);
   const why = LF.dlFailReason('http-404');
-  check('⑥ failed ⇒ 视图带原因（与 dlFailReason 同一句）',
-    Boolean(view && view.phase === 'failed' && view.title === why && view.card === '重试'),
-    JSON.stringify(view && { phase: view.phase, card: view.card }));
+  // 4.25.5：标题栏句子由 `wpFailTitle` 拼（「下载失败：<原因>（点击重试）」），原因本身仍只来自
+  // `dlFailReason` 那张表 —— 这里断言两句同时成立，防止有人在这里另造一份原因文案。
+  check('⑥ failed ⇒ 视图带原因（与 dlFailReason 同一句）+ 标题栏「下载失败：…（点击重试）」',
+    Boolean(view && view.phase === 'failed' && view.reason === why && view.card === '重试'
+      && view.title === '下载失败：' + why + '（点击重试）'),
+    JSON.stringify(view && { phase: view.phase, card: view.card, title: view.title }));
   const card = mod.wpCardRender(view, itemA);
   const title = mod.wpTitleRender(view, itemA);
   check('⑥ 卡片与标题栏都给出「重试」按钮 + 原因',
