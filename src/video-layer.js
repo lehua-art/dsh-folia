@@ -258,10 +258,18 @@ function buildVideoMedia(sel, fitClass) {
     // 实测代价：一条 8～29 MB 的 4K 远程源，切换要等数秒（首帧在网络那头）。
     // 现在把**静态图后缀**也认作 poster（`.gif` 仍排除 —— 动图当 poster 会"先播预览"，
     // 那正是这条判据当初要挡的东西）。放行条件不变：poster **真的加载出来**才算有画面。
-    const siteStaticThumb = !!sel.previewUrl && /\.(jpe?g|png|webp|avif)(?:[?#]|$)/i.test(sel.previewUrl);
-    const stillPreview = !!sel.previewUrl
-      && (sel.type !== "video" || /\/video-preview\//.test(sel.previewUrl) || siteStaticThumb);
-    if (stillPreview) media.poster = sel.previewUrl;
+    //
+    // **4.24.0：取哪张图由 `weSwitchStillOf()` 一行决定**（站点 v1 的 `posterUrl` 首帧海报
+    // 优先，回退预览图/缩略图）。唯一实现住 `src/video-switch.js`；本文件被单文件沙箱加载时
+    // 它不在作用域（与上面 `weSwitchClickPlayer` 同一条 `typeof` 守卫），此时按"只有预览图"
+    // 退化 —— 沙箱判据关心的只是"静态图能不能当 poster"，不关心站点字段。
+    const stillSrc = typeof weSwitchStillOf === "function"
+      ? weSwitchStillOf(sel)
+      : String(sel.previewUrl || "");
+    const siteStaticThumb = !!stillSrc && /\.(jpe?g|png|webp|avif)(?:[?#]|$)/i.test(stillSrc);
+    const stillPreview = !!stillSrc
+      && (sel.type !== "video" || /\/video-preview\//.test(stillSrc) || siteStaticThumb);
+    if (stillPreview) media.poster = stillSrc;
     // 首帧之前就能看见的那张图先就位，然后才让浏览器去取流。
     media.src = useCached ? rc.url : sel.url;
     // 已经转好的抽帧版（上一次在"已上屏"状态下就绪、刻意没换源的那一份）：

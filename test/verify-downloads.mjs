@@ -200,23 +200,37 @@ try { rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
   check('⑩ negative control: 只认 data.items 的旧写法会被判出来', !/resp\.data\.items\) \? resp\.data\.items\s*\n\s*: \(Array\.isArray\(resp && resp\.items\)/.test(lf));
 }
 
-/* ⑪ 站点凭据注入层（为"接口只给插件用"预留）：四个取数点都必须走统一头。 */
+/* ⑪ 站点凭据注入层（为"接口只给插件用"预留）：四个取数点都必须走统一通道。 */
 {
   const sa = readFileSync(join(ROOT, 'lib', 'site-auth.js'), 'utf8');
   check('⑪ 存在 site-auth 模块且支持环境变量与文件两种来源', /DSH_FOLIA_SITE_KEY/.test(sa) && /site-key\.txt/.test(sa));
   check('⑪ 有 key 时带 Bearer，没有则不带（向后兼容公开站点）',
     /\? \{ \.\.\.headers, authorization: 'Bearer ' \+ key \} : headers/.test(sa));
-  const users = ['lib/routes/inventory.js','lib/routes/skins.js','lib/routes/boot.js','lib/routes/pets.js'];
-  const missing = users.filter((f) => !/siteRequestHeaders\(\)/.test(readFileSync(join(ROOT, f), 'utf8')));
-  check('⑪ 四个站点取数点都用了统一头（少一个就会漏带凭据）', missing.length === 0, missing.join(','));
-  // 负对照：把一个文件的**全部**调用替换成普通 headers，同一判据必须只差 1 个
-  const mutated = readFileSync(join(ROOT, 'lib/routes/pets.js'), 'utf8')
-    .split('siteRequestHeaders()').join('plainHeaders');
+  /**
+   * 4.24.0：**统一头的注入点收敛成一处**。四族（壁纸/皮肤/开机动画/桌宠）不再各自 `fetch` +
+   * `siteRequestHeaders()`，而是统一走 `lib/site-list.js` 的 `siteListFetch()` —— 那里同时决定
+   * 「v1 优先 / v0 回退」并注入统一头。判据因此变成两条：① 四族都走统一通道；② **只有**
+   * site-list.js 拼头（散回四处 = 又会出现"漏带凭据"的入口）。
+   * 负对照同一条判据：替换掉任意一族的调用 ⇒ ① 必须红。
+   */
+  const users = ['lib/routes/inventory.js', 'lib/routes/skins.js', 'lib/routes/boot.js', 'lib/routes/pets.js'];
+  const srcOf = (f) => readFileSync(join(ROOT, f), 'utf8');
+  const usesUnified = (src) => /siteListFetch\(/.test(src);
+  const missing = users.filter((f) => !usesUnified(srcOf(f)));
+  check('⑪ 四个站点取数点都走统一清单通道（siteListFetch ⇒ 统一头 + 端点偏好）',
+    missing.length === 0, missing.join(','));
+  check('⑪ 统一头只在 site-list.js 注入一处（三族不再各自拼 head；inventory 只留快照兜底）',
+    /siteRequestHeaders\(\)/.test(srcOf('lib/site-list.js'))
+    && ['lib/routes/skins.js', 'lib/routes/boot.js', 'lib/routes/pets.js']
+      .every((f) => !/siteRequestHeaders\(\)/.test(srcOf(f))),
+    ['skins.js', 'boot.js', 'pets.js'].filter((n) => /siteRequestHeaders\(\)/.test(srcOf('lib/routes/' + n))).join(',') || 'none');
+  // 负对照：把一个文件的**全部**调用替换成普通取数函数，同一判据必须只差 1 个
+  const mutated = srcOf('lib/routes/pets.js').split('siteListFetch(').join('plainListFetch(');
   const mutatedHits = users
-    .filter((f) => (f === 'lib/routes/pets.js' ? mutated : readFileSync(join(ROOT, f), 'utf8')).includes('siteRequestHeaders()'))
+    .filter((f) => usesUnified(f === 'lib/routes/pets.js' ? mutated : srcOf(f)))
     .length;
   check('⑪ negative control: 把某个取数点的调用换掉后判据会红',
-    mutatedHits === users.length - 1 && !mutated.includes('siteRequestHeaders()'),
+    mutatedHits === users.length - 1 && !usesUnified(mutated),
     'mutatedHits=' + mutatedHits + ' / 期望 ' + (users.length - 1));
 }
 

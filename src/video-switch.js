@@ -229,6 +229,14 @@ function weSwitchArm(el, url, posterUrl) {
       el.__weReady = false;
       el.src = u;
     } catch { return el; }
+    /**
+     * 4.24.0（P0-B）：**新源不继承上一条的播放判决**。池元素是复用的，`wePlayRefused`
+     * （"浏览器拒绝了播放请求"）与 `wePlayAbortRetried`（AbortError 只重载一次）都是**元素级**
+     * 标记；不在这里清，B 会背着 A 的失败文案上屏（用户实测的"换了壁纸还显示上一张的错误"）。
+     */
+    try {
+      if (el.dataset) { delete el.dataset.wePlayRefused; delete el.dataset.wePlayAbortRetried; }
+    } catch { /* ignore */ }
     try { if (typeof el.load === "function") el.load(); } catch { /* ignore */ }
   }
   try { el.__weUrl = u; } catch { /* ignore */ }
@@ -347,48 +355,35 @@ function weSwitchBufferHintText(recv, total, etaSec) {
     : "缓冲中 " + pct + "%（" + a + "/" + b + " MB）";
 }
 
-/** 覆盖层元素（惰性创建；`document` 不可用时全程 null，所有函数退化成 no-op）。 */
-let weSwitchOverlayEl = null;
+/**
+ * **4.24.0（P0-A）：居中浮层已退役**。
+ *
+ * 用户实测：点壁纸后屏幕中间弹出一块「正在缓存 27%（12.9/48.5 MB · 约剩 6 秒）」，
+ * 压在壁纸画面正中，像报错浮层。要求是**缓存进度只出现在标题栏的元信息区**（与
+ * 「缓存命中 / 首次下载 / 平均速度」同一行），卡片角标照旧带小进度条。
+ *
+ * 因此这里**不再创建任何 DOM**（判据：页面里不存在 `.we-switch-hint`、不存在
+ * `position:fixed` 的居中提示节点）。进度文案仍由 `weSwitchBufferHintText()` 产出、
+ * 由状态机写进 `selection.mediaNote`（面板当前壁纸那一行）与 `wpTitleRender()`
+ * （快捷面板标题栏的元信息行）—— 两处都是**行内**布局。
+ *
+ * 保留这两个函数名是为了不破坏既有调用点（它们现在是纯状态写入，零 DOM、零布局影响）。
+ */
+let weSwitchHintLast = "";
 
-/** 取/建覆盖层。挂在 `body` 上，`pointer-events:none`（不许挡住播放控制）。 */
-function weSwitchOverlayEnsure() {
-  if (weSwitchOverlayEl) return weSwitchOverlayEl;
-  if (typeof document === "undefined" || !document.body) return null;
-  if (typeof document.createElement !== "function") return null;
-  let el;
-  try { el = document.createElement("div"); } catch { return null; }
-  if (!el) return null;
-  try { el.className = "we-switch-hint"; } catch { /* 精简 DOM */ }
-  try {
-    el.setAttribute("role", "status");
-    el.setAttribute("aria-live", "polite");
-    // 只放"看得见的一块胶囊"：不抢焦点、不挡鼠标；颜色走 CSS 变量，主题跟随既有机制。
-    el.style.cssText = "position:fixed;left:50%;bottom:14%;transform:translateX(-50%);"
-      + "padding:8px 16px;border-radius:999px;font-size:13px;line-height:1.4;"
-      + "pointer-events:none;z-index:2147483000;color:#fff;"
-      + "background:rgba(0,0,0,.62);backdrop-filter:blur(6px);display:none;";
-  } catch { /* ignore */ }
-  try { document.body.appendChild(el); } catch { return null; }
-  weSwitchOverlayEl = el;
-  return el;
-}
-
-/** 显示/刷新缓冲提示（幂等；`text` 为空 ⇒ 隐藏）。 */
+/** 记录最近一次缓冲提示（排障/测试读；**不建节点、不显示**）。 */
 function weSwitchOverlaySet(text) {
-  const el = weSwitchOverlayEnsure();
-  if (!el) return;
-  const s = String(text || "");
-  try {
-    if (!s) { el.style.display = "none"; return; }
-    el.textContent = s;
-    el.style.display = "block";
-  } catch { /* ignore */ }
+  weSwitchHintLast = String(text || "");
 }
 
-/** 收起覆盖层（结算/失败/成功都要调；幂等）。 */
+/** 清掉最近一次提示（幂等）。 */
 function weSwitchOverlayHide() {
-  if (!weSwitchOverlayEl) return;
-  try { weSwitchOverlayEl.style.display = "none"; } catch { /* ignore */ }
+  weSwitchHintLast = "";
+}
+
+/** 最近一次缓冲提示（"" = 没有）。诊断读数，纯读。 */
+function weSwitchHintTextOf() {
+  return weSwitchHintLast;
 }
 
 // ── 切换度量 ──────────────────────────────────────────────────────────────────
@@ -1018,6 +1013,26 @@ function weSwitchCrossfadeTo(to, from) {
   return true;
 }
 
+/**
+ * 4.24.0：**静态封面的唯一口径** —— 站点 v1 的 `posterUrl`（首帧海报）优先，回退预览图
+ * （宿主 inventory 的 `preview`，它自己已按 `posterUrl → thumbUrl` 排过序）。
+ *
+ * 为什么住在切换域：`<video>.poster` 的写入点就在本文件的 `weSwitchArm()`，而池预热/点击
+ * 两条路都要在"首帧之前"先在屏上放一张图。站点 v1 的 `posterUrl` 是 1280 宽 webp 的
+ * **真正的首帧**（`folia-admin` 的 `POSTER_WIDTH`），比 0.5s 处的封面帧更接近起播后的画面；
+ * 而且它比缩略图更省一次"看起来换了张图"的闪动。
+ *
+ * ⚠️ 空对象/缺字段 ⇒ 空串（调用方 `if (posterUrl)` 自行跳过，绝不设一个 undefined 到
+ * `<video>.poster` 上——那会把上一次的海报留在元素上）。
+ *
+ * @param {any} sel selection 或 inventory 条目（两者字段同名）
+ * @returns {string}
+ */
+function weSwitchStillOf(sel) {
+  const s = sel || {};
+  return String(s.posterUrl || s.previewUrl || s.preview || s.thumbUrl || "");
+}
+
 /** 淡入结束：移除旧元素、把"在屏元素"换成新的。 */
 function weSwitchFinishLocalSwap(to, from, parent) {
   try { if (parent && from && from.parentElement === parent) parent.removeChild(from); } catch { /* ignore */ }
@@ -1044,4 +1059,8 @@ export {
   weSwitchRequestFade, weSwitchConsumeFade,
   weSwitchBufferHintText, weSwitchOverlaySet, weSwitchOverlayHide,
   weSwitchHandoverLocal, weSwitchBeginLocalWatch, weSwitchStopLocalWatch,
+  // 4.24.0：静态封面口径（posterUrl 优先，回退预览图/缩略图）—— 点击、预热与视频通道共用。
+  weSwitchStillOf,
+  // 4.24.0（P0-A）：最近一次缓冲提示（纯状态读数；居中浮层已退役，进度只进标题栏）。
+  weSwitchHintTextOf,
 };

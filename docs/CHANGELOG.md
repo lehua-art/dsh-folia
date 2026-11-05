@@ -1,5 +1,74 @@
 # 变更记录（Changelog）
 
+### v4.24.0（2026-11-05，**壁纸链路稳定性**；发布到 next，latest 保持 4.23.24）
+
+> 用户口径：**这次把壁纸链路彻底修好，不再反复**。本版以「十条不变量」收敛范围，站点 v1
+> 新字段的消费是附带项。判据：新增 `test/verify-wallpaper-chain.mjs`（55 条端到端矩阵，
+> 真 HTTP 字节 + 真队列 + 真路由 + 隔离 home，进 verify 链硬档）与
+> `test/verify-site-v1-sync.mjs`（61 条，透传/选档/poster/端点回退）；相关旧守卫全部重跑。
+
+**A. 壁纸链路（I1–I10 的实现）**
+
+- **I1 角标真实**：`中继器` 的 `stateOfId()` 在缓存命中且 `localReady:true` 时**再核一次盘**
+  （`probe`：stat + 长度 + mp4 结构），盘上不成立就按证据重算 —— 旧口径是"文件被外部删掉
+  要等对账/404 自愈"，用户实测证明不可接受（清空/外部清理只改盘、不改 job 状态 ⇒ 角标继续说
+  「已缓存」）。`已缓存` ⇔ 存在 + 长度/结构有效（完成时另有 `job.verified` 的 sha 校验）。
+- **I2 播放源安全**：只有 I1 成立才给 `/folia/local-media/...`；其余一律站点流
+  （`resolvePlaySrc` 的四条件判据不变，新增的盘上核对把"陈旧快照"挡在上游）。
+- **I3 清空一致（三段失效）**：`/cache/clear` 清 `library` 时，除了删文件 + 重置队列/对账器，
+  还 **失效清单缓存**：内存 `foliaCache` + 落盘 `site-items.json` 一起作废，并推进
+  `inventoryEpoch`；回执带 `inventoryInvalidated:true`。客户端清空后按代际/标志**只重拉一次**
+  清单（`clearCacheTargets`），卡片角标立即变「未缓存」。
+- **I4 首次即对**：本地副本 404 的处置收成纯函数 `lfStaleLocalPlan()` —— 404/410 ⇒
+  **先让清单回到事实**（`refreshInventoryAfterLocalMissing`，5s 节流）再用新条目里的站点地址
+  **重试一次**；200（文件在、内容/编码问题）不刷新，交自愈取证。另修一个真根因：
+  `maybeSelfHealVideo` 原先只认**在屏**元素，而池里**预热中**的元素不在屏 ⇒ 第一次点击的
+  错误被跳过自愈、原样上屏（"无法解码，再点一次就好"）。现在 `/local-media/` 地址的错误
+  一律进流程。
+- **I5 下载策略**：download-first 仍是默认（海报 → 缓存进度 → 下完校验 → 播）；切走降 low
+  继续下、点回升 high（本轮补端到端判据）。
+- **I6 校验来源**：完成时用**当前清单**解析期望；不符 ⇒ 强刷清单复核一次，仍不符才
+  `hash-mismatch` 失败；清单不可达 ⇒ 长度+结构校验（不误判）。判据覆盖"站点换内容"场景。
+- **I7 错误分类**：修 `recoverPlayFailure` 的 AbortError 分支 —— 旧实现把 `clearPlayRefusal()`
+  放在"只重载一次"守卫**之前**，重试链自己会擦掉 `wePlayAbortRetried` ⇒ 持续被打断的源每次
+  心跳都 `load()` 一次（注释承诺的"避免无限循环"并不成立）。现在只有第一次被打断才清标记；
+  AbortError 连发 5 次仍无任何错误提示、最终能播。缺失/损坏/4xx/超限各有独立文案。
+- **I8 队列透明**：点击 = high + `queuePos=1`（补端到端判据）。
+- **I9 脏数据自愈**：启动对账把 done+缺失/截断改 pending，不批量入队；坏文件重下后可播。
+- **I10 不污染**：`lib/routes/inventory.js` 的清单磁盘缓存改成**延迟初始化**（此前 import 时
+  就读 `~/.dsh-folia/...`，而 `cache.js` 现在会 import 它 ⇒ 任何测试 import cache 都会碰用户
+  真实 home）。新判据全程只写隔离 home。
+
+**B. UI / 状态两处（P0-A / P0-B）**
+
+- **P0-A 缓存进度回到标题栏**：点壁纸后屏幕正中弹出的胶囊（`we-switch-hint`，`position:fixed`）
+  已**整体退役** —— `src/video-switch.js` 不再创建任何 DOM，只保留"最近一次提示"的状态读数；
+  进度只出现在两处行内位置：① 快捷面板标题栏元信息区（`wpTitleRender()`，与「缓存命中 /
+  首次下载 / 平均速度」同一行，`we-qp__meta` 之后）；② 面板「当前壁纸」那一行的 `mediaNote`。
+  卡片角标的小进度条/百分比不变。消失条件：下完（转「已缓存」）/ 切走后（`wpTitleRender`
+  对非当前条目返回 null）。判据：`verify-wallpaper-chain` 的 P0-A1…A7（含"DOM 里没有
+  `.we-switch-hint`"与"标题栏容器内"）+ `verify-first-frame` C7/C7b 改判"不再有浮层"。
+- **P0-B 旧错误不残留**：① `syncVideoState()` 在**进入 playing** 这一跳清 `mediaNote`
+  与元素的 `wePlayRefused` / `wePlayAbortRetried`（只清这一跳，之后的新提示不会被误擦）；
+  ② `applySelection` 在 `idChanged` 时清 `videoError` / `mediaNote`（新条目不继承上一张的判决）；
+  ③ 池元素换源（`weSwitchArm`）清两个元素级标记（复用的 `<video>` 不背上一张的拒绝记录）。
+  判据：P0-B1…B4（"先失败再成功 ⇒ 旧文案消失"、"失败 A → 切 B ⇒ B 无 A 的文案"）。
+
+**C. 站点 v1 新字段（附带项）**
+- `fps / codec / pixFmt / hasAudio / posterUrl / license / author` 原样透传（字段名与站点一致）；
+  站点 `source` 因与 inventory 的"来源标记"重名，以 `sourceUrl` 透传（`source:'folia'` 不动，
+  否则客户端会把整库站点条目认成本机）。`variants[].width/fps` 一并透传。
+- 选档用**真实数据**：`codec` 不在支持集（h264 之外）⇒ 不走原画；4K@30 原画不再被降档；
+  4K@60 有 4K30 选 4K30；fps 缺失才按宽度兜底（`fpsSource='width-fallback'`，可诊断）。
+- 静态封面 `posterUrl` 优先、`thumbUrl` 回退（宿主 `preview`、`weSwitchStillOf()`、
+  download-first 海报三处同一口径）。
+- 端点偏好 v1：`lib/site-list.js` 一处实现（v1 优先、400/404/字段缺失 ⇒ 回退 v0；
+  站点级不可达不浪费第二个超时），四族（壁纸/皮肤/桌宠/开机动画）共用；
+  `siteApiVersion` 进 inventory 响应与 `/folia/diag/media-state`。
+
+**门禁**：`verify` 127 → **128 步**（链跑完全程）；`run-audit` 真红 0（3 条预存在的软档红见
+README/交付报告）；`verify-static` 不超基线；`build-client` 0。
+
 ### v4.23.24（2026-11-05，发布号重切；代码与判据 = 4.23.23）
 
 > npm 把 4.23.23 记为 **staged**（再发报 `Cannot publish over previously staged version "4.23.23"`，

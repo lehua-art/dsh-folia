@@ -323,6 +323,24 @@ const VERIFY_STEPS = [
   step('test/verify-no-local-paths.mjs'),
   // ⑱ 站点条目类型：zip 工程包不得判成视频（实测踩过：56MB zip 塞进 <video>）。
   step('test/inventory-types.mjs'),
+  // 4.24.0：**消费站点素材网 v1 的新字段**（站点 2026-11 上线）。判据矩阵：
+  //   ① inventory 透传 fps/codec/pixFmt/hasAudio/posterUrl/license/source(→sourceUrl)/author
+  //      + variants[].width/fps（站点端名字一字不改）；
+  //   ② 选档改用真实数据：{4K@30}⇒original · {4K@60+4K30}⇒4k30 · {HEVC+1080p}⇒1080p ·
+  //      {fps 缺失+width 3840}⇒宽度兜底（fpsSource=width-fallback）；
+  //   ③ 静态封面 posterUrl 优先、thumbUrl 回退（断言最终 poster 来源）；
+  //   ④ 端点偏好 v1：真 HTTP 替身，v1 回 400/404/字段缺失 ⇒ 自动回退 v0 且功能不降级，
+  //      v1 可用 ⇒ siteApiVersion='v1'（同时进 inventory 响应与 /diag/media-state 的同一张表）；
+  //   ⑤ 负对照：站点字段全 null 时行为与 4.23.24 逐字段相等。
+  // 归硬档：选档错 ⇒ 用户点开壁纸当场「无法解码」；端点回退漏了 ⇒ 旧站点直接空库。
+  step('test/verify-site-v1-sync.mjs'),
+  // 4.24.0：**壁纸链路端到端稳定性**（十条不变量 I1–I10）。真 HTTP 字节 + 真队列 + 真路由 +
+  // 隔离 home，覆盖 a–h 矩阵：未缓存点击→海报→下完校验→local-media→播、清空媒体三段一致
+  // （含 negative control：不失效清单 ⇒ 角标仍"已缓存"）、清单说谎时第一次点击即自愈、
+  // 切走降 low 不丢字节/点回升 high、选档（4K30/1080p/HEVC）、AbortError 连发不报错、
+  // 截断文件重下、哈希不符 hash-mismatch、重启 done+缺失→pending。
+  // 归硬档：这条链的每一段都对应一个用户可见故障（角标说谎 / 第一次点不开 / 坏文件上屏）。
+  step('test/verify-wallpaper-chain.mjs'),
   // ⑭ 我们自己的三条功能级测试：开机动画路由 / 桌宠路由 / 桌宠渲染层。
   //    它们是真 http.Server + 假 DOM，不依赖外部进程或网络，适合进链。
   step('test/boot-http.mjs'),

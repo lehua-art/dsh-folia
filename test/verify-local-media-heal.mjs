@@ -237,7 +237,11 @@ console.log('\nD. 客户端兜底：404/error code 4 ⇒ 站点代理重试一�
   const client = readFileSync(join(ROOT, 'src', 'client.js'), 'utf8');
   check('D7 播放错误先走代播（local-media + code 4/2），再走自愈',
     /\/\\\/local-media\\\/\//.test(client) && /code === 4 \|\| code === 2/.test(client)
-    && /lfLocalMediaFallback\(el, lfLocalMediaJobId\(url\), url, selfHealItemOf\(id\)\)/.test(client));
+    // 4.24.0（I4）：第 4 个参数变成「刷新后的条目，拿不到才退回旧条目」——
+    // 调用形状仍是 lfLocalMediaFallback(el, jobId, url, item)，判据只随契约一起改。
+    && /lfLocalMediaFallback\(el, lfLocalMediaJobId\(url\), url, newItem \|\| staleItem\)/.test(client)
+    && /lfStaleLocalPlan\(\{ url, headStatus: status \}\)/.test(client)
+    && /refreshInventoryAfterLocalMissing\(id\)/.test(client));
   check('D8 404/缺失时清空 videoError（不显示"无法解码"）并给出人话提示',
     /setTransient\("videoError", ""\)/.test(client)
     && /本地副本已丢失，正在重新下载/.test(client));

@@ -202,6 +202,9 @@ function lfAddItem(item, url, priority) {
   if (Number(it.width) > 0) entry.width = Number(it.width);
   if (Number(it.height) > 0) entry.height = Number(it.height);
   if (Number(it.fps) > 0) entry.fps = Number(it.fps);
+  // 4.24.0：**真实 codec**（站点 v1）。hevc/h265/av1 在 Chromium 里解不开 ⇒ 宿主选档要
+  // 避开原画。缺就不发 —— 宿主按"没有证据"处理（与 4.23.24 等价）。
+  if (it.codec) entry.codec = String(it.codec);
   // 4.23.17（P0-6）：清单给的哈希**不是**"这一条要用的哈希"，只是**清单事实**。
   // 真正决定校验用哪个哈希的是宿主那一处 `resolveMediaExpectation(item, chosen)`（选原画用原画
   // 的、选 1080p 用变体的）。所以字段名故意不叫 `sha256`：客户端不参与校验来源的决策，
@@ -1307,6 +1310,38 @@ function lfLocalMediaJobId(url) {
   const m = /\/local-media\/([^/?#]+)/.exec(String(url || ""));
   if (!m) return "";
   try { return decodeURIComponent(m[1]); } catch { return m[1]; }
+}
+
+/**
+ * **本地副本 404 之后的处置计划**（4.24.0，I4：首次即对）。
+ *
+ * 真实故障（用户另一台机器）：清空媒体/外部清理后，**第一次点击**报"浏览器无法解码这段
+ * 视频"，再点一次又好。根因有两层，纯靠"重试一次"都修不掉：
+ *   ① 面板手上的清单快照仍说 `localReady:true`（清单没失效，见 I3）⇒ 第一次点击播本地；
+ *   ② 宿主 `/local-media/<id>` 回 404，`<video>` 得到 `MEDIA_ERR_SRC_NOT_SUPPORTED`；
+ *      兜底在屏元素那一路能救，但**池里预热中的元素不在屏上** ⇒ 自愈被跳过 ⇒ 错误上屏。
+ * ⇒ 所以 404 之后要做两件事，缺一不可：**让清单回到事实（刷新一次）** +
+ *    **用新条目里的站点地址重试一次**（不是拿旧快照里的地址再撞一次 404）。
+ *
+ * 判据（纯函数，顺序即优先级）：
+ *   · 不是 `/local-media/` 地址 ⇒ 什么都不做（这是别的故障，交给自愈）；
+ *   · HEAD 404/410 ⇒ 文件丢了：`refreshInventory:true` + `useProxy:true`（唯一"重试一次"的入口）；
+ *   · HEAD 其它（200/未知）⇒ 文件在：**不刷新清单**（刷新只解决"清单说谎"），交自愈取证。
+ *
+ * @param {{ url?: string, headStatus?: number|string }} [inp]
+ * @returns {{ missing: boolean, refreshInventory: boolean, useProxy: boolean, reason: string }}
+ */
+function lfStaleLocalPlan(inp) {
+  const o = inp || {};
+  const url = String(o.url || "");
+  const status = Number(o.headStatus) || 0;
+  if (!url.includes("/local-media/")) {
+    return { missing: false, refreshInventory: false, useProxy: false, reason: "not-local" };
+  }
+  if (status === 404 || status === 410) {
+    return { missing: true, refreshInventory: true, useProxy: true, reason: "local-missing" };
+  }
+  return { missing: false, refreshInventory: false, useProxy: false, reason: "local-present" };
 }
 
 /**

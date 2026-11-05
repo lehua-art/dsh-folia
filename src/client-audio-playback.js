@@ -181,14 +181,22 @@ function clearPlayRefusal(video) {
 function recoverPlayFailure(video, err, retried) {
   const name = String((err && err.name) || "");
   if (name === "AbortError") {
-    clearPlayRefusal(video);
     // 快速切换：旧元素的 play() 被新 load 打断 —— 它已经不在屏上了，忽略，不重试。
-    if (!isCurrentVideoEl(video)) { syncVideoState(video); return; }
-    // 同一元素只重新 load 一次，避免 canplay ↔ play 的无限循环。
+    if (!isCurrentVideoEl(video)) { clearPlayRefusal(video); syncVideoState(video); return; }
+    /**
+     * **同一元素只重新 load 一次**（4.24.0 修正，I7）。
+     *
+     * 旧实现把 `clearPlayRefusal(video)` 放在这段判断**之前**：连重试链自己走完那一次时
+     * 也会把 `wePlayAbortRetried` 擦掉 ⇒ 下一次 AbortError 又通过守卫、又 `load()` 一次。
+     * 持续被打断的源（`canplay ↔ play` 抖动）就会在每次 watch 心跳里重载，而这行注释原本
+     * 承诺的正是"避免无限循环"。现在只有**第一次**被打断才清标记（给下一轮机会），
+     * 重试链内（`retried === true`）与已置标记的后续调用只同步状态、**不再 load**。
+     */
     if (retried || (video.dataset && video.dataset.wePlayAbortRetried === "1")) {
       syncVideoState(video);
       return;
     }
+    clearPlayRefusal(video);
     try { if (video.dataset) video.dataset.wePlayAbortRetried = "1"; } catch { /* ignore */ }
     try { if (typeof video.load === "function") video.load(); } catch { /* ignore */ }
     let p;

@@ -277,6 +277,9 @@ const selection = {
   url: null,
   type: null,
   previewUrl: null,
+  // 4.24.0：站点 v1 的首帧海报（`posterUrl`）。静态封面口径 = posterUrl 优先、预览图回退
+  // （唯一实现 `src/video-switch.js` 的 `weSwitchStillOf()`；由 src/media-prep.js 写入）。
+  posterUrl: null,
   // Transient: real container suffix of the media (host inventory `mediaExt`, e.g. "mp4").
   // The media URL is token-shaped (`/media/<base64url>`) with no extension, so the
   // "browser can play this natively" decision (see src/video-layer.js) needs this field.
@@ -919,6 +922,9 @@ async function loadInventory(opts) {
       total: data.total || 0,
       portableCount: data.portableCount || 0,
       playlists: Array.isArray(data.playlists) ? data.playlists : [],
+      // 4.24.0（P0-B）：**清单缓存代际**。清空媒体会让宿主推进这个数；面板清空后比对它，
+      // 不一致就说明手上这份快照过期了（角标「已缓存」读的正是快照里的 `localReady`）。
+      inventoryEpoch: Number(data.inventoryEpoch) || 0,
       // 组件行状态面（ADR-0013 D3②）：原样透传，**不做归一化** —— 判据与失效口径都在
       // `weComponentVisible` 一处（字段缺席 / 形状不对 ⇒ 按可用渲染）。失败分支（下面的
       // catch）**有意不带这个键**：宿主不可达时可见面照常渲染，不许静默消失（D3③）。
@@ -1691,6 +1697,26 @@ async function clearCacheTargets(targets) {
       : (jobs > 0
         ? weT("已清理 {name}：释放 {size}（{n} 个文件）· 重置 {jobs} 条下载记录", { name: label, size, n: files, jobs })
         : weT("已清理 {name}：释放 {size}（{n} 个文件）", { name: label, size, n: files })));
+    /**
+     * 4.24.0（I3：「清空一致」）：**面板手上的清单快照必须当场作废**。
+     *
+     * 卡片的「已缓存」角标读的是清单条目里的 `localReady`（`src/wallpaper-progress.js` 的
+     * `wpStateOf`），而清空媒体以前只清文件 + 队列/对账器 —— 快照不动 ⇒ 角标继续显示
+     * 「已缓存」，而且**第一次点击**仍拿旧本地地址去播（用户看到的"无法解码，再点一次就好"）。
+     *
+     * 判据（两个来源任一命中就重拉，且只拉一次）：
+     *   · 宿主说 `inventoryInvalidated:true`（4.24.0 起 `/cache/clear` 在清 `library` 时置位）；
+     *   · 宿主回执里的 `inventoryEpoch` 与本地快照里的不同（升级期/更老的宿主也能自愈）。
+     * 清的是皮肤包 / Electron 缓存这类**与壁纸库无关**的目标时不重拉（白拉一次没意义）。
+     */
+    const epoch = Number(d.inventoryEpoch) || 0;
+    const localEpoch = Number((selection.inventory && selection.inventory.inventoryEpoch) || 0);
+    const needInventory = d.inventoryInvalidated === true
+      || (epoch > 0 && epoch !== localEpoch)
+      || list.includes("library");
+    if (needInventory) {
+      try { await loadInventory(); } catch { /* 清单刷新失败不影响"已清理"这个事实 */ }
+    }
     await loadCacheUsage();
   } catch (err) {
     setTransient("cacheError", weT("清理失败：{error}", {
@@ -2157,6 +2183,26 @@ function syncVideoState(video) {
   // 面板会同时显示「播放中」和「浏览器拒绝了播放请求」。
   const reason = videoPlaybackError(video)
     || (!playing ? playRefusalMessage(video) : "");
+  /**
+   * **4.24.0（P0-B）：进入 playing = 一次成功 ⇒ 清掉这条壁纸上的一切旧判决**。
+   *
+   * 用户实测：播放恢复/换了状态之后，界面仍挂着「浏览器无法解码这段视频」。
+   * 三处来源各有归属，必须一起清：
+   *   · `videoError`（红字）—— 下面 setTransient 已经按 `reason` 写成空；
+   *   · `mediaNote`（信息行，「本地副本已丢失」/「正在缓存…」）—— 成功上屏后它已经过时；
+   *   · `<video>.dataset.wePlayRefused / wePlayAbortRetried` —— 元素级拒绝/重试标记，
+   *     不清的话下一次 `playRefusalBlocks()` 还会拦住播放并继续显示旧文案。
+   * 只在**从未播放 → 播放中**这一跳清（不是每拍都清），避免把这次成功之后的新提示擦掉。
+   */
+  if (playing && selection.videoPlaying !== true) {
+    try {
+      if (selection.mediaNote) setTransient("mediaNote", "");
+      if (video && video.dataset) {
+        delete video.dataset.wePlayRefused;
+        delete video.dataset.wePlayAbortRetried;
+      }
+    } catch { /* 清理是增强，失败的清理由下一次 sync 兜 */ }
+  }
   if (selection.videoPlaying === playing && selection.videoError === reason) return;
   setTransient("videoPlaying", playing);
   setTransient("videoError", reason);
@@ -2213,9 +2259,16 @@ function onScreenVideo(node) {
 /**
  * `<video>` 报错 → 要不要自愈（并把证据交给 `lfHealPlayback`）。
  * 幂等：同一 (id, 地址) 同时只有一条在飞；连续 error 不会连开多条重下。
+ *
+ * **4.24.0（I4：首次即对）**：判定对象不再只限"在屏"的那一个 —— 池里**预热中**的元素同样
+ * 会报错，而它那一刻还没被搬进层（`onScreenVideo()` 返回 null）⇒ 旧逻辑直接 return ⇒
+ * **第一次点击的错误原样上屏**（用户看到的"无法解码，再点一次就好了"）。
+ * 现在：`/local-media/` 地址的报错**一律进流程**（这种地址只可能来自本地副本的 404/坏文件，
+ * 与"上一张的残留 src"无关）；站点地址的报错仍要 `onScreenVideo` 把关。
  */
 function maybeSelfHealVideo(video) {
-  const el = onScreenVideo(video);
+  const rawSrc = String((video && (video.currentSrc || video.src)) || "");
+  const el = onScreenVideo(video) || (/\/local-media\//.test(rawSrc) ? video : null);
   if (!el) return;
   const code = Number((el.error && el.error.code) || 0);
   const srcUrl = String(el.currentSrc || el.src || selection.url || "");
@@ -2247,37 +2300,87 @@ function maybeSelfHealVideo(video) {
         .catch(() => ({ status: 0 }))
         .then((r) => {
           const status = Number((r && r.status) || 0);
-          const missing = status === 404 || status === 410;
-          if (!missing) { healLocalCopy(url, code); return; }   // 文件在 ⇒ 取证（损坏 / 编码）
+          /**
+           * 4.24.0（I4）：**404 之后先让清单回到事实，再用新数据重试一次**。
+           * 处置计划是纯函数 `lfStaleLocalPlan()`（`src/local-first.js`，判据见
+           * `test/verify-wallpaper-chain.mjs` 的 c 组）：只有"本地文件真的丢了"才刷新清单，
+           * 200（文件在、内容/编码问题）不刷新 —— 刷新只治"清单说谎"，治不了坏文件。
+           */
+          const plan = typeof lfStaleLocalPlan === "function"
+            ? lfStaleLocalPlan({ url, headStatus: status })
+            : { missing: status === 404 || status === 410, refreshInventory: false };
+          if (!plan.missing) { healLocalCopy(url, code); return; }   // 文件在 ⇒ 取证（损坏 / 编码）
           // 本会话内记为不可用：下一次 `resolvePlaySrc` 直接给站点流（同一地址不再 404 一次）。
           try { msMarkUnavailable(url, "local-media-missing"); } catch { /* 状态表不可用不阻塞兜底 */ }
           // **P0：先铺静态封面再切流**（4.23.19）。理由：换源到站点流后还要等首帧，
           // 这段空窗若露出底色，用户看到的就是"点了没反应"；先垫 poster 则屏上是这张壁纸的图。
           let posterShown;
           try { posterShown = mountStaticFrameFallback(staticFallbackUrlOf()); } catch { posterShown = false; }
-          const proxy = lfLocalMediaFallback(el, lfLocalMediaJobId(url), url, selfHealItemOf(id));
-          try {
-            setTransient("videoError", "");
-            if (proxy) {
-              // selection.url 跟着改：后续 syncLayers / 重挂读的是它，不能还指向 404 的本地地址。
-              selection.url = proxy;
-              selection.playSrc = "proxy";
-              setTransient("mediaNote", posterShown
-                ? weT("已显示静态封面 · 本地副本已丢失，正在重新下载")
-                : weT("本地副本已丢失，正在重新下载"));
-            } else {
-              // 没有站点代理（本机上传等）：也不把 404 说成解码失败，只说正在重下。
-              setTransient("mediaNote", posterShown
-                ? weT("已显示静态封面 · 本地副本已丢失，正在重新下载…")
-                : weT("本地副本已丢失，正在重新下载…"));
-            }
-            emit();
-          } catch { /* 提示失败不影响代理重试 */ }
+          // 4.24.0（I4）：清单刷新（一次；5s 节流）→ 用**新条目**里的站点地址重试。
+          const fresh = plan.refreshInventory ? refreshInventoryAfterLocalMissing(id) : null;
+          const staleItem = selfHealItemOf(id);
+          // `refreshInventoryAfterLocalMissing` 是异步的：先拿新条目，再换源（失败则退回旧条目）。
+          Promise.resolve(fresh).then((newItem) => {
+            const proxy = lfLocalMediaFallback(el, lfLocalMediaJobId(url), url, newItem || staleItem);
+            try {
+              setTransient("videoError", "");
+              if (proxy) {
+                // selection.url 跟着改：后续 syncLayers / 重挂读的是它，不能还指向 404 的本地地址。
+                selection.url = proxy;
+                selection.playSrc = "proxy";
+                setTransient("mediaNote", posterShown
+                  ? weT("已显示静态封面 · 本地副本已丢失，正在重新下载")
+                  : weT("本地副本已丢失，正在重新下载"));
+              } else {
+                // 没有站点代理（本机上传等）：也不把 404 说成解码失败，只说正在重下。
+                setTransient("mediaNote", posterShown
+                  ? weT("已显示静态封面 · 本地副本已丢失，正在重新下载…")
+                  : weT("本地副本已丢失，正在重新下载…"));
+              }
+              emit();
+            } catch { /* 提示失败不影响代理重试 */ }
+          }).catch(() => { /* 刷新/重挂失败：宿主 404 自愈与对账仍会兜 */ });
         });
       return;
     }
   }
   healLocalCopy(url, code);
+}
+
+/**
+ * 「清单回到事实」的节流窗口（4.24.0，I4）。
+ *
+ * 一次播放失败往往连发多个 error（池元素 + 在屏元素 + 换源后的重试），每个都触发一次
+ * `loadInventory()` 会把宿主打成热点、还会让面板闪。5s 足够覆盖同一轮风暴，又短到用户
+ * 在面板上再点一次时一定已经拿到新数据。
+ */
+const INVENTORY_REFRESH_MIN_MS = 5000;
+/** 上次"因本地副本丢失而重拉清单"的时刻（模块级，节流用）。 */
+let inventoryRefreshAt = 0;
+
+/**
+ * **本地副本 404 之后把清单拉回事实**（4.24.0，I4）。
+ *
+ * 只做一件事：`loadInventory()` 一次，然后把刷新后的当前条目交回调用方去重试。
+ * 为什么这样就够：宿主**每次响应都按对账器实时重算** `localReady` / `mediaProxy`
+ * （`lib/routes/inventory.js` 的 `refreshLocalFields` / `foliaItemFromCatalog`），
+ * 所以"重拉"等于"让这份快照不再说谎"，不需要 `refresh=1` 去回源站点 ——
+ * 站点抖动时强制回源反而可能把面板刷成空库（`loadInventory` 的失败分支就是空清单）。
+ *
+ * 清空媒体那条路径的**清单缓存失效**由宿主负责（`invalidateSiteCache()` + 代际），
+ * 面板清空后主动重拉一次（见 `clearCacheTargets`）—— 不依赖出错才刷新。
+ *
+ * 不抛：刷新失败返回 null，调用方退回旧条目里的站点地址继续重试（与 4.23.19 等价）。
+ *
+ * @param {string} id 当前壁纸 id
+ * @returns {Promise<any|null>} 刷新后的清单条目（拿不到 ⇒ null）
+ */
+async function refreshInventoryAfterLocalMissing(id) {
+  const now = Date.now();
+  if (now - inventoryRefreshAt < INVENTORY_REFRESH_MIN_MS) return null;
+  inventoryRefreshAt = now;
+  try { await loadInventory(); } catch { return null; }
+  return selfHealItemOf(String(id || "")) || null;
 }
 
 /**
@@ -2379,11 +2482,20 @@ function mountStaticFrameFallback(url, onFail) {
   } catch { return false; }
 }
 
-/** 这张壁纸能用来兜底的静态图（首帧优先，其次站点缩略图）。取不到 ⇒ ""。 */
+/**
+ * 这张壁纸能用来兜底的静态图（首帧海报 → 预览图 → 站点缩略图 → 本机抽帧）。取不到 ⇒ ""。
+ *
+ * **4.24.0**：站点 v1 的 `posterUrl`（1280 宽 webp 首帧）排在最前 —— 它才是"起播后第一眼
+ * 看到的画面"，比缩略图（可能是 0.5s 处的封面帧）更接近；`preview` 由宿主按
+ * `posterUrl → thumbUrl` 排过序，这里再点一次 `posterUrl` 是为了让**最终来源**能在这条
+ * 链路上一眼看出来（与 `src/video-switch.js` 的 `weSwitchStillOf()` 同一个口径）。
+ */
 function staticFallbackUrlOf() {
   const item = selfHealItemOf(String(selection.id || ""));
   const cands = [
+    selection.posterUrl,
     selection.previewUrl,
+    item && item.posterUrl,
     item && item.preview,
     item && item.thumbUrl,
     selection.frameUrl,
@@ -3861,7 +3973,9 @@ function dfApplyUiSnapshot(snap) {
     selection.cacheCanStream = snap.canStream === true;
     selection.mediaNote = String(snap.text || "");
     selection.cacheFailReason = "";
-    try { weSwitchOverlaySet(selection.mediaNote); } catch { /* 覆盖层是增强 */ }
+    // 4.24.0（P0-A）：**不再推给居中浮层**。进度只出现在两处行内位置：
+    //   ① 面板「当前壁纸」那一行的 `mediaNote`（本字段）；
+    //   ② 快捷面板标题栏元信息区的 `wpTitleRender()`（读同一个 `/downloads/list` 真源）。
     return true;
   }
   return false;
@@ -3877,7 +3991,9 @@ function dfFinishToLocal(snap, job) {
   try {
     if (typeof weSwitchBegin === "function") weSwitchBegin(null);
     if (typeof weSwitchPoolPick === "function" && typeof weSwitchArm === "function") {
-      weSwitchArm(weSwitchPoolPick(localUrl), localUrl, selection.previewUrl || "");
+      // 4.24.0：海报取自唯一口径（posterUrl 优先、预览图回退）—— 见 weSwitchStillOf()。
+      const still = typeof weSwitchStillOf === "function" ? weSwitchStillOf(selection) : (selection.previewUrl || "");
+      weSwitchArm(weSwitchPoolPick(localUrl), localUrl, still);
     }
   } catch { /* 池不可用时 applySelection 仍会走一次性播放器 */ }
   selection.playbackState = "playing";

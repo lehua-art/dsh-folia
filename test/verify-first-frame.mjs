@@ -275,9 +275,14 @@ async function sectionClient() {
     events.some((e) => e.state === 'buffering' && /缓冲中/.test(String(e.hint || ''))
       && e.totalBytes > 0 && e.etaSec > 0));
   const overlay = dom.bodyChildren.find((n) => String(n.className) === 'we-switch-hint');
-  check('C7 覆盖层真的出现在 DOM 上（用户看得见，不是只发了个事件）',
-    Boolean(overlay) && overlay.style.display === 'block' && /缓冲中/.test(String(overlay.textContent || '')),
-    overlay ? String(overlay.textContent) : 'no-overlay');
+  // 4.24.0（P0-A）：**居中浮层已退役** —— 进度只进标题栏元信息区（行内），
+  // 页面里不许再出现那块压在壁纸正中的 `.we-switch-hint` 胶囊。
+  check('C7 不再创建居中浮层（进度只走标题栏）：DOM 里没有 .we-switch-hint',
+    !overlay, overlay ? String(overlay.textContent) : 'no-overlay（符合预期）');
+  check('C7b 提示仍以**纯状态**保留（事件 hint + weSwitchHintTextOf，供标题栏/诊断读）',
+    /缓冲中/.test(String(vs.weSwitchHintTextOf() || ''))
+    && events.some((e) => e.state === 'buffering' && /缓冲中/.test(String(e.hint || ''))),
+    String(vs.weSwitchHintTextOf()));
   off();
   if (!slowCtx.settled) vs.weSwitchFail('cleanup');
 
@@ -357,10 +362,13 @@ async function sectionClient() {
 
   // ── C22 源结构：poster 必须先于 src（需求 A：≤50ms 就有图，而不是空元素）────
   const vl = readFileSync(join(ROOT, 'src', 'video-layer.js'), 'utf8');
-  const posterAt = vl.indexOf('if (stillPreview) media.poster = sel.previewUrl;');
+  // 4.24.0：取值改成唯一口径 `stillSrc`（posterUrl 优先、预览图回退）—— 顺序不变量不变。
+  const posterAt = vl.indexOf('if (stillPreview) media.poster = stillSrc;');
   const srcAt = vl.indexOf('media.src = useCached ? rc.url : sel.url;');
   check('C22 buildVideoMedia 先挂 poster、再赋 src（否则首帧前是空元素）',
     posterAt > 0 && srcAt > 0 && posterAt < srcAt, 'poster=' + posterAt + ' src=' + srcAt);
+  check('C22b 静态封面取自唯一口径（posterUrl 优先，回退预览图）',
+    /const stillSrc = typeof weSwitchStillOf === "function"/.test(vl));
   check('C23 视频档把 kind / originUrl 交给状态机（度量分簇 + 进度 + 切本地都要它）',
     /kind: "video"/.test(vl) && /originUrl: sel\.originUrl/.test(vl));
 

@@ -3523,7 +3523,10 @@ setTimeout(async () => {
         },
         'src/media-prep.js': {
           why: '**整批应用**：`applySelection` 一族写一批字段后一次 `persistSelection()` / 一次 emit，逐个注入入口是仪式',
-          fields: ['liveFrame', 'mediaExt', 'mediaInfo', 'previewUrl', 'propsUrl', 'sceneAudioUrl',
+          // 4.24.0：`posterUrl` —— 站点 v1 首帧海报（静态封面口径 = posterUrl 优先、预览图回退，
+          // 唯一实现 `src/video-switch.js` 的 `weSwitchStillOf()`）。由 applySelection 的两个分支
+          // 与两条清除路径直写；只用于选图，不是持久化字段（下次启动由 inventory 重新给）。
+          fields: ['liveFrame', 'mediaExt', 'mediaInfo', 'previewUrl', 'posterUrl', 'propsUrl', 'sceneAudioUrl',
             'sceneFrameUrl', 'sceneHasAudio', 'sceneLiveActive', 'sceneLiveSrc', 'sceneVideo',
             'schemeColor', 'transcodeState', 'type', 'webLiveSrc'],
         },

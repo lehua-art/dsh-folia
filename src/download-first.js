@@ -84,10 +84,18 @@ function dfShouldCache(item, sel, opts) {
   return true;
 }
 
-/** 海报地址：优先条目预览图（站点缩略图），其次宿主抽帧；空串 = 没有海报。 */
+/**
+ * 海报地址：**静态封面口径的唯一实现点之一**（另一处在 `src/video-switch.js` 的
+ * `weSwitchStillOf()`，本文件必须能**单文件 import**（`test/verify-download-first.mjs`），
+ * 所以不跨模块引用 —— 有意保留这一份三段式，两处的前两项必须一致）。
+ *
+ * 4.24.0 起：站点 v1 的 `posterUrl`（首帧海报）**优先**，回退预览图（宿主已按
+ * `posterUrl → thumbUrl` 排过序）、再回退宿主抽帧。`posterUrl` 缺席 ⇒ 与 4.23.24 完全一致。
+ * 空串 = 没有海报（`dfLayerPlan` 据此把 `src` 留空，绝不设一个 undefined 到 `<img>` 上）。
+ */
 function dfPosterOf(item) {
   const w = item || {};
-  return String(w.preview || w.thumbUrl || w.poster || "");
+  return String(w.posterUrl || w.preview || w.thumbUrl || w.poster || "");
 }
 
 /** 「正在缓存 x%（a/b MB · 约剩 N 秒）」的唯一格式化口。 */

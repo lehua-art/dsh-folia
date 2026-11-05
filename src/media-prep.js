@@ -466,6 +466,18 @@ function applySelection(id, opts) {
     selection.cacheCanStream = false;
     selection.cacheError = "";
   }
+  /**
+   * **4.24.0（P0-B）：换条目时旧错误/旧提示一律作废**。
+   *
+   * 用户实测：上一张的「浏览器无法解码这段视频」/「本地副本已丢失」会留在新条目上。
+   * 这两条文案的来源是 `selection` 上的两个瞬态字段（`videoError` 红字 / `mediaNote` 信息行），
+   * 它们按**条目**归属、不是全局状态 —— 换条目就必须清，否则新条目一上屏就背着上一张的判决。
+   * 同一条目内的"失败 → 成功"由 `clearPlaybackFaults()` 在进入 playing 时清（见 client.js）。
+   */
+  if (idChanged) {
+    selection.videoError = "";
+    selection.mediaNote = "";
+  }
   persistSelection();
   if (!selection.id) {
     selection.blockedNote = "";
@@ -473,6 +485,8 @@ function applySelection(id, opts) {
     selection.playSrc = null;
     selection.playMode = null;
     selection.type = null;
+    // 4.24.0：静态封面两件套一起清 —— 只清 previewUrl 会把上一张的首帧海报留在 selection 上。
+    selection.posterUrl = null;
     selection.previewUrl = null;
     selection.mediaExt = null;
     selection.liveFrame = null;
@@ -512,6 +526,8 @@ function applySelection(id, opts) {
     selection.playSrc = null;
     selection.playMode = null;
     selection.type = null;
+    // 4.24.0：静态封面两件套一起清（见上面「清除壁纸」那条同款注释）。
+    selection.posterUrl = null;
     selection.previewUrl = null;
     selection.mediaExt = null;
     selection.liveFrame = null;
@@ -559,7 +575,11 @@ function applySelection(id, opts) {
     selection.originUrl = w.media || null;
     selection.type = w.type;
     selection.mediaExt = w.mediaExt || null;
-    selection.previewUrl = w.preview || null;
+    // 4.24.0：静态封面 = **posterUrl（站点首帧海报）优先**，回退预览图（宿主已按
+    // posterUrl → thumbUrl 排过序）。`posterUrl` 单独留一份，`weSwitchStillOf()` 与
+    // 静态帧兜底按它取；字段缺席 ⇒ 与 4.23.24 逐字等价（previewUrl 还是那张预览图）。
+    selection.posterUrl = w.posterUrl || null;
+    selection.previewUrl = w.posterUrl || w.preview || null;
     selection.blockedNote = "";
     selection.cacheState = "caching";
     selection.playbackState = "caching";
@@ -688,7 +708,9 @@ function applySelection(id, opts) {
     }).catch(() => { /* 无音频/探测失败：按钮保持隐藏 */ });
   }
   // Keep the preview around so a failed static frame can fall back to it.
-  selection.previewUrl = w.preview || null;
+  // 4.24.0：静态封面口径同 download-first 分支与 `weSwitchStillOf()` —— posterUrl 优先。
+  selection.posterUrl = w.posterUrl || null;
+  selection.previewUrl = w.posterUrl || w.preview || null;
   // 网页壁纸的实时抓帧缓存（宿主 inventory 的 liveFrame = /live-frame/<token>）。web 支把它当
   // 垫底图的**第 1 级候选**，并在 live 首帧稳定后向它回填抽帧；不落这条字段，那一整支
   //（候选、抽帧定时器、"真实渲染帧"那条取色腿）在客户端就没有入口。与 previewUrl 同址。
