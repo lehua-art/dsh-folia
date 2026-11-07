@@ -155,7 +155,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       },
       "host": {
         "id": "",
@@ -302,7 +318,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       }
     },
     {
@@ -467,7 +499,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       },
       "host": "__null__"
     },
@@ -633,7 +681,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       },
       "host": "__null__"
     },
@@ -799,7 +863,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       },
       "host": "__null__"
     },
@@ -957,7 +1037,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       },
       "host": {
         "id": "",
@@ -1104,7 +1200,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       }
     },
     {
@@ -1318,7 +1430,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       },
       "host": {
         "id": "",
@@ -1465,7 +1593,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       }
     },
     {
@@ -1724,7 +1868,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       },
       "host": {
         "id": "",
@@ -1871,7 +2031,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       }
     },
     {
@@ -2029,7 +2205,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       },
       "host": {
         "id": "",
@@ -2176,7 +2368,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       }
     },
     {
@@ -2348,7 +2556,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       },
       "host": {
         "id": "",
@@ -2495,7 +2719,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       }
     },
     {
@@ -2667,7 +2907,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       },
       "host": {
         "id": "",
@@ -2814,7 +3070,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       }
     },
     {
@@ -2973,7 +3245,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       },
       "host": {
         "id": "",
@@ -3120,7 +3408,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       }
     },
     {
@@ -3284,7 +3588,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       },
       "host": {
         "id": "",
@@ -3431,7 +3751,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       }
     },
     {
@@ -3592,7 +3928,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       },
       "host": {
         "id": "",
@@ -3739,7 +4091,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       }
     },
     {
@@ -3907,7 +4275,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       },
       "host": {
         "id": "",
@@ -4054,7 +4438,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       }
     },
     {
@@ -4287,7 +4687,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       },
       "host": {
         "id": "",
@@ -4459,7 +4875,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       }
     },
     {
@@ -4616,7 +5048,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       },
       "host": {
         "id": "",
@@ -4763,7 +5211,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       }
     },
     {
@@ -4920,7 +5384,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       },
       "host": {
         "id": "wallpaper-42",
@@ -5067,7 +5547,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       }
     },
     {
@@ -5225,7 +5721,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       },
       "host": {
         "id": "",
@@ -5372,7 +5884,23 @@
         "uiColorTab": "",
         "uiColorDeepDiving": "",
         "extraGlassSelectors": "",
-        "glassSurfacePolicy": {}
+        "glassSurfacePolicy": {},
+        "playbackPolicy": "download-first",
+        "sourceFilter": "all",
+        "petChat": {
+          "enabled": false,
+          "provider": "ollama",
+          "baseUrl": "",
+          "apiKey": "",
+          "model": "",
+          "persona": {
+            "name": "Folia",
+            "style": "",
+            "traits": ""
+          },
+          "maxTurns": 8,
+          "maxChars": 80
+        }
       }
     }
   ]
