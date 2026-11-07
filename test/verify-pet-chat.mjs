@@ -505,6 +505,86 @@ const resetMem = () => { try { rmSync(MEMORY_FILE, { force: true }); } catch { /
   await model.close();
   resetMem();
 }
+/* ── C 块：主动闲聊（4 条判据）────────────────────────────────────────── */
+const { canSpeak, inQuietHours, skipToday, markSaid, clearProactiveState, PROACTIVE_RULES } = await import('../lib/pet-chat-proactive.js');
+const HOUR = 3600000;
+const MIN = 60000;
+/** 构造"当地某个整点"的毫秒时间（避免跨零点把日界判据搅进来）。 */
+const at = (hour, minute = 0, dayOffset = 0) => {
+  const d = new Date();
+  d.setDate(d.getDate() + dayOffset);
+  d.setHours(hour, minute, 0, 0);
+  return d.getTime();
+};
+const NOON = at(14, 0);
+
+/* C① 默认关 ⇒ 三小时无事件也 0 次 */
+{
+  resetMem();
+  clearProactiveState();
+  let spoken = 0;
+  for (let i = 0; i < 36; i += 1) { // 3 小时，每 5 分钟探一次
+    if (canSpeak({ enabled: false, now: NOON + i * 5 * MIN, idleMinutes: 30 }).ok) spoken += 1;
+  }
+  check('C① 默认关 ⇒ 三小时 0 次主动', spoken === 0, `探测 36 次 · 说话 ${spoken} 次`);
+}
+
+/* C② 五个条件任一不满足 ⇒ 都不说话 */
+{
+  clearProactiveState();
+  const good = { enabled: true, now: NOON, idleMinutes: 30, fullscreen: false, randomHit: true, quietHours: '22:00-08:00' };
+  const results = {
+    enabled: canSpeak({ ...good, enabled: false }).reason,
+    inQuiet: canSpeak({ ...good, now: at(23, 30) }).reason,      // 静默时段内
+    idle: canSpeak({ ...good, idleMinutes: 3 }).reason,          // 用户刚动过
+    fullscreen: canSpeak({ ...good, fullscreen: true }).reason,  // 全屏
+    randomMiss: canSpeak({ ...good, randomHit: false }).reason,  // 随机未命中
+  };
+  // 日限：同一天说满 1 条之后应被挡
+  clearProactiveState();
+  const small = { ...good, dailyLimit: 1 };
+  const first = canSpeak(small);
+  markSaid(small.now);
+  results.dailyLimit = canSpeak({ ...small, now: NOON + 3 * HOUR }).reason;
+  check('C② 五条件：未开启/静默/非空闲/全屏/随机未命中/日限满 ⇒ 都不说话',
+    results.enabled === 'disabled' && results.inQuiet === 'quiet-hours' && results.idle === 'not-idle'
+      && results.fullscreen === 'fullscreen' && results.randomMiss === 'random-miss'
+      && first.ok === true && results.dailyLimit === 'daily-limit',
+    JSON.stringify(results));
+  clearProactiveState();
+}
+
+/* C③ 满足条件时最多每 2 小时 1 条 */
+{
+  clearProactiveState();
+  const base = at(9, 0);
+  const cfg = { enabled: true, now: base, idleMinutes: 30, fullscreen: false, randomHit: true, quietHours: '22:00-08:00', dailyLimit: 10, minGapMin: PROACTIVE_RULES.minGapMinDefault };
+  const a = canSpeak(cfg);
+  markSaid(base); // 路由在 ok 时会记一条（这里模拟同一动作）
+  const b = canSpeak({ ...cfg, now: base + 60 * MIN });
+  const c = canSpeak({ ...cfg, now: base + 119 * MIN });
+  const d = canSpeak({ ...cfg, now: base + 121 * MIN });
+  check('C③ 间隔：首次可说话，2 小时内不再说，超过 2 小时才允许',
+    a.ok === true && b.reason === 'too-soon' && c.reason === 'too-soon' && d.ok === true,
+    `t0=${a.reason} · +1h=${b.reason} · +1h59=${c.reason} · +2h01=${d.reason}`);
+  clearProactiveState();
+}
+
+/* C④ 「今天别说了」⇒ 当日不再主动 */
+{
+  clearProactiveState();
+  const base = at(9, 0);
+  const cfg = { enabled: true, now: base, idleMinutes: 30, fullscreen: false, randomHit: true, quietHours: '22:00-08:00', dailyLimit: 10, minGapMin: 30 };
+  const before = canSpeak(cfg);
+  skipToday(base);
+  const after = canSpeak({ ...cfg, now: at(12, 0) });
+  const tomorrow = canSpeak({ ...cfg, now: at(9, 0, 1) + 24 * HOUR });
+  check('C④ 「今天别说了」⇒ 当日不再主动，次日恢复',
+    before.ok === true && after.reason === 'skip-today' && tomorrow.ok === true,
+    `说前=${before.reason} · 当天=${after.reason} · 次日=${tomorrow.reason}`);
+  clearProactiveState();
+}
+
 /* ── 收账 ─────────────────────────────────────────────────────────────── */
 const failed = results.filter((item) => !item.ok);
 console.log(`\nPET CHAT CHECKS ${failed.length ? 'FAILED' : 'PASSED'} — ${results.length - failed.length} 通过 / ${failed.length} 失败`);
