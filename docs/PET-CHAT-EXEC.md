@@ -169,3 +169,72 @@ commit：<hash>
 npm：发布到 next 的版本号 + shasum（若有）
 遗留：…
 ```
+
+---
+
+## 9. 分工与交接协议（必须遵守）
+
+### 9.1 两个仓库（别搞混）
+
+```
+插件仓库：github.com/lehua-art/dsh-folia      ← 插件代码（会话引擎/气泡/安装链路）
+站点仓库：github.com/ZXY20020906/-            ← 网站代码（桌宠包校验/预览/分发）
+各自 push；不互相覆盖。
+```
+
+### 9.2 协作者机器（那台机器）只做三件事
+
+```
+① 写代码 → commit → push（到对应仓库）
+② 本地跑门禁：build-client / run-audit / run-guards / 新增测试
+③ （可选）npm pack 出测试 tgz，把 sha1 写进汇报，供主机器核对
+```
+
+**禁止**：
+```
+· 不执行 npm publish（无令牌，也不该扩散令牌）
+· 不改 npm 的 latest 标签（latest 必须保持 4.25.5）
+· 不 force push
+· 不改现有公开接口字段、不改数据库结构、不改 wrangler.toml 绑定
+```
+
+### 9.3 主机器（有令牌的那台）做的四件事
+
+```
+① git pull（拿到它的 commit），逐项 review diff
+② 独立跑门禁（不信自述）：npm test / build-client / run-audit / run-guards verify / 新测试
+③ 发版：pnpm publish --tag next（4.26.0-pre.N）→ 核对 registry shasum 与本地 tgz 一致
+④ 通知用户安装测试；出问题用 `dist-tag add dsh-folia@4.25.5 latest` 回滚
+```
+
+### 9.4 汇报格式（协作者机器每次交付）
+
+```
+阶段：A/B/C
+commit：<完整 hash>（插件仓库 / 站点仓库分别写）
+改动：文件清单 + 关键函数
+接口：新增/变更（方法+路径+请求/响应示例）
+测试：X pass / Y fail（新增 N 条）
+门禁：build / audit / guards 结果（贴原始输出行）
+本地包：npm pack 产物 sha1（可选）
+遗留：…
+```
+
+### 9.5 三门闸（一次只做一门）
+
+```
+门 1（站点 B）→ 主机器验收 → 通过
+门 2（插件 A）→ 主机器验收 → 通过
+门 3（插件 C + 联调）→ 主机器验收 → 通过 → 发 4.26.0
+```
+
+### 9.6 回滚预案
+
+```
+· npm：latest 冻结 4.25.5；本地备份 D:\folia-recover\releases\dsh-folia-4.25.5.tgz
+        (sha1 19b03b76024c160a4e6ec8a39be948d1e145ef24)
+· 代码：每阶段独立 commit，可 git revert
+· 设置：petChat.enabled 默认 false，关掉即回到原状
+· 站点：只新增 kind='pet'，git revert + push 即回滚
+· 宠物包：卸载只删 harness\pets\<id>
+```
