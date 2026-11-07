@@ -18,11 +18,15 @@
  */
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+// 记忆文件必须落在临时 home 里（B 块）：否则测试会写进真实 `~/.dsh-folia`
+const TEST_HOME = mkdtempSync(join(tmpdir(), 'folia-pet-chat-'));
+process.env.DSH_FOLIA_HOME = TEST_HOME;
 const {
   registerPetChatRoutes, parseReplyText, emotionFromKeywords, DEPS,
 } = await import('../lib/routes/pet-chat.js');
@@ -74,6 +78,11 @@ function startModel(script) {
         return;
       }
       if (mode.hang) { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write(''); return; }
+      if (mode.json) {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(mode.json));
+        return;
+      }
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       for (const line of mode.lines || []) res.write(line + '\n');
       res.end();
@@ -358,6 +367,144 @@ const ollamaLines = (...pieces) => pieces.map((piece) => JSON.stringify({ messag
   await model.close();
 }
 
+/* ── B 块：长期偏好记忆（5 条）────────────────────────────────────────── */
+// 直接引用记忆模块（既做纯函数判据，也让 guard-map 认得这个文件的覆盖来源）
+const { parseExplicitMemory, MEMORY_LIMITS } = await import('../lib/pet-chat-memory.js');
+const MEMORY_FILE = join(TEST_HOME, 'pet-chat', 'memory.json');
+const readMem = () => (existsSync(MEMORY_FILE) ? JSON.parse(readFileSync(MEMORY_FILE, 'utf8')) : null);
+const resetMem = () => { try { rmSync(MEMORY_FILE, { force: true }); } catch { /* ignore */ } };
+
+/* B① 显式「记住X」⇒ 落盘 + 下一轮 system prompt 含它 */
+{
+  resetMem();
+  const model = await startModel(() => ({ lines: ollamaLines('好') }));
+  const host = await startHost({ petChat: { enabled: true, provider: 'ollama', baseUrl: model.base } });
+  const send = async (text) => {
+    const response = await fetch(`${host.base}/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }),
+    });
+    await readSse(response);
+    await new Promise((r) => setTimeout(r, 1100)); // 限频 1/s
+  };
+  await send('记住我喜欢原神');
+  const mem = readMem();
+  const parsedNick = parseExplicitMemory('记住我叫你小鲸');
+  const parsedLike = parseExplicitMemory('记住我喜欢原神');
+  assert.equal(parsedNick && parsedNick.field, 'nickname', '「记住我叫你X」应识别为称呼');
+  assert.equal(parsedLike && parsedLike.value, '原神', '「记住我喜欢X」应识别为喜欢');
+  assert.equal(MEMORY_LIMITS.likes, 20, '上限常量在模块里（likes ≤ 20）');
+  await send('今天桌面有点乱');
+  const lastSystem = String((model.seen[model.seen.length - 1].body.messages || [])[0].content || '');
+  check('B① 显式「记住X」⇒ 落盘且下一轮 system prompt 含它',
+    mem && mem.likes.includes('原神') && lastSystem.includes('喜欢=原神'),
+    `文件=${JSON.stringify(mem && mem.likes)} · prompt 含记忆=${lastSystem.includes('关于主人')}`);
+  await host.close();
+  await model.close();
+}
+
+/* B② 第 N 轮触发摘要 ⇒ 合并去重，不覆盖显式项 */
+{
+  resetMem();
+  const SUMMARY = { nickname: '不该覆盖', likes: ['原神', '星空'], dislikes: ['广告'], style: '简短', notes: ['夜里更活跃'] };
+  const model = await startModel((index, body) => {
+    const first = String((body && body.messages && body.messages[0] && body.messages[0].content) || '');
+    if (first.startsWith('[memory-summary]')) return { json: { message: { content: JSON.stringify(SUMMARY) } } };
+    return { lines: ollamaLines('嗯') };
+  });
+  const host = await startHost({ petChat: { enabled: true, provider: 'ollama', baseUrl: model.base, memoryEveryTurns: 3 } });
+  for (let i = 1; i <= 3; i += 1) {
+    const response = await fetch(`${host.base}/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '随便聊聊' + i }),
+    });
+    // eslint-disable-next-line no-await-in-loop -- 逐轮串行，第 3 轮触发摘要
+    await readSse(response);
+    // eslint-disable-next-line no-await-in-loop -- 限频 1/s
+    await new Promise((r) => setTimeout(r, 1100));
+  }
+  // 再跑 3 轮：同一份摘要再来一次，去重后条数不该增长
+  for (let i = 4; i <= 6; i += 1) {
+    const response = await fetch(`${host.base}/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '继续聊' + i }),
+    });
+    // eslint-disable-next-line no-await-in-loop -- 同上
+    await readSse(response);
+    // eslint-disable-next-line no-await-in-loop -- 限频 1/s
+    await new Promise((r) => setTimeout(r, 1100));
+  }
+  const mem = readMem();
+  check('B② 第 3/6 轮触发摘要 ⇒ 合并去重（同一份摘要不重复）',
+    mem && mem.likes.length === 2 && mem.likes.includes('原神') && mem.likes.includes('星空')
+      && mem.nickname === '' && mem.notes.length === 1,
+    `likes=${JSON.stringify(mem && mem.likes)} · nickname=${JSON.stringify(mem && mem.nickname)} · notes=${JSON.stringify(mem && mem.notes)}`);
+  await host.close();
+  await model.close();
+}
+
+/* B③ 清空 ⇒ 文件没了、prompt 不再含记忆 */
+{
+  resetMem();
+  const model = await startModel(() => ({ lines: ollamaLines('好') }));
+  const host = await startHost({ petChat: { enabled: true, provider: 'ollama', baseUrl: model.base } });
+  const send = async (text) => {
+    const response = await fetch(`${host.base}/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }),
+    });
+    await readSse(response);
+    await new Promise((r) => setTimeout(r, 1100));
+  };
+  await send('记住我喜欢原神');
+  const before = readMem();
+  await fetch(`${host.base}/reset`, { method: 'POST' });
+  await send('清空之后');
+  const lastSystem = String((model.seen[model.seen.length - 1].body.messages || [])[0].content || '');
+  check('B③ 清空 ⇒ 文件没了、prompt 不再含记忆',
+    Boolean(before && before.likes.length) && readMem() === null && !lastSystem.includes('关于主人'),
+    `清空前=${JSON.stringify(before && before.likes)} · 清空后文件=${readMem() === null ? '不存在' : '仍存在'} · prompt 含记忆=${lastSystem.includes('关于主人')}`);
+  await host.close();
+  await model.close();
+}
+
+/* B④ 关闭记忆 ⇒ 不写、不注入 */
+{
+  resetMem();
+  const model = await startModel(() => ({ lines: ollamaLines('好') }));
+  const host = await startHost({ petChat: { enabled: true, provider: 'ollama', baseUrl: model.base, memoryEnabled: false } });
+  const response = await fetch(`${host.base}/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '记住我喜欢原神' }),
+  });
+  await readSse(response);
+  const lastSystem = String((model.seen[model.seen.length - 1].body.messages || [])[0].content || '');
+  check('B④ 关闭记忆 ⇒ 不写盘、不注入',
+    readMem() === null && !lastSystem.includes('关于主人'),
+    `文件=${readMem() === null ? '不存在' : '被写了'} · prompt 含记忆=${lastSystem.includes('关于主人')}`);
+  await host.close();
+  await model.close();
+}
+
+/* B⑤ 隐私：memory.json 里不含聊天原文 */
+{
+  resetMem();
+  const model = await startModel(() => ({ lines: ollamaLines('好') }));
+  const host = await startHost({ petChat: { enabled: true, provider: 'ollama', baseUrl: model.base } });
+  const secrets = ['我今天在写一个特别长的项目报告', '记住我喜欢原神'];
+  for (const text of secrets) {
+    const response = await fetch(`${host.base}/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }),
+    });
+    // eslint-disable-next-line no-await-in-loop -- 逐句串行
+    await readSse(response);
+    // eslint-disable-next-line no-await-in-loop -- 限频 1/s
+    await new Promise((r) => setTimeout(r, 1100));
+  }
+  const raw = existsSync(MEMORY_FILE) ? readFileSync(MEMORY_FILE, 'utf8') : '';
+  const leaked = secrets.some((text) => raw.includes(text));
+  check('B⑤ 隐私：memory.json 不含聊天原文',
+    raw.length > 0 && !leaked && raw.includes('原神'),
+    `文件 ${raw.length} 字节 · 含原文=${leaked} · 含结论=${raw.includes('原神')}`);
+  await host.close();
+  await model.close();
+  resetMem();
+}
 /* ── 收账 ─────────────────────────────────────────────────────────────── */
 const failed = results.filter((item) => !item.ok);
 console.log(`\nPET CHAT CHECKS ${failed.length ? 'FAILED' : 'PASSED'} — ${results.length - failed.length} 通过 / ${failed.length} 失败`);

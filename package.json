@@ -43,6 +43,8 @@
     "icon.png",
     "lib/index.js",
     "lib/client.js",
+    "lib/pet-chat-memory.js",
+    "lib/routes/pet-chat.js",
     "lib/download-queue.js",
     "lib/host-boot.js",
     "lib/log.js",
