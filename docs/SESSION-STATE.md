@@ -86,3 +86,40 @@ CF 账户 ID（正确）：2f31addd6894dbafbcfb220c6809fee3   ← 注意是 addd
 · CF token 需 Account Analytics: Read 才能跑 d1-usage（当前那把缺权限）
 · 站点新上传素材可能缺缩略图/海报 ⇒ 跑 tools/backfill-metadata.mjs --only=<slug> 补
 ```
+
+---
+
+## 更新（2026-11-07 20:50）
+
+### 门 1（站点侧桌宠包）：✅ 完成并复核通过
+```
+站点远端：2b20426（含 7f227b4 修复补齐）
+我实测：total=114 == 分类之和 114（wallpaper 49 + boot 3 + skin 61 + pet 1）
+        ?kind=pet → 200，?kind=bogus → 400
+站点测试：407 pass / 0 fail（我本地跑）
+遗留（不阻塞）：远端 tests/fixtures/pets/whale-girl-refined.zip 是 0 字节占位（我提交的），
+              建议删除或只使用 sample-pet-v2.zip（689KB，自造）
+```
+
+### 门 2（插件对话引擎）：进行中，已完成第 1–2 轮
+```
+插件远端：ef1f1e7（第2轮 路由）、ce324a1（第1轮 设置项）
+本地 HEAD：920a089（我 rebase 后的文档提交，ahead 1 未推）
+我本地 build-client 成功；run-audit = 通过 100 / 退役 52 / 失败 3（需确认是否既有）
+待办：第3轮 src/pet-chat.js + build 模块登记；第4轮 verify-pet-chat 9 条；第5轮 DONE
+```
+
+### 已知环境性红项（协作者机器报告）
+```
+run-guards 有 17 项红落在"需要真 DSH 宿主 + 现场网络"的链路
+（下载完成校验、/local-media、站点流兜底、队列优先级）
+协作者机器称与本次改动无关、改动前后同一批；需在主机器用同一基线复核
+```
+
+### 新对话怎么接
+```
+读 docs/SESSION-STATE.md（本文件）→ 按"待办"继续：
+① 复核门 2 第 1–2 轮（本地 build+audit 的 3 条失败是否既有）
+② 推动第 3–5 轮
+③ 全绿 → 我发 4.26.0-pre.1 到 next → 用户装 → 真实模型验收
+```
