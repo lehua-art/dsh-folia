@@ -160,17 +160,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       },
       "host": {
@@ -323,17 +329,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       }
     },
@@ -504,17 +516,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
-          "baseUrl": "",
+          "provider": "openai",
+          "baseUrl": "https://api.deepseek.com",
           "apiKey": "",
-          "model": "",
+          "model": "deepseek-chat",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       },
       "host": "__null__"
@@ -686,17 +704,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
-          "baseUrl": "",
+          "provider": "openai",
+          "baseUrl": "https://api.deepseek.com",
           "apiKey": "",
-          "model": "",
+          "model": "deepseek-chat",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       },
       "host": "__null__"
@@ -868,17 +892,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
-          "baseUrl": "",
+          "provider": "openai",
+          "baseUrl": "https://api.deepseek.com",
           "apiKey": "",
-          "model": "",
+          "model": "deepseek-chat",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       },
       "host": "__null__"
@@ -1042,17 +1072,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       },
       "host": {
@@ -1205,17 +1241,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       }
     },
@@ -1435,17 +1477,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       },
       "host": {
@@ -1598,17 +1646,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       }
     },
@@ -1873,17 +1927,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       },
       "host": {
@@ -2036,17 +2096,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       }
     },
@@ -2210,17 +2276,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       },
       "host": {
@@ -2373,17 +2445,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       }
     },
@@ -2561,17 +2639,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       },
       "host": {
@@ -2724,17 +2808,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       }
     },
@@ -2912,17 +3002,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       },
       "host": {
@@ -3075,17 +3171,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       }
     },
@@ -3250,17 +3352,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       },
       "host": {
@@ -3413,17 +3521,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       }
     },
@@ -3593,17 +3707,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       },
       "host": {
@@ -3756,17 +3876,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       }
     },
@@ -3933,17 +4059,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       },
       "host": {
@@ -4096,17 +4228,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       }
     },
@@ -4280,17 +4418,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       },
       "host": {
@@ -4443,17 +4587,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       }
     },
@@ -4692,17 +4842,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       },
       "host": {
@@ -4880,17 +5036,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       }
     },
@@ -5053,17 +5215,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       },
       "host": {
@@ -5216,17 +5384,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       }
     },
@@ -5389,17 +5563,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       },
       "host": {
@@ -5552,17 +5732,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       }
     },
@@ -5726,17 +5912,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       },
       "host": {
@@ -5889,17 +6081,23 @@
         "sourceFilter": "all",
         "petChat": {
           "enabled": false,
-          "provider": "ollama",
+          "provider": "openai",
           "baseUrl": "",
           "apiKey": "",
           "model": "",
           "persona": {
             "name": "Folia",
-            "style": "",
-            "traits": ""
+            "style": "元气、短句、偶尔颜文字、不说教",
+            "traits": "喜欢壁纸和游戏，被夸会害羞"
           },
           "maxTurns": 8,
-          "maxChars": 80
+          "maxChars": 80,
+          "memoryEnabled": true,
+          "memoryEveryTurns": 10,
+          "proactiveEnabled": false,
+          "proactiveDailyLimit": 10,
+          "proactiveMinGapMin": 120,
+          "quietHours": "22:00-08:00"
         }
       }
     }

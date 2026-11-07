@@ -14,45 +14,33 @@
  *   · **不自己拼模型端点**：所有请求都打本机 `/folia/pet-chat/*`。
  *   · 气泡是 `position: fixed` 的独立层，不参与面板重渲染（与 pet-layer 同一套思路）。
  */
-const PET_CHAT_PRESET_LINES = [
-  // happy
-  '嘿嘿，今天也要一起看壁纸吗？',
-  '刚换的那张 4K 好好看，我盯着看了好久！',
-  '你来啦！我正想找你说话呢～',
-  '被你发现了，我在偷偷看桌面上的风景。',
-  '好耶，又是陪你摸鱼的一天！',
-  '要不要换一张更亮的壁纸？我觉得那张不错。',
-  '今天心情不错吧？我都感觉出来了。',
-  '嘿嘿，被你点到了，有点开心。',
-  // calm
-  '在的，慢慢来。',
-  '嗯，我先在这儿待着。',
-  '不着急，想好了再说。',
-  '桌面挺安静的，挺好的。',
-  '有什么想换的壁纸吗？',
-  '我就在角落，喊我一声就行。',
-  '要不要试试轮播？每半小时换一张。',
-  '今天的桌面配色我很喜欢。',
-  // tired
-  '困了就歇会儿吧，壁纸又不会跑。',
-  '记得喝水，眼睛也该休息了。',
-  '夜深了，要不明天再弄？',
-  '我把动作放慢一点，陪你安静会儿。',
-  '要不要换成暗一点的壁纸？眼睛舒服些。',
-  '忙了一整天了吧，辛苦了。',
-  '我先趴一会儿，有事叫我。',
-  '别熬太晚呀。',
-  // angry（轻微闹别扭，不说教）
-  '哼，你先忙吧，我不打扰。',
-  '刚刚点我那么多次，是想让我转圈吗？',
-  '这张壁纸你都看了一周了，换换嘛。',
-  '好吧好吧，随你。',
-  '再不理我，我就去角落待着了。',
-  '我可是有脾气的宠物哦。',
-  // 无模型提示
-  '（还没接上模型，先陪你聊聊天）',
-  '（在设置里打开「桌宠对话」，我就能正经回你了）',
-];
+/**
+ * 预设台词库（工单 A4）：**五组 ≥30 句**。
+ * `enabled=false`（没配模型）与宿主回 `no-model` 两条路径都从这里取，按组轮换。
+ */
+const PET_CHAT_PRESET_LINES = {
+  // 问候（6）
+  greeting: ['你来啦！', '在的，随时找我。', '今天也一起看壁纸吧。', '嗨，我在角落待着呢。', '好久没见，忙完了吗？', '我在，有事说一声。'],
+  // 壁纸相关（8）
+  wallpaper: [
+    '这张的配色我挺喜欢的。', '要不要试试轮播？每半小时换一张。', '4K 那张看着真舒服。',
+    '这张有点糊，要换吗？', '桌面空着也行，等你挑到喜欢的。', '夜里的壁纸挑暗一点更护眼。',
+    '刚换的那张，我盯了好一会儿。', '要不要把喜欢的几张放进一个分组？',
+  ],
+  // 陪伴与鼓励（8）
+  company: [
+    '慢慢来，不急。', '今天辛苦了。', '喝水了吗？', '卡住就歇五分钟。',
+    '你做得比你以为的好。', '我在这儿，安静陪着也行。', '忙完记得伸个懒腰。',
+    '有我看着桌面，你专心干活。',
+  ],
+  // 空状态与失败兜底（5）
+  fallback: [
+    '（还没接上模型，先陪你聊聊天）', '（在设置里填 API Key，我就能正经回你了）',
+    '（模型没回应，等一下再试？）', '（这条没听懂，再说一次？）', '（我在这儿，只是暂时说不上话）',
+  ],
+  // 夜间（3）
+  night: ['夜深了，早点休息。', '要不要换张暗一点的壁纸？', '我先趴一会儿，晚安。'],
+};
 
 /** 情绪 → 宠物动作轨道（缺轨道时回落 idle，见 petApplyEmotion）。 */
 const PET_CHAT_EMOTION_TRACK = { happy: 'wave', tired: 'sleep', angry: 'idle', calm: 'idle' };
@@ -80,13 +68,21 @@ function petChatBuild() {
   head.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px';
   const title = document.createElement('strong');
   title.textContent = weT('桌宠对话');
+  const tools = document.createElement('div');
+  tools.style.cssText = 'display:flex;align-items:center;gap:6px';
+  const clear = document.createElement('button');
+  clear.type = 'button';
+  clear.textContent = weT('清空记忆');
+  clear.style.cssText = 'background:none;border:1px solid rgba(255,255,255,.14);border-radius:7px;color:#c9c9d1;font-size:11px;padding:2px 6px;cursor:pointer';
+  clear.addEventListener('click', () => petChatResetMemory());
   const close = document.createElement('button');
   close.type = 'button';
   close.textContent = '×';
   close.title = weT('关闭');
   close.style.cssText = 'background:none;border:0;color:#c9c9d1;font-size:18px;cursor:pointer;line-height:1';
   close.addEventListener('click', () => petChatHide());
-  head.append(title, close);
+  tools.append(clear, close);
+  head.append(title, tools);
 
   const log = document.createElement('div');
   log.style.cssText = 'flex:1 1 auto;overflow:auto;display:flex;flex-direction:column;gap:6px;min-height:80px';
@@ -161,9 +157,25 @@ function petChatToggle() {
   else petChatHide();
 }
 
-/** 没有模型时的兜底：随机一句预设台词。 */
+/** 五组台词按顺序轮换（同一次会话里不重复同一组，比纯随机更像"有人在"）。 */
+let petChatPresetCursor = 0;
 function petChatPresetLine() {
-  return PET_CHAT_PRESET_LINES[Math.floor(Math.random() * PET_CHAT_PRESET_LINES.length)];
+  const groups = Object.keys(PET_CHAT_PRESET_LINES);
+  const group = groups[petChatPresetCursor % groups.length];
+  petChatPresetCursor += 1;
+  const lines = PET_CHAT_PRESET_LINES[group] || [];
+  return lines[Math.floor(Math.random() * lines.length)] || '……';
+}
+
+/** A2：清空记忆（宿主那边清会话记忆 + 长期偏好）。 */
+async function petChatResetMemory() {
+  try {
+    const res = await apiPostJson('/pet-chat/reset', {}, { parse: 'always' });
+    if (res && res.ok) petChatStatus(weT('已清空'));
+    else petChatStatus(weT('清空失败'));
+  } catch {
+    petChatStatus(weT('清空失败'));
+  }
 }
 
 /** 问宿主"配好没"（失败就当作没配，不弹错误框）。 */

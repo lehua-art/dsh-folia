@@ -131,6 +131,79 @@ const ollamaLines = (...pieces) => pieces.map((piece) => JSON.stringify({ messag
   await model.close();
 }
 
+/* ── A1 默认来源 = 用户自己的 DeepSeek ────────────────────────────────── */
+{
+  // 宿主真实给的是**消毒后**的设置（默认值都在里面），所以这里也走同一条路
+  const { sanitizeFromSchema } = await import('../lib/settings-schema.js');
+  const host = await startHost(sanitizeFromSchema({ petChat: { enabled: true } }, 'host'));
+  const state = await (await fetch(`${host.base}/state`)).json();
+  const noKey = await fetch(`${host.base}/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '你好' }),
+  });
+  const events = await readSse(noKey);
+  const error = events.find((e) => e.event === 'error');
+  check('A1 默认 DeepSeek：state=openai/deepseek；未填 key ⇒ no-model + 可读 hint',
+    state.provider === 'openai' && state.model === 'deepseek-chat'
+      && error && error.data.code === 'no-model' && /DeepSeek API Key/.test(String(error.data.hint || '')),
+    `provider=${state.provider} · model=${state.model} · code=${error && error.data.code}`);
+  await host.close();
+}
+
+/* ── A2 清空记忆：reset 之后 history 为空 ─────────────────────────────── */
+{
+  const model = await startModel(() => ({ lines: ollamaLines('嗯') }));
+  const host = await startHost({ petChat: { enabled: true, provider: 'ollama', baseUrl: model.base } });
+  const say = async (text) => {
+    const response = await fetch(`${host.base}/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }),
+    });
+    await readSse(response);
+  };
+  await say('第一句');
+  await new Promise((r) => setTimeout(r, 1100));
+  await say('第二句');
+  const beforeReset = (model.seen[model.seen.length - 1].body.messages || []).filter((m) => m.role !== 'system').length;
+  const reset = await fetch(`${host.base}/reset`, { method: 'POST' });
+  const resetDoc = await reset.json();
+  await new Promise((r) => setTimeout(r, 1100));
+  await say('清空后的第一句');
+  const afterReset = (model.seen[model.seen.length - 1].body.messages || []).filter((m) => m.role !== 'system').length;
+  check('A2 清空记忆：reset 后下一次 chat 的 history 为空',
+    resetDoc.ok === true && beforeReset > 1 && afterReset === 1,
+    `reset=${JSON.stringify(resetDoc)} · 清空前 ${beforeReset} 条 · 清空后 ${afterReset} 条（只有当前这句）`);
+  await host.close();
+  await model.close();
+}
+
+/* ── A3 人设默认值进 system prompt ────────────────────────────────────── */
+{
+  const model = await startModel(() => ({ lines: ollamaLines('好') }));
+  const host = await startHost({ petChat: { enabled: true, provider: 'ollama', baseUrl: model.base } });
+  const response = await fetch(`${host.base}/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '你好' }),
+  });
+  await readSse(response);
+  const system = String((model.seen[0].body.messages || [])[0].content || '');
+  check('A3 人设默认值进 system prompt',
+    system.includes('Folia') && system.includes('元气、短句、偶尔颜文字、不说教') && system.includes('被夸会害羞'),
+    `system 长度=${system.length}`);
+  await host.close();
+  await model.close();
+}
+
+/* ── A4 预设台词库：五组 ≥30 句，无模型两条路径都从这里取 ──────────────── */
+{
+  const source = readFileSync(join(ROOT, 'src', 'pet-chat.js'), 'utf8');
+  const block = source.match(/const PET_CHAT_PRESET_LINES = \{[\s\S]*?\n\};/);
+  const groups = block ? [...block[0].matchAll(/^\s{2}(\w+): \[([\s\S]*?)\],/gm)]
+    .map((m) => [m[1], (m[2].match(/'/g) || []).length / 2]) : [];
+  const total = groups.reduce((sum, [, n]) => sum + n, 0);
+  const named = ['greeting', 'wallpaper', 'company', 'fallback', 'night'].every((k) => groups.some(([id]) => id === k));
+  const usesPreset = /petChatPresetLine\(\)/.test(source);
+  check('A4 预设台词库：五组 ≥30 句，两条无模型路径都调用',
+    total >= 30 && named && groups.length === 5 && usesPreset,
+    `分组=${JSON.stringify(groups)} · 合计=${total}`);
+}
 /* ── ② 无模型 ⇒ no-model + 预设台词兜底 ───────────────────────────────── */
 {
   const host = await startHost({ petChat: { enabled: false } });
@@ -141,7 +214,11 @@ const ollamaLines = (...pieces) => pieces.map((piece) => JSON.stringify({ messag
   const events = await readSse(response);
   const error = events.find((e) => e.event === 'error');
   const presetSource = readFileSync(join(ROOT, 'src', 'pet-chat.js'), 'utf8');
-  const presetCount = (presetSource.match(/^\s+'[^']+',$/gm) || []).length;
+  const presetBlock = presetSource.match(/const PET_CHAT_PRESET_LINES = \{[\s\S]*?\n\};/);
+  const presetCount = presetBlock
+    ? [...presetBlock[0].matchAll(/^\s{2}(\w+): \[([\s\S]*?)\],/gm)]
+      .reduce((sum, m) => sum + (m[2].match(/'/g) || []).length / 2, 0)
+    : 0;
   check('② 无模型 ⇒ no-model，且有预设台词兜底',
     state.enabled === false && error && error.data.code === 'no-model' && presetCount >= 30,
     `state.enabled=${state.enabled} · code=${error && error.data.code} · 预设台词 ${presetCount} 句`);
