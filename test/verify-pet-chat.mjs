@@ -209,8 +209,22 @@ const ollamaLines = (...pieces) => pieces.map((piece) => JSON.stringify({ messag
   });
   const events = await readSse(response);
   const error = events.find((e) => e.event === 'error');
-  check('⑥ 超长输入 ⇒ bad-request', error && error.data.code === 'bad-request', 'code=' + (error && error.data.code));
   await host.close();
+
+  // 另一半：**回复**按 maxChars 截断（工单 A5⑥）。假模型吐 200 字，上限 80 ⇒ 只该收到 80。
+  const model = await startModel({ lines: ollamaLines('长'.repeat(120), '长'.repeat(80)) });
+  const host2 = await startHost({ petChat: { enabled: true, provider: 'ollama', baseUrl: model.base, maxChars: 80 } });
+  const response2 = await fetch(`${host2.base}/chat`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '说长点' }),
+  });
+  const events2 = await readSse(response2);
+  const text2 = events2.filter((e) => e.event === 'delta').map((e) => e.data.t).join('');
+  const done2 = events2.find((e) => e.event === 'done');
+  check('⑥ 超长：输入 >400 ⇒ bad-request；回复按 maxChars 截断',
+    error && error.data.code === 'bad-request' && text2.length === 80 && Boolean(done2),
+    `输入 code=${error && error.data.code} · 回复长度=${text2.length}（上限 80）· done=${Boolean(done2)}`);
+  await host2.close();
+  await model.close();
 }
 
 /* ── ⑦ 限频：1 秒内第二次 ⇒ rate-limited ──────────────────────────────── */

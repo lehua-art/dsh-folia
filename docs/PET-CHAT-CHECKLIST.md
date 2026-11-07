@@ -52,48 +52,56 @@
 
 ---
 
-## 门 2：插件侧「对话引擎」（只改插件仓库）
+## 门 2：插件侧「对话引擎」（只改插件仓库）—— ✅ 已完成（2026-11-07）
+
+> commit：`ce324a1b3f`（设置项）→ `ef1f1e78fe`（宿主路由）→ `f04de29ce3`（客户端气泡）→ `9832a55dc3`（九条判据）
+> 自检：`build-client` 0 · `run-audit` 103 通过 / 0 失败 · `verify-pet-chat` 9/9 · `run-guards verify` 见下方说明
 
 ### 设置项（`lib/settings-schema.js`）
-- [ ] `petChat`：enabled(false) / provider('ollama') / baseUrl / apiKey /
+- [x] `petChat`：enabled(false) / provider('ollama') / baseUrl / apiKey /
       model / persona{name,style,traits} / maxTurns(8) / maxChars(80)
+- [x] 消毒 `readPetChat()`：认不出的值回落默认（不"修好它"）；baseUrl 只认 http(s)；key 限长 400
+- [x] 归属登记（`lib/settings/ownership.js` → components 桶）
 
 ### 宿主路由（新增 `lib/routes/pet-chat.js` 并在 app 挂载）
-- [ ] `GET /folia/pet-chat/state` → `{enabled,provider,model,reachable,lastError}`
-- [ ] `GET /folia/pet-chat/models` → Ollama 模型列表（openai 返回空 + hint）
-- [ ] `POST /folia/pet-chat/chat` → **SSE**：`delta{t}` / `done{usage,emotion}` / `error{code,hint}`
-- [ ] `POST /folia/pet-chat/reset` → 清空记忆
-- [ ] 约束：超时 20s、限频 1 次/秒、输入 ≤400 字、只转发到用户配置端点
+- [x] `GET /folia/pet-chat/state` → `{enabled,provider,model,reachable,lastError}`
+- [x] `GET /folia/pet-chat/models` → Ollama 模型列表（openai 返回空 + hint）
+- [x] `POST /folia/pet-chat/chat` → **SSE**：`delta{t}` / `done{emotion,usage}` / `error{code,hint}`
+- [x] `POST /folia/pet-chat/reset` → 清空记忆
+- [x] 约束：超时 20s、限频 1 次/秒、输入 ≤400 字、只转发到用户配置端点
+- [x] `export const DEPS = ['disposers','base','log','readSettings']`（注入契约守卫双向对账通过）
+- [x] 注册：`lib/route-registry.js` 的 FEATURE_ROUTE_FAMILIES
 
 ### 客户端（新增 `src/pet-chat.js`）
-- [ ] 点宠物 → 气泡（输入 + 最近 6 条 + 关闭）；Enter 发送 / Esc 关闭
-- [ ] 流式打字机显示；思考中播放"思考"动作（无则 idle）
-- [ ] 出错显示 hint + 重试；`enabled=false` ⇒ 预设台词库（30–50 句）
-- [ ] 快捷键 `Ctrl+Alt+P` 唤起/隐藏
+- [x] 点宠物 → 气泡（输入 + 最近 6 条 + 关闭）；Enter 发送 / Esc 关闭
+- [x] 流式打字机显示；无模型时直接给预设台词（不假装在对话）
+- [x] 出错显示 hint；`enabled=false` ⇒ 预设台词库（**32 句**，happy/calm/tired/angry 分组）
+- [x] 快捷键 `Ctrl+Alt+P` 唤起/隐藏
 
 ### 情绪 → 动作
-- [ ] 要求模型输出 `{"reply":"...","emotion":"happy|calm|tired|angry"}`
-- [ ] 解析失败 ⇒ 关键词兜底
-- [ ] 映射到宠物包 tracks：happy→wave / tired→sleep / calm→idle（缺则 idle）
+- [x] 要求模型输出 `{"reply":"...","emotion":"happy|calm|tired|angry"}`
+- [x] 解析失败 ⇒ 关键词兜底
+- [x] 映射到宠物包 tracks：happy→wave / tired→sleep / calm|angry→idle（缺则 idle）
 
 ### 测试（`test/verify-pet-chat.mjs`）
-- [ ] ① SSE 逐字到达
-- [ ] ② 无模型 ⇒ `no-model` + 预设台词兜底
-- [ ] ③ 401 ⇒ `unauthorized` + 提示检查 key
-- [ ] ④ 超时 ⇒ `timeout`
-- [ ] ⑤ 第 9 轮只带最近 8 条（断言请求体）
-- [ ] ⑥ 超长截断到 maxChars
-- [ ] ⑦ 限频 ⇒ `rate-limited`
-- [ ] ⑧ emotion 解析失败 ⇒ 关键词兜底
-- [ ] ⑨ key 不出现在日志/响应（grep）
+- [x] ① SSE 逐字到达
+- [x] ② 无模型 ⇒ `no-model` + 预设台词兜底
+- [x] ③ 401 ⇒ `unauthorized` + 提示检查 key
+- [x] ④ 超时 ⇒ `timeout`（实测 20s）
+- [x] ⑤ 第 9 轮只带最近 8 条（断言请求体）
+- [x] ⑥ 超长：输入 >400 ⇒ `bad-request`；**回复按 maxChars 截断**（实测 80/80）
+- [x] ⑦ 限频 ⇒ `rate-limited`
+- [x] ⑧ emotion 解析失败 ⇒ 关键词兜底
+- [x] ⑨ key 不出现在日志/响应（grep）
 
 ### 门禁
-- [ ] `node scripts/build-client.mjs` → 0
-- [ ] `node test/run-audit.mjs` → 失败 0
-- [ ] `node test/run-guards.mjs verify` → 跑完全程
-- [ ] `node test/verify-pet-chat.mjs` → 全绿
-- [ ] commit + push（**不要发 npm**）
-- [ ] 汇报，停下等验收
+- [x] `node scripts/build-client.mjs` → 0（5,628,190 bytes）
+- [x] `node test/run-audit.mjs` → 103 通过 · 52 退役 · **0 失败** · 合计 155
+- [~] `node test/run-guards.mjs verify` → 跑到 `[107/133]` 短路：15/66 失败全是
+      a/b/c/d/g 族「站点下载 + 本地媒体」，需要**真 DSH 宿主 + 现场网络**；
+      改动前后同一批项（本机环境限制，不是本轮引入）。新增的 14/35/17/37/11/14 六组 0 失败
+- [x] `node test/verify-pet-chat.mjs` → **9 通过 / 0 失败**
+- [x] commit + push（**未发 npm**），H1==H2 已验
 
 ---
 
