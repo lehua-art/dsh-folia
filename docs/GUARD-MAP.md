@@ -5,7 +5,7 @@
 > 口径：只统计守卫**代码**里真正碰到的模块（先剥注释），并区分"直接读源文件"与"隔着产物 `lib/client.js`"。
 > 写法：字面量路径 / `join(...)` 拼接 / 唯一 basename / 产物配方 / **前缀族读法** `scopeFiles|scopeText(<前缀>)` / **经共享族助手读**（`import { panelText } from './tools/src-scope.mjs'` + 真调用；族口径封在那个库里，见 DEV-GUIDE §4.6「同时是守卫的库」）/ **真源定位读**（`locate('符号')` / `locateFile('文件名')`，`test/tools/source-locator.mjs`：符号唯一声明在哪就是读了哪个模块）。
 
-模块面 206 个 · 守卫 146 个
+模块面 206 个 · 守卫 147 个
 
 ## 守卫 → 模块
 
@@ -91,6 +91,7 @@
 | `verify-package-publish.mjs` | `lib/index.js` `lib/pkg-read.js` `src/client.js` | ✅ |
 | `verify-panel-defensive.mjs` | `lib/routes/kernel.js` `lib/routes/skins.js` `src/panel-tabs-skins.js` `src/quick-panel.js` |  |
 | `verify-panel-interactions.mjs` | `src/panel-tabs-boot.js` `src/panel-tabs-pets.js` |  |
+| `verify-pet-chat.mjs` | `lib/routes/pet-chat.js` `src/pet-chat.js` |  |
 | `verify-pet-hotplug-client.mjs` | `lib/components/pet-link/src/official-pet.js` `lib/components/pet-link/src/pet-link.js` |  |
 | `verify-pet-hotplug-host.mjs` | `lib/components/pet-link/src/official-pet.js` `lib/subpackage-boot.js` |  |
 | `verify-pet-hotplug-integration.mjs` | `lib/components/pet-link/lib/client.pet-link.js` `lib/subpackage-boot.js` |  |
@@ -251,7 +252,7 @@
 | `lib/routes/media-derived.js` | 1 | `verify-transcode-state` |
 | `lib/routes/modules.js` | 0 | **（无）** |
 | `lib/routes/occlusion.js` | 1 | `verify-occlusion-hub` |
-| `lib/routes/pet-chat.js` | 0 | **（无）** |
+| `lib/routes/pet-chat.js` | 1 | `verify-pet-chat` |
 | `lib/routes/pets.js` | 5 | `verify-download-first` `verify-downloads` `verify-features` `verify-hash-source` `verify-site-v1-sync` |
 | `lib/routes/presets.js` | 1 | `verify-presets` |
 | `lib/routes/props.js` | 1 | `verify-scene` |
@@ -341,7 +342,7 @@
 | `src/panel-tabs-wallpaper.js` | 15 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-avatar-interval-and-rotation` `verify-client` `verify-contracts` `verify-downloads` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` `verify-wallpaper-chain` `verify-wallpaper-core` |
 | `src/panel-tabs.js` | 14 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-api-client` `verify-client` `verify-component-visibility` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-subpackage-toggle-roundtrip` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/persistence.js` | 4 | `verify-adapter` `verify-client` `verify-presets` `verify-settings-namespaces` |
-| `src/pet-chat.js` | 0 | **（无）** |
+| `src/pet-chat.js` | 1 | `verify-pet-chat` |
 | `src/pet-layer.js` | 1 | `verify-features` |
 | `src/picker-modal.js` | 5 | `verify-client` `verify-first-click-feedback` `verify-fontset` `verify-scene-live` `verify-wallpaper-progress` |
 | `src/picker-model.js` | 1 | `verify-picker-model` |
