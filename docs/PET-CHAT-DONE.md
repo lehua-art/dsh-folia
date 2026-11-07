@@ -59,7 +59,29 @@ node test/run-guards.mjs verify
   15/66 CHECK(S) FAILED（a/b/c/d/g 族：站点下载 + 本地媒体，需真宿主 + 现场网络）
 ```
 
-## 4. 必须说清楚的两件事
+## 4. C1 客户端接线（5 分钟节奏）与**空闲近似**的边界
+
+主动闲聊的判定在宿主（`lib/pet-chat-proactive.js`），客户端只负责「每 5 分钟问一次 + 报三个事实」：
+
+| 条件 | 由谁提供 | 具体事实 |
+|---|---|---|
+| 已开启 / 今日计数 / 间隔 / 静默时段 | **宿主** | `petChat.*` 设置 + `proactive.json` 状态 |
+| 是否全屏 | 渲染进程 | `document.fullscreenElement` |
+| 窗口是否聚焦 | 渲染进程 | `document.hasFocus()` |
+| 空闲多久 | 渲染进程 | **窗口内**最近一次 `mousemove / mousedown / keydown / wheel / touchstart` 距现在 |
+
+节奏：`PET_CHAT_CHECK_INTERVAL_MS = 5 * 60 * 1000`（**每 5 分钟一次**，不是每秒），
+定时器随组件卸载 `clearInterval`。
+
+> ⚠️ **这是近似，不是系统全局空闲。**
+> Electron 的 `powerMonitor.getSystemIdleTime()` 只在**主进程**可用，渲染进程拿不到；
+> 我们没有为它开 IPC 通道。所以「用户空闲 ≥10 分钟」在这里的含义是
+> **"这个窗口 10 分钟没收到键鼠事件"** —— 用户跑去用别的应用时，本窗口同样会算作空闲。
+> 好处是零权限、零 IPC；代价是"在别的应用里忙"会被误判为空闲。
+> 误判的兜底：`document.hasFocus() === false` 时直接不说话（理由 `unfocused`），
+> 所以真正会误触发的情形只剩「窗口在前台但人不在」——与真实空闲高度重合。
+
+## 5. 必须说清楚的两件事
 
 ### 4.1 `run-guards verify` 在本机不可能全绿（改动前就红）
 
@@ -80,14 +102,14 @@ a6 a7 a8 a10 · b7 b8 b9 b10 · c7 c10 · d1 d2 d3 d7 · g3
 主机器提到的这份 5 轮手册在 `main` / `folia` / `folia-archive` 三个分支都 404。
 本轮按**消息里的 5 轮划分**执行，轮次内容与消息一致。
 
-## 5. 主机器待办（我不做）
+## 6. 主机器待办（我不做）
 
 1. **发版**：`4.26.0-pre.1` → `--tag next`（`latest` 保持 4.25.5）
 2. **真实模型验收**：本机装 Ollama（`qwen2.5:7b`）或填 OpenAI 兼容 key → 点宠物 → 真聊一轮
    （判据：首字 ≤2s、气泡流式、`done.emotion` 让宠物换动作）
 3. **门 3 放行**：从站点装桌宠 + 联调（`kind='pet'` 列表 → 下载 → 校验 sha256 → 解压 → 可切换）
 
-## 6. 回滚
+## 7. 回滚
 
 - 代码：`git revert` 上面四个 commit（每轮独立，可只回滚某一轮）
 - 行为：设置里 `petChat.enabled` 默认 **false** —— 关掉即回到原状，不装模型也不报错

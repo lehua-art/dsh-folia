@@ -585,6 +585,58 @@ const NOON = at(14, 0);
   clearProactiveState();
 }
 
+/* ── C1 客户端接线：5 分钟节奏 + 渲染进程五事实 ──────────────────────── */
+{
+  clearProactiveState();
+  const source = readFileSync(join(ROOT, 'src', 'pet-chat.js'), 'utf8');
+  const hasCadence = /PET_CHAT_CHECK_INTERVAL_MS\s*=\s*5 \* 60 \* 1000/.test(source);
+  const usesFullscreen = /document\.fullscreenElement/.test(source);
+  const usesFocus = /document\.hasFocus\(\)/.test(source);
+  const tracksActivity = /'mousemove'/.test(source);
+  const cadence = PROACTIVE_RULES.checkIntervalMs;
+  check('C⑤ 客户端每 5 分钟检查一次，且用渲染进程能拿到的事实',
+    hasCadence && cadence === 300000 && usesFullscreen && usesFocus && tracksActivity,
+    `源码 5min 常量=${hasCadence} · PROACTIVE_RULES=${cadence} · fullscreen=${usesFullscreen} · hasFocus=${usesFocus} · 活动追踪=${tracksActivity}`);
+}
+
+/* C⑥ 模拟时钟推进 3 小时：用户一直活跃（idle 0）⇒ 0 次；转为空闲后 ⇒ 恰好 1 次 */
+{
+  clearProactiveState();
+  const base = at(9, 0);
+  const step = PROACTIVE_RULES.checkIntervalMs; // 5 分钟
+  const cfg = { enabled: true, idleMinutes: 0, fullscreen: false, focused: true, randomHit: true, quietHours: '22:00-08:00', dailyLimit: 10, minGapMin: 120 };
+  let activeSpoken = 0;
+  for (let t = 0; t < 3 * 60 * 60 * 1000; t += step) {
+    const decision = canSpeak({ ...cfg, now: base + t, idleMinutes: 0 });
+    if (decision.ok) { activeSpoken += 1; markSaid(base + t); }
+  }
+  // 用户离开 12 分钟后（窗口内视角）应恰好触发一次
+  const idleAt = base + 3 * 60 * 60 * 1000 + 12 * 60 * 1000;
+  const first = canSpeak({ ...cfg, now: idleAt, idleMinutes: 12 });
+  if (first.ok) markSaid(idleAt);
+  const second = canSpeak({ ...cfg, now: idleAt + step, idleMinutes: 17 });
+  check('C⑥ 3 小时活跃 0 次；转空闲后恰好 1 次',
+    activeSpoken === 0 && first.ok === true && second.reason === 'too-soon',
+    `活跃期 36 次探测 ⇒ ${activeSpoken} 次 · 空闲首次=${first.reason} · 5 分钟后=${second.reason}`);
+  clearProactiveState();
+}
+
+/* C⑦ 全屏 / 失焦 / 静默时段 ⇒ 都不触发 */
+{
+  clearProactiveState();
+  const base = at(14, 0);
+  const cfg = { enabled: true, idleMinutes: 30, fullscreen: false, focused: true, randomHit: true, quietHours: '22:00-08:00', dailyLimit: 10, minGapMin: 30 };
+  const fullscreen = canSpeak({ ...cfg, now: base, fullscreen: true });
+  const unfocused = canSpeak({ ...cfg, now: base, focused: false });
+  const quiet = canSpeak({ ...cfg, now: at(23, 30) });
+  const normal = canSpeak({ ...cfg, now: base });
+  check('C⑦ 全屏 / 失焦 / 静默时段 ⇒ 都不触发（对照组正常触发）',
+    fullscreen.reason === 'fullscreen' && unfocused.reason === 'unfocused'
+      && quiet.reason === 'quiet-hours' && normal.ok === true,
+    `全屏=${fullscreen.reason} · 失焦=${unfocused.reason} · 静默=${quiet.reason} · 对照=${normal.reason}`);
+  clearProactiveState();
+}
+
 /* ── 收账 ─────────────────────────────────────────────────────────────── */
 const failed = results.filter((item) => !item.ok);
 console.log(`\nPET CHAT CHECKS ${failed.length ? 'FAILED' : 'PASSED'} — ${results.length - failed.length} 通过 / ${failed.length} 失败`);
