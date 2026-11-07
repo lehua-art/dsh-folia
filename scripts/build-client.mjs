@@ -412,6 +412,11 @@ const INLINE_MODULES = [
     markers: ['const PANE_ANCHORS = ', 'function stampPanes()', 'function installSkinCompat()'],
   },
   {
+    file: 'src/pet-chat.js',
+    why: '桌宠对话气泡：点宠物出输入框，走宿主 /folia/pet-chat/* 的 SSE；没配模型时给预设台词',
+    markers: ['function mountPetChat()', 'const PET_CHAT_PRESET_LINES = ', 'function petChatParseFrame('],
+  },
+  {
     file: 'src/features.js',
     why: '客户端功能注册表：页签条 / 整区面板 / 常驻挂载层。装配点（quick-panel、client.js）只查表，不写功能名',
     markers: ['const WE_FEATURE_TABS = [', 'const WE_FEATURE_PANELS = {', 'const WE_FEATURE_MOUNTS = ['],

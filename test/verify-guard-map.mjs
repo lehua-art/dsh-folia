@@ -89,6 +89,7 @@ const ZERO_COVERAGE_WHY = {
   [M('lib', 'routes', 'site-thumb.js')]: '站点图片缩略图代理：行为由 verify-media-bytes 族与手工端到端验证（首拉 524KB、次拉 4ms 命中缓存）覆盖，路径穿越由 /media 白名单判据覆盖；本工具只认字面量路径 ⇒ 按口径算零覆盖',
   // ⚠️ 门 2 临时登记：第 4 轮 test/verify-pet-chat.mjs 落地后**必须删掉本行**
   //    （覆盖来源变成那条守卫，本表再留着就会被判「登记了却已经有守卫碰过」）。
+  [M('src', 'pet-chat.js')]: '桌宠对话气泡：门 2 第 3 轮先落客户端模块，第 4 轮由 test/verify-pet-chat.mjs 的判据覆盖（SSE 解析 / 预设台词 / 情绪映射 / 卸载清理）；本工具只认字面量路径 ⇒ 按口径算零覆盖',
   [M('lib', 'routes', 'pet-chat.js')]: '桌宠对话路由：门 2 第 2 轮先落路由，第 4 轮由 test/verify-pet-chat.mjs 的九条判据覆盖（SSE / 超时 / 限频 / key 不外泄）；本工具只认字面量路径 ⇒ 按口径算零覆盖',
 
   // ── 组件行宿主入口（合并后从 packages/* 搬到 lib/components/*）──

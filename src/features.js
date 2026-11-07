@@ -75,6 +75,8 @@ const WE_FEATURE_PANELS = {
  */
 const WE_FEATURE_MOUNTS = [
   { id: "pets", mount: mountPetLayer },
+  // 桌宠对话的气泡层：点宠物才出现，不点就只是两条监听。
+  { id: "pet-chat", mount: mountPetChat },
   // 皮肤兼容层：补写 `data-pane` / `data-dsh-frame`（皮肤包写的是 web-all 的 compat 词表）。
   // 它只写自己的惰性属性、幂等、可失败，所以随墙纸引擎常驻，不依赖皮肤是否在台上。
   { id: "skin-compat", mount: installSkinCompat },
