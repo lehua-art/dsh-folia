@@ -508,7 +508,7 @@ const resetMem = () => { try { rmSync(MEMORY_FILE, { force: true }); } catch { /
   resetMem();
 }
 /* ── C 块：主动闲聊（4 条判据）────────────────────────────────────────── */
-const { canSpeak, inQuietHours, skipToday, markSaid, clearProactiveState, PROACTIVE_RULES } = await import('../lib/pet-chat-proactive.js');
+const { canSpeak, inQuietHours, skipToday, markSaid, clearProactiveState, PROACTIVE_RULES, buildProactiveLine, timeSlot } = await import('../lib/pet-chat-proactive.js');
 const HOUR = 3600000;
 const MIN = 60000;
 /** 构造"当地某个整点"的毫秒时间（避免跨零点把日界判据搅进来）。 */
@@ -971,6 +971,54 @@ const toBase64 = (bytes) => Buffer.from(bytes).toString('base64');
       doc.ok === false && doc.code === 'voice-out-disabled' && edgeCalls === 0,
       `code=${doc.code} · edge 调用 ${edgeCalls} 次`);
     await host.close();
+  }
+}
+
+/* ── G 块：主动闲聊内容（3 条判据）────────────────────────────────────── */
+{
+  clearProactiveState();
+  const base = at(9, 30);
+  /* G① 内容含上下文要素（壁纸名 / 记忆偏好 / 时间） */
+  {
+    const withWallpaper = buildProactiveLine({ now: base, wallpaperTitle: '星空', memory: { likes: ['原神'] }, usedLines: [] });
+    const withMemory = buildProactiveLine({ now: base, memory: { likes: ['原神'] }, usedLines: [] });
+    const timeOnly = buildProactiveLine({ now: base, usedLines: [] });
+    const hasContext = withWallpaper.line.includes('星空')
+      && (withMemory.line.includes('原神') || withMemory.source === 'memory')
+      && timeOnly.line.length <= 40 && timeSlot(base) === 'morning';
+    check('G① 内容含上下文要素（壁纸 / 记忆 / 时段）',
+      hasContext && withWallpaper.source === 'wallpaper' && withMemory.source.startsWith('memory'),
+      `壁纸=${withWallpaper.line}(${withWallpaper.source}) · 记忆=${withMemory.line}(${withMemory.source}) · 时段=${timeOnly.line}(${timeOnly.source})`);
+  }
+
+  /* G② 同日不重复（连续生成 5 条互不相同） */
+  {
+    const used = [];
+    const lines = [];
+    for (let i = 0; i < 5; i += 1) {
+      const built = buildProactiveLine({ now: base, wallpaperTitle: '星空', memory: { likes: ['原神'] }, usedLines: used });
+      lines.push(built.line);
+      used.push(built.line);
+    }
+    const unique = new Set(lines).size === lines.length;
+    const withinLimit = lines.every((line) => line.length <= 40);
+    check('G② 同日不重复（5 条全不同，且都 ≤40 字）',
+      unique && withinLimit,
+      `唯一 ${new Set(lines).size}/${lines.length} · 最长 ${Math.max(...lines.map((l) => l.length))} 字`);
+  }
+
+  /* G③「今天别说了」生效，次日恢复 */
+  {
+    clearProactiveState();
+    const day1 = at(14, 0);
+    const okBefore = canSpeak({ enabled: true, dailyLimit: 10, minGapMin: 30, quietHours: '22:00-08:00', now: day1, idleMinutes: 30, randomHit: true });
+    skipToday(day1);
+    const skipped = canSpeak({ enabled: true, dailyLimit: 10, minGapMin: 30, quietHours: '22:00-08:00', now: day1 + HOUR, idleMinutes: 30, randomHit: true });
+    const nextDay = canSpeak({ enabled: true, dailyLimit: 10, minGapMin: 30, quietHours: '22:00-08:00', now: day1 + 24 * HOUR, idleMinutes: 30, randomHit: true });
+    check('G③ 今天别说了生效，次日恢复',
+      okBefore.ok === true && skipped.reason === 'skip-today' && nextDay.ok === true,
+      `前=${okBefore.reason} · 当天=${skipped.reason} · 次日=${nextDay.reason}`);
+    clearProactiveState();
   }
 }
 
