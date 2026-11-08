@@ -7,6 +7,7 @@
  */
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -67,12 +68,23 @@ const server = createServer(async (req, res) => {
   const spec = routes.find((r) => r.path === u.pathname);
   if (spec) { await spec.handler(req, res); return; }
   // 站点公开接口的替身：install 先从这里取清单，再去 url 下载。
+  // 阶段 3：清单里多给三条 —— 正常（sha 对）/ 坏哈希 / 缺 pet.json，用来测校验与清理。
   if (u.pathname === '/api/public/wallpapers') {
+    const sizeOf = (key) => (zipStore.get(key) || { length: 0 }).length;
+    const shaOf = (key) => sha256Of(zipStore.get(key) || Buffer.alloc(0));
     res.setHeader('content-type', 'application/json; charset=utf-8');
     res.end(JSON.stringify({ ok: true, data: { items: [{
       id: 'wp_zip', slug: 'zip-pet', title: 'Zip 宠物',
-      url: '/media/wallpapers/wp_zip/a.zip', bytes: (zipStore.get('wallpapers/wp_zip/a.zip') || { length: 0 }).length,
-      thumbUrl: null, mime: 'application/zip',
+      url: '/media/wallpapers/wp_zip/a.zip', bytes: sizeOf('wallpapers/wp_zip/a.zip'),
+      thumbUrl: null, mime: 'application/zip', sha256: shaOf('wallpapers/wp_zip/a.zip'),
+    }, {
+      id: 'wp_bad', slug: 'bad-sha', title: '坏哈希宠物',
+      url: '/media/wallpapers/wp_bad/b.zip', bytes: sizeOf('wallpapers/wp_bad/b.zip'),
+      thumbUrl: null, mime: 'application/zip', sha256: 'f'.repeat(64),
+    }, {
+      id: 'wp_nom', slug: 'no-manifest', title: '缺清单宠物',
+      url: '/media/wallpapers/wp_nom/c.zip', bytes: sizeOf('wallpapers/wp_nom/c.zip'),
+      thumbUrl: null, mime: 'application/zip', sha256: shaOf('wallpapers/wp_nom/c.zip'),
     }] } }));
     return;
   }
@@ -94,6 +106,7 @@ const base = `http://127.0.0.1:${port}/folia`;
 process.env.DSH_FOLIA_SITE = `http://127.0.0.1:${port}`;
 
 const results = [];
+const sha256Of = (buf) => createHash('sha256').update(buf).digest('hex');
 function check(name, cond, detail) { results.push({ name, ok: Boolean(cond), detail }); }
 const post = async (p, body) => {
   const r = await fetch(base + p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) });
@@ -130,6 +143,15 @@ const petZip = makeZip([
   { name: 'deep/dir/bad.txt', data: 'nope' },
 ]);
 zipStore.set('wallpapers/wp_zip/a.zip', petZip);
+// 坏哈希：内容正确但清单里的 sha 是假的（模拟传输被改 / 站点数据脏）
+zipStore.set('wallpapers/wp_bad/b.zip', petZip);
+// 缺 pet.json：zip 合法、有雪碧图，但没有清单
+zipStore.set('wallpapers/wp_nom/c.zip', makeZip([
+  { name: 'spritesheet.webp', data: Buffer.from('RIFFxxxxWEBPVP8 ', 'latin1') },
+]));
+// 站点清单有 TTL 缓存：前面「空目录」那次 list 已经把空清单缓存住了，
+// 这里塞进 zip 后必须强制刷一次，否则 install 拿到的是旧条目（bytes=0 / 空 sha）。
+await (await fetch(base + '/pets/list?refresh=1')).json();
 
 const notOnSite = await post('/pets/install', { id: 'not-listed' });
 check('站点清单里没有该条目 → 404 not-on-site', notOnSite.status === 404 && notOnSite.json && notOnSite.json.error === 'not-on-site',
@@ -147,6 +169,30 @@ check('恶意条目 ../evil.txt 被丢弃', !existsSync(join(HOME, 'pets', 'evil
 check('多层目录 deep/dir 被丢弃', !existsSync(join(zipDir, 'deep')));
 check('装完自动选中并启用', installed.json.config.petId === 'zip-pet' && installed.json.config.enabled === true);
 const listed = await (await fetch(base + '/pets/list')).json();
+
+/* ── ③b 站点卡片字段（阶段 3 判据①：mock 列表渲染）────────────────────── */
+const siteCards = listed.site || [];
+const goodCard = siteCards.find((it) => it.id === 'zip-pet');
+check('站点区带 title/bytes/sha256（卡片渲染所需字段）',
+  Boolean(goodCard) && goodCard.title === 'Zip 宠物'
+    && Number(goodCard.bytes) === petZip.length
+    && String(goodCard.sha256 || '') === sha256Of(petZip),
+  goodCard ? `title=${goodCard.title} bytes=${goodCard.bytes} sha=${String(goodCard.sha256).slice(0, 12)}` : '没找到 zip-pet');
+
+/* ── ③c sha 不符 ⇒ 明确报错 + 删半成品（判据③）────────────────────────── */
+const badSha = await post('/pets/install', { id: 'bad-sha' });
+check('sha 不符 ⇒ 422 sha-mismatch',
+  badSha.status === 422 && badSha.json && badSha.json.error === 'sha-mismatch',
+  JSON.stringify(badSha.json).slice(0, 160));
+check('sha 不符后不留半成品目录', !existsSync(join(HOME, 'pets', 'bad-sha')));
+
+/* ── ③d 缺 pet.json ⇒ 明确报错 + 不留目录（判据④）────────────────────── */
+const noManifest = await post('/pets/install', { id: 'no-manifest' });
+check('缺 pet.json ⇒ 422 no-manifest',
+  noManifest.status === 422 && noManifest.json && noManifest.json.error === 'no-manifest',
+  JSON.stringify(noManifest.json).slice(0, 160));
+check('缺清单后不留目录', !existsSync(join(HOME, 'pets', 'no-manifest')));
+
 const zipPet = listed.pets.find((p) => p.dirId === 'zip-pet');
 check('清单里认出安装的宠物', Boolean(zipPet));
 check('清单带上音效地址（manifest.sounds）', Boolean(zipPet && zipPet.sounds && zipPet.sounds.wave && zipPet.sounds.wave.includes('wave.ogg')),
@@ -180,7 +226,11 @@ const assetBad2 = await fetch(base + '/pets/asset?v=' + encodeURIComponent('../x
 check('资源路由拒绝穿越的 id', assetBad2.status === 400);
 
 /* ── ⑥ 删除 ──────────────────────────────────────────────────────────────── */
+/* ── ⑥a 卸载只删该目录（判据⑤）：删 zip-pet，manual-pet 必须还在 ─────────── */
 await post('/pets/remove', { id: 'zip-pet' });
+check('卸载只删该目录（另一只仍在）',
+  !existsSync(zipDir) && existsSync(manualDir) && existsSync(join(manualDir, 'pet.json')),
+  `zip 目录=${existsSync(zipDir)} · manual 目录=${existsSync(manualDir)}`);
 const rm = await post('/pets/remove', { id: 'manual-pet' });
 check('remove 成功', rm.status === 200 && rm.json.ok === true);
 check('remove 后目录消失', !existsSync(manualDir));
