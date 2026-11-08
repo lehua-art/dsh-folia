@@ -176,7 +176,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       },
       "host": {
@@ -345,7 +346,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       }
     },
@@ -532,7 +534,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       },
       "host": "__null__"
@@ -720,7 +723,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       },
       "host": "__null__"
@@ -908,7 +912,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       },
       "host": "__null__"
@@ -1088,7 +1093,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       },
       "host": {
@@ -1257,7 +1263,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       }
     },
@@ -1493,7 +1500,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       },
       "host": {
@@ -1662,7 +1670,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       }
     },
@@ -1943,7 +1952,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       },
       "host": {
@@ -2112,7 +2122,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       }
     },
@@ -2292,7 +2303,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       },
       "host": {
@@ -2461,7 +2473,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       }
     },
@@ -2655,7 +2668,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       },
       "host": {
@@ -2824,7 +2838,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       }
     },
@@ -3018,7 +3033,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       },
       "host": {
@@ -3187,7 +3203,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       }
     },
@@ -3368,7 +3385,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       },
       "host": {
@@ -3537,7 +3555,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       }
     },
@@ -3723,7 +3742,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       },
       "host": {
@@ -3892,7 +3912,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       }
     },
@@ -4075,7 +4096,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       },
       "host": {
@@ -4244,7 +4266,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       }
     },
@@ -4434,7 +4457,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       },
       "host": {
@@ -4603,7 +4627,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       }
     },
@@ -4858,7 +4883,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       },
       "host": {
@@ -5052,7 +5078,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       }
     },
@@ -5231,7 +5258,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       },
       "host": {
@@ -5400,7 +5428,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       }
     },
@@ -5579,7 +5608,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       },
       "host": {
@@ -5748,7 +5778,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       }
     },
@@ -5928,7 +5959,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       },
       "host": {
@@ -6097,7 +6129,8 @@
           "proactiveEnabled": false,
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
-          "quietHours": "22:00-08:00"
+          "quietHours": "22:00-08:00",
+          "voiceEnabled": false
         }
       }
     }

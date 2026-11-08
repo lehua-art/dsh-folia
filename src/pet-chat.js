@@ -82,6 +82,15 @@ function petChatBuild() {
   title.textContent = weT('桌宠对话');
   const tools = document.createElement('div');
   tools.style.cssText = 'display:flex;align-items:center;gap:6px';
+  // 麦克风：**按住说话**（pointerdown 开始 / pointerup 或移出结束），松手上传
+  const voiceBtn = document.createElement('button');
+  voiceBtn.type = 'button';
+  voiceBtn.textContent = weT('按住说话');
+  voiceBtn.title = weT('按住说话，松手识别（需先在 DSH 开启语音输入）');
+  voiceBtn.style.cssText = 'background:none;border:1px solid rgba(255,255,255,.14);border-radius:7px;color:#c9c9d1;font-size:11px;padding:2px 6px;cursor:pointer;user-select:none';
+  petChatOn(voiceBtn, 'pointerdown', (event) => { if (event && event.preventDefault) event.preventDefault(); void petChatVoiceStart(); });
+  petChatOn(voiceBtn, 'pointerup', () => { void petChatVoiceStop(); });
+  petChatOn(voiceBtn, 'pointerleave', () => { if (petChatVoice) void petChatVoiceStop(); });
   const memoryBtn = document.createElement('button');
   memoryBtn.type = 'button';
   memoryBtn.textContent = weT('查看记忆');
@@ -98,7 +107,7 @@ function petChatBuild() {
   close.title = weT('关闭');
   close.style.cssText = 'background:none;border:0;color:#c9c9d1;font-size:18px;cursor:pointer;line-height:1';
   petChatOn(close, 'click', () => petChatHide());
-  petChatAppend(tools, memoryBtn, clear, close);
+  petChatAppend(tools, voiceBtn, memoryBtn, clear, close);
   petChatAppend(head, title, tools);
 
   const log = document.createElement('div');
@@ -220,6 +229,8 @@ async function petChatSyncState() {
   try {
     const probe = await apiJson('/pet-chat/state', { parse: 'always' });
     const doc = probe && probe.data;
+    // 语音输入开关由宿主带回来：false ⇒ 按麦克风只提示"先去 DSH 开"，不弹权限框
+    petChatVoiceEnabled = doc && doc.voiceEnabled === true;
     if (!doc || doc.enabled !== true) {
       petChatStatus(weT('未开启对话（设置 → 桌宠 → 桌宠对话）'));
       return null;
@@ -383,6 +394,124 @@ async function petChatRefreshUsage() {
     els.usage.style.display = 'flex';
   } catch {
     els.usage.style.display = 'none';
+  }
+}
+
+/* ── 语音输入（按住说话）──────────────────────────────────────────────────────
+ * 三层分工：
+ *   ① 录音（这里）：getUserMedia + AudioWorklet 采 PCM → 16kHz 单声道 PCM16 WAV；
+ *   ② 转写（宿主）：POST /pet-chat/transcribe → DSH 的 speechToText（provider 自己管模型）；
+ *   ③ 回填（这里）：**只写输入框**，绝不自动发送 —— 识别难免错，得让用户改完再发。
+ * 失败一律回落打字（只给一行状态提示，不弹错误框）。
+ */
+const PET_CHAT_VOICE_MAX_SECONDS = 15;
+let petChatVoice = null;
+let petChatVoiceEnabled = null;
+
+/** Float32 PCM → 16kHz 单声道 PCM16 WAV。 */
+function petChatEncodeWav(samples, sampleRate) {
+  const rate = 16000;
+  const ratio = sampleRate / rate;
+  const frames = Math.max(1, Math.floor(samples.length / ratio));
+  const buffer = new ArrayBuffer(44 + frames * 2);
+  const view = new DataView(buffer);
+  const put = (offset, text) => { for (let i = 0; i < text.length; i += 1) view.setUint8(offset + i, text.charCodeAt(i)); };
+  put(0, 'RIFF'); view.setUint32(4, 36 + frames * 2, true); put(8, 'WAVE');
+  put(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, rate, true); view.setUint32(28, rate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  put(36, 'data'); view.setUint32(40, frames * 2, true);
+  let offset = 44;
+  for (let i = 0; i < frames; i += 1) {
+    const index = Math.min(samples.length - 1, Math.floor(i * ratio));
+    const clamped = Math.max(-1, Math.min(1, samples[index]));
+    view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
+    offset += 2;
+  }
+  return new Uint8Array(buffer);
+}
+
+/** Uint8Array → base64（浏览器与 Node 都可用）。 */
+function petChatToBase64(bytes) {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+  if (typeof btoa === 'function') return btoa(binary);
+  return Buffer.from(bytes).toString('base64');
+}
+
+/** 开始录音。返回是否真的开始了。 */
+async function petChatVoiceStart() {
+  if (petChatVoice) return true;
+  if (petChatVoiceEnabled === false) {
+    petChatStatus(weT('语音输入未开启：请先在 DSH 设置里启用（需下载模型）'));
+    return false;
+  }
+  try {
+    const media = navigator.mediaDevices && navigator.mediaDevices.getUserMedia
+      ? await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } })
+      : null;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!media || !AudioCtx) {
+      if (media) media.getTracks().forEach((track) => track.stop());
+      petChatStatus(weT('打不开麦克风，可以继续打字'));
+      return false;
+    }
+    const ctx = new AudioCtx();
+    const source = ctx.createMediaStreamSource(media);
+    const chunks = [];
+    // AudioWorklet：每帧 Float32 丢回主线程（不阻塞渲染）
+    const code = 'class P extends AudioWorkletProcessor{process(inputs){const ch=inputs[0]&&inputs[0][0];if(ch)this.port.postMessage(ch.slice(0));return true;}}registerProcessor("pet-chat-pcm",P);';
+    const url = URL.createObjectURL(new Blob([code], { type: 'application/javascript' }));
+    await ctx.audioWorklet.addModule(url);
+    URL.revokeObjectURL(url);
+    const node = new AudioWorkletNode(ctx, 'pet-chat-pcm');
+    node.port.onmessage = (event) => {
+      if (petChatVoice && chunks.length * 1024 < 16000 * PET_CHAT_VOICE_MAX_SECONDS * 8) chunks.push(event.data);
+    };
+    source.connect(node);
+    node.connect(ctx.destination);
+    petChatVoice = { stream: media, ctx, node, source, chunks, sampleRate: ctx.sampleRate };
+    petChatStatus(weT('正在听…松手结束'));
+    return true;
+  } catch {
+    // 最典型的是权限被拒（NotAllowedError）：提示一行，允许继续打字
+    petChatStatus(weT('没有麦克风权限（或未授权），可以继续打字'));
+    return false;
+  }
+}
+
+/** 结束录音 → 编码 → 上传 → **只回填输入框**。 */
+async function petChatVoiceStop() {
+  const voice = petChatVoice;
+  if (!voice) return;
+  petChatVoice = null;
+  try {
+    voice.node.port.onmessage = null;
+    voice.source.disconnect();
+    voice.node.disconnect();
+    voice.stream.getTracks().forEach((track) => track.stop());
+    await voice.ctx.close();
+  } catch { /* 收尾失败不影响转写 */ }
+
+  const total = voice.chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  if (!total) { petChatStatus(weT('没听到声音，再试一次？')); return; }
+  const merged = new Float32Array(total);
+  let offset = 0;
+  for (const chunk of voice.chunks) { merged.set(chunk, offset); offset += chunk.length; }
+  const wav = petChatEncodeWav(merged, voice.sampleRate);
+
+  petChatStatus(weT('识别中…'));
+  // ↓ 这一段是 D⑥ 的判据面：只写 input.value，绝不调用 petChatSend
+  const res = await apiPostJson('/pet-chat/transcribe', { audio: petChatToBase64(wav), language: 'zh' }, { parse: 'always' });
+  const doc = (res && res.data) || {};
+  const els = petChatEls || petChatBuild();
+  if (!doc.ok) {
+    petChatStatus(weT('这次没听清，可以继续打字') + (doc.hint ? '（' + doc.hint + '）' : ''));
+    return;
+  }
+  if (els && typeof doc.text === 'string') {
+    els.input.value = doc.text;
+    if (typeof els.input.focus === 'function') els.input.focus();
+    petChatStatus(weT('识别完成，确认后按发送'));
   }
 }
 

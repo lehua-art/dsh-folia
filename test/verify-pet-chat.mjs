@@ -39,8 +39,8 @@ function check(name, ok, detail) {
 
 /* ── 台架：一个假宿主（注册路由）+ 一个假模型端点 ────────────────────────── */
 
-/** 把路由挂到真 http.Server 上。`settings` 就是 readSettings() 的返回。 */
-function startHost(settings) {
+/** 把路由挂到真 http.Server 上。`settings` 就是 readSettings() 的返回；`speechToText` 是宿主转写服务。 */
+function startHost(settings, speechToText) {
   const routes = [];
   const webServer = { register: (route) => { routes.push(route); return () => {}; }, status: () => ({}) };
   const logs = [];
@@ -49,6 +49,7 @@ function startHost(settings) {
     base: '/folia',
     log: (line) => logs.push(String(line)),
     readSettings: () => settings,
+    speechToText,
   });
   const route = routes.find((item) => String(item.path).endsWith('/pet-chat'));
   assert.ok(route, '路由已注册到 /folia/pet-chat');
@@ -635,6 +636,131 @@ const NOON = at(14, 0);
       && quiet.reason === 'quiet-hours' && normal.ok === true,
     `全屏=${fullscreen.reason} · 失焦=${unfocused.reason} · 静默=${quiet.reason} · 对照=${normal.reason}`);
   clearProactiveState();
+}
+
+/* ── D 块：语音转写（6 条判据）────────────────────────────────────────── */
+/** 造一段合法的 16kHz 单声道 PCM16 WAV（seconds 秒）。 */
+function makeWav(seconds) {
+  const rate = 16000;
+  const frames = Math.round(rate * seconds);
+  const dataBytes = frames * 2;
+  const buffer = new ArrayBuffer(44 + dataBytes);
+  const view = new DataView(buffer);
+  const put = (offset, text) => { for (let i = 0; i < text.length; i += 1) view.setUint8(offset + i, text.charCodeAt(i)); };
+  put(0, 'RIFF'); view.setUint32(4, 36 + dataBytes, true); put(8, 'WAVE');
+  put(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, rate, true); view.setUint32(28, rate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  put(36, 'data'); view.setUint32(40, dataBytes, true);
+  return new Uint8Array(buffer);
+}
+
+/** 假的宿主转写服务：可控 provider 就绪状态与返回文本。 */
+function makeSpeech({ phase = 'ready', text = '你好呀', throwOnTranscribe = null } = {}) {
+  const calls = [];
+  return {
+    calls,
+    snapshot: () => ({
+      providers: [{ id: 'sensevoice-local', name: 'SenseVoice', location: 'host-local', languages: ['zh'], preparation: { phase } }],
+      selection: { providerId: 'sensevoice-local', language: 'zh' },
+    }),
+    resolve: (request) => ({ ...request, providerId: 'sensevoice-local' }),
+    transcribe: async (spec, signal) => {
+      calls.push({ spec, aborted: signal?.aborted === true });
+      if (throwOnTranscribe) throw throwOnTranscribe;
+      return { text, audioSeconds: 1.5, inferenceSeconds: 0.4 };
+    },
+  };
+}
+
+const postWav = (host, bytes) => fetch(`${host.base}/transcribe`, {
+  method: 'POST', headers: { 'content-type': 'audio/wav' }, body: bytes,
+});
+const postJsonAudio = (host, base64) => fetch(`${host.base}/transcribe`, {
+  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ audio: base64, language: 'zh' }),
+});
+const toBase64 = (bytes) => Buffer.from(bytes).toString('base64');
+
+/* D① provider 未注册 ⇒ asr-not-ready（200，不是 500） */
+{
+  const host = await startHost({ petChat: { enabled: true } });
+  const res = await postWav(host, makeWav(1));
+  const doc = await res.json();
+  check('D① 未注册 provider ⇒ 200 asr-not-ready（不是 500）',
+    res.status === 200 && doc.code === 'asr-not-ready' && /语音输入/.test(String(doc.hint || '')),
+    `HTTP ${res.status} · code=${doc.code}`);
+  await host.close();
+}
+
+/* D② 就绪时透传 text */
+{
+  const speech = makeSpeech({ text: '打开设置' });
+  const host = await startHost({ petChat: { enabled: true } }, speech);
+  const res = await postJsonAudio(host, toBase64(makeWav(1)));
+  const doc = await res.json();
+  check('D② 就绪 ⇒ text 原样透传，且带 audioSeconds/inferenceSeconds',
+    res.status === 200 && doc.ok === true && doc.text === '打开设置'
+      && typeof doc.audioSeconds === 'number' && typeof doc.inferenceSeconds === 'number'
+      && speech.calls.length === 1 && speech.calls[0].spec.providerId === 'sensevoice-local',
+    `text=${doc.text} · audio=${doc.audioSeconds}s · inference=${doc.inferenceSeconds}s`);
+  await host.close();
+}
+
+/* D③ 超长 / 超大 ⇒ 400 bad-request */
+{
+  const speech = makeSpeech();
+  const host = await startHost({ petChat: { enabled: true } }, speech);
+  const tooLong = await postWav(host, makeWav(20));
+  const tooLongDoc = await tooLong.json();
+  const oversized = new Uint8Array(2 * 1024 * 1024 + 16);
+  // 头部填成合法 WAV，保证它被"体积"而不是"格式"挡下
+  oversized.set(makeWav(1).subarray(0, 44), 0);
+  const tooBig = await postWav(host, oversized);
+  const tooBigDoc = await tooBig.json();
+  check('D③ 超长（20s）/ 超大（>2MB）⇒ 400 bad-request',
+    tooLong.status === 400 && tooLongDoc.code === 'bad-request'
+      && tooBig.status === 400 && tooBigDoc.code === 'bad-request',
+    `20s=${tooLong.status}/${tooLongDoc.code} · 2MB+ =${tooBig.status}/${tooBigDoc.code}`);
+  await host.close();
+}
+
+/* D④ 限频 1 次 / 2 秒 ⇒ rate-limited */
+{
+  const speech = makeSpeech();
+  const host = await startHost({ petChat: { enabled: true } }, speech);
+  const first = await postWav(host, makeWav(1));
+  const firstDoc = await first.json();
+  const second = await postWav(host, makeWav(1));
+  const secondDoc = await second.json();
+  check('D④ 2 秒内第二次 ⇒ rate-limited',
+    firstDoc.ok === true && secondDoc.code === 'rate-limited' && speech.calls.length === 1,
+    `首次=${firstDoc.ok ? 'ok' : firstDoc.code} · 第二次=${secondDoc.code} · 实际调用 provider ${speech.calls.length} 次`);
+  await host.close();
+}
+
+/* D⑤ 录音失败（无麦克风权限）⇒ 前端提示且不崩（源码级判据：try/catch + 状态提示） */
+{
+  const source = readFileSync(join(ROOT, 'src', 'pet-chat.js'), 'utf8');
+  // 判据：录音函数在 try 里申请麦克风，catch 里只写状态行（不抛、不弹框）
+  const fnAt = source.indexOf('async function petChatVoiceStart');
+  const fnBody = fnAt >= 0 ? source.slice(fnAt, fnAt + 1800) : '';
+  const guarded = /try\s*\{[\s\S]{0,900}?getUserMedia/.test(fnBody) && /catch[\s\S]{0,300}?petChatStatus/.test(fnBody);
+  const noThrowOnDenied = /未授权|没有麦克风|打不开麦克风/.test(fnBody);
+  check('D⑤ 录音失败 ⇒ 只给一行提示，不崩（getUserMedia 在 try/catch 里）',
+    fnAt >= 0 && guarded && noThrowOnDenied,
+    `有录音函数=${fnAt >= 0} · try/catch 包裹=${guarded} · 有权限失败文案=${noThrowOnDenied}`);
+}
+
+/* D⑥ 识别结果只填输入框，不自动发送 */
+{
+  const source = readFileSync(join(ROOT, 'src', 'pet-chat.js'), 'utf8');
+  // 从**调用点**往后扫（文档注释里也出现过这个路径，不能用 indexOf 的第一次命中）
+  const at = source.indexOf("apiPostJson('/pet-chat/transcribe'");
+  const body = at >= 0 ? source.slice(at, at + 900) : '';
+  const fillsInput = /els\.input\.value\s*=\s*doc\.text/.test(body);
+  const sends = /petChatSend\s*\(/.test(body);
+  check('D⑥ 识别结果只填输入框，不自动发送',
+    at >= 0 && fillsInput && !sends,
+    `填 input=${fillsInput} · 同一段里调用 send=${sends}`);
 }
 
 /* ── 收账 ─────────────────────────────────────────────────────────────── */
