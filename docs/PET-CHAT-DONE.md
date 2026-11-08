@@ -109,7 +109,35 @@ a6 a7 a8 a10 · b7 b8 b9 b10 · c7 c10 · d1 d2 d3 d7 · g3
    （判据：首字 ≤2s、气泡流式、`done.emotion` 让宠物换动作）
 3. **门 3 放行**：从站点装桌宠 + 联调（`kind='pet'` 列表 → 下载 → 校验 sha256 → 解压 → 可切换）
 
-## 7. 回滚
+## 7. FINALIZE 六阶段完成度（`docs/PET-CHAT-FINALIZE.md`）
+
+| 阶段 | 状态 | commit | 判据 | 证据 |
+|---|---|---|---|---|
+| 1 系统音色 TTS | ✅ 完成 | `2299ed9` | 6（E①–E⑥） | `voiceOut.enabled=true`；文字照常显示，朗读叠加 |
+| 2 edge-tts 在线情感 | ✅ 完成 | `aa928ac7` | 5（F①–F⑤） | `POST /pet-chat/speak`；`system` 不发网络；失败回落且只记 1 条日志 |
+| 3 站点装桌宠 | ✅ 完成 | `eb230f9a` | 5（pets-http） | 站点条目带 `sha256`；不符 ⇒ 422 `sha-mismatch` + 删半成品；缺 `pet.json` ⇒ 422 `no-manifest` + 不留目录；卸载只删该目录 |
+| 4 主动闲聊内容 | ✅ 完成 | `a4f07196` | 3（G①–G③） | 含壁纸/记忆/时段要素；≤40 字；当日去重；skip 当日生效、次日恢复 |
+| 5 本地情感 TTS POC | ✅ 文档 | `docs/TTS-POC.md` | — | sherpa TTS 可行（运行时已在树里，差模型 60–200MB）；EmotiVoice ONNX 不可行（需 Python 前端）；建议只做"本地自然音色" |
+| 6 收尾 | ✅ 完成 | 本 commit | — | 全量门禁 + 本文件 |
+
+判据总数：**45 条**（`verify-pet-chat`）+ **39 条**（`pets-http`），全绿。
+
+### 门禁（收尾时实跑）
+
+```
+build-client        0
+run-audit           通过 103 · 退役 52 · 失败 0 · 合计 155
+verify-pet-chat     45 通过 / 0 失败
+pets-http           39 通过 / 0 失败
+run-guards verify   [107/133] 短路，15/66 为既有 a/b/c/d/g 族（需真宿主 + 现场网络）
+```
+
+### 已知 flaky（盯住）
+
+`verify-ranged-integrity` 的 ⑤b（hash-mismatch）偶发失败：本轮出现 **1 次**（102/1），
+复跑即 103/0。与工单里记录的那次同源，**不是本次改动引入**；出现时先复跑一次再判断。
+
+## 8. 回滚
 
 - 代码：`git revert` 上面四个 commit（每轮独立，可只回滚某一轮）
 - 行为：设置里 `petChat.enabled` 默认 **false** —— 关掉即回到原状，不装模型也不报错
