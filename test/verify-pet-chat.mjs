@@ -763,6 +763,141 @@ const toBase64 = (bytes) => Buffer.from(bytes).toString('base64');
     `填 input=${fillsInput} · 同一段里调用 send=${sends}`);
 }
 
+/* ── E 块：朗读回答（6 条判据，mock speechSynthesis）────────────────────── */
+{
+  // 引擎是浏览器侧的独立文件（不依赖 DOM）：在沙箱里加载真源码，注入 mock 依赖
+  const ttsSource = readFileSync(join(ROOT, 'src', 'pet-chat-tts.js'), 'utf8');
+  const loadTts = new Function(`${ttsSource}\n;return { petChatTtsCreate, petChatTtsSplit };`)();
+
+  const makeSpeech = (voices) => {
+    const spoken = [];
+    let cancels = 0;
+    return {
+      spoken,
+      cancels: () => cancels,
+      speech: { speak: (utterance) => spoken.push(utterance.text), cancel: () => { cancels += 1; }, getVoices: () => voices },
+    };
+  };
+  const makeUtterance = () => class FakeUtterance {
+    constructor(text) { this.text = text; }
+  };
+  const zhVoices = [{ name: 'Microsoft Huihui Desktop', lang: 'zh-CN', voiceURI: 'huihui' }];
+
+  /* E① 开启 ⇒ speak 一次，文本 == 气泡文本 */
+  {
+    const mock = makeSpeech(zhVoices);
+    const hints = [];
+    const tts = loadTts.petChatTtsCreate({
+      getSpeech: () => mock.speech,
+      getVoices: () => zhVoices,
+      getConfig: () => ({ enabled: true, rate: 1, pitch: 1, volume: 1, voiceURI: '' }),
+      Utterance: makeUtterance(),
+      onHint: (code, message) => hints.push({ code, message }),
+    });
+    const reply = '你好呀，今天想换壁纸吗？';
+    tts.start();
+    tts.finish(reply);
+    check('E① 开启 ⇒ speak 一次，文本 == 气泡文本',
+      mock.spoken.length === 1 && mock.spoken[0] === reply,
+      `speak ${mock.spoken.length} 次 · text=${JSON.stringify(mock.spoken[0])}`);
+  }
+
+  /* E② 文字仍在：引擎不碰 DOM / 不改传入文本 */
+  {
+    const mock = makeSpeech(zhVoices);
+    const reply = '这段话必须还留在气泡里。';
+    const tts = loadTts.petChatTtsCreate({
+      getSpeech: () => mock.speech,
+      getVoices: () => zhVoices,
+      getConfig: () => ({ enabled: true }),
+      Utterance: makeUtterance(),
+      onHint: () => {},
+    });
+    tts.start();
+    tts.finish(reply);
+    // 引擎只接受字符串，没有任何 DOM 入口；断言文本原样、且没有 document 依赖
+    const noDom = !/document\./.test(ttsSource) && !/innerHTML|textContent\s*=/.test(ttsSource);
+    check('E② 文字仍在（朗读是叠加，不替换）',
+      reply === '这段话必须还留在气泡里。' && noDom,
+      `原文未变=${reply === '这段话必须还留在气泡里。'} · 引擎无 DOM 写入=${noDom}`);
+  }
+
+  /* E③ 关闭 ⇒ speak 从未调用 */
+  {
+    const mock = makeSpeech(zhVoices);
+    const tts = loadTts.petChatTtsCreate({
+      getSpeech: () => mock.speech,
+      getVoices: () => zhVoices,
+      getConfig: () => ({ enabled: false }),
+      Utterance: makeUtterance(),
+      onHint: () => {},
+    });
+    tts.start();
+    tts.finish('不该被读出来');
+    tts.push('也不该');
+    check('E③ 关闭 ⇒ speak 从未调用', mock.spoken.length === 0, `speak ${mock.spoken.length} 次`);
+  }
+
+  /* E④ 新消息 / 关闭 ⇒ cancel 被调用 */
+  {
+    const mock = makeSpeech(zhVoices);
+    const tts = loadTts.petChatTtsCreate({
+      getSpeech: () => mock.speech,
+      getVoices: () => zhVoices,
+      getConfig: () => ({ enabled: true }),
+      Utterance: makeUtterance(),
+      onHint: () => {},
+    });
+    tts.start();          // 新消息先 cancel
+    tts.finish('第一段');
+    tts.cancel();         // 关闭气泡 / 点停止
+    check('E④ 新消息 / 关闭 ⇒ cancel 被调用',
+      mock.cancels() >= 2,
+      `cancel ${mock.cancels()} 次（start 1 + cancel 1）`);
+  }
+
+  /* E⑤ speechSynthesis 缺失 ⇒ 不抛错、文字照常 */
+  {
+    let threw = false;
+    let tts;
+    try {
+      tts = loadTts.petChatTtsCreate({
+        getSpeech: () => null,
+        getVoices: () => [],
+        getConfig: () => ({ enabled: true }),
+        Utterance: makeUtterance(),
+        onHint: () => {},
+      });
+      tts.start();
+      tts.push('没有语音引擎');
+      tts.finish('没有语音引擎');
+      tts.cancel();
+    } catch { threw = true; }
+    check('E⑤ speechSynthesis 缺失 ⇒ 不抛错、文字照常', !threw, `抛错=${threw}`);
+  }
+
+  /* E⑥ 无中文音色 ⇒ 只提示一次 */
+  {
+    const enVoices = [{ name: 'Microsoft David Desktop', lang: 'en-US', voiceURI: 'david' }];
+    const mock = makeSpeech(enVoices);
+    const hints = [];
+    const tts = loadTts.petChatTtsCreate({
+      getSpeech: () => mock.speech,
+      getVoices: () => enVoices,
+      getConfig: () => ({ enabled: true }),
+      Utterance: makeUtterance(),
+      onHint: (code, message) => hints.push({ code, message }),
+    });
+    tts.start();
+    tts.finish('第一句');
+    tts.finish('第二句');
+    const noChinese = hints.filter((hint) => hint.code === 'no-chinese-voice');
+    check('E⑥ 无中文音色 ⇒ 只提示一次（且仍然朗读）',
+      noChinese.length === 1 && mock.spoken.length >= 1,
+      `提示 ${noChinese.length} 次 · 仍朗读 ${mock.spoken.length} 段`);
+  }
+}
+
 /* ── 收账 ─────────────────────────────────────────────────────────────── */
 const failed = results.filter((item) => !item.ok);
 console.log(`\nPET CHAT CHECKS ${failed.length ? 'FAILED' : 'PASSED'} — ${results.length - failed.length} 通过 / ${failed.length} 失败`);

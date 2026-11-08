@@ -91,6 +91,12 @@ function petChatBuild() {
   petChatOn(voiceBtn, 'pointerdown', (event) => { if (event && event.preventDefault) event.preventDefault(); void petChatVoiceStart(); });
   petChatOn(voiceBtn, 'pointerup', () => { void petChatVoiceStop(); });
   petChatOn(voiceBtn, 'pointerleave', () => { if (petChatVoice) void petChatVoiceStop(); });
+  // 停止朗读：只停语音，不动文字（文字已经显示在气泡里）
+  const stopBtn = document.createElement('button');
+  stopBtn.type = 'button';
+  stopBtn.textContent = weT('停止朗读');
+  stopBtn.style.cssText = 'background:none;border:1px solid rgba(255,255,255,.14);border-radius:7px;color:#c9c9d1;font-size:11px;padding:2px 6px;cursor:pointer';
+  petChatOn(stopBtn, 'click', () => petChatTts.cancel());
   const memoryBtn = document.createElement('button');
   memoryBtn.type = 'button';
   memoryBtn.textContent = weT('查看记忆');
@@ -107,7 +113,7 @@ function petChatBuild() {
   close.title = weT('关闭');
   close.style.cssText = 'background:none;border:0;color:#c9c9d1;font-size:18px;cursor:pointer;line-height:1';
   petChatOn(close, 'click', () => petChatHide());
-  petChatAppend(tools, voiceBtn, memoryBtn, clear, close);
+  petChatAppend(tools, voiceBtn, stopBtn, memoryBtn, clear, close);
   petChatAppend(head, title, tools);
 
   const log = document.createElement('div');
@@ -193,6 +199,7 @@ function petChatShow() {
 
 function petChatHide() {
   if (!petChatEls) return;
+  petChatTts.cancel(); // 关闭气泡：立刻停读
   petChatEls.root.style.display = 'none';
 }
 
@@ -231,6 +238,7 @@ async function petChatSyncState() {
     const doc = probe && probe.data;
     // 语音输入开关由宿主带回来：false ⇒ 按麦克风只提示"先去 DSH 开"，不弹权限框
     petChatVoiceEnabled = doc && doc.voiceEnabled === true;
+    if (doc && doc.voiceOut && typeof doc.voiceOut === 'object') petChatVoiceOut = doc.voiceOut;
     if (!doc || doc.enabled !== true) {
       petChatStatus(weT('未开启对话（设置 → 桌宠 → 桌宠对话）'));
       return null;
@@ -279,13 +287,16 @@ async function petChatSend() {
   if ([...text].length > 400) { petChatStatus(weT('一次最多 400 字')); return; }
   els.input.value = '';
   petChatPush('user', text);
+  petChatTts.start(); // 新消息：停掉上一段朗读
   petChatBusy = true;
   petChatStatus(weT('思考中…'));
 
   const state = await petChatSyncState();
   if (!state || state.enabled !== true) {
     // 没有模型：不假装在对话，直接给预设台词
-    petChatPush('assistant', petChatPresetLine());
+    const presetLine = petChatPresetLine();
+    petChatPush('assistant', presetLine);
+    petChatTts.finish(presetLine);
     petChatStatus(weT('未开启对话（设置 → 桌宠 → 桌宠对话）'));
     petChatBusy = false;
     return;
@@ -324,9 +335,11 @@ async function petChatSend() {
         if (parsed.event === 'delta' && parsed.data && typeof parsed.data.t === 'string') {
           assistant += parsed.data.t;
           ensureBubble();
+          petChatTts.push(parsed.data.t);
           petChatLines[petChatLines.length - 1] = { role: 'assistant', text: assistant };
           petChatRender();
         } else if (parsed.event === 'done') {
+          petChatTts.finish(assistant);
           petChatApplyEmotion(parsed.data && parsed.data.emotion);
           petChatStatus('');
         } else if (parsed.event === 'error') {
@@ -407,6 +420,18 @@ async function petChatRefreshUsage() {
 const PET_CHAT_VOICE_MAX_SECONDS = 15;
 let petChatVoice = null;
 let petChatVoiceEnabled = null;
+// 朗读（TTS）：默认开；配置由 /state 带回，没拿到时按默认值（开）
+let petChatVoiceOut = { enabled: true, rate: 1, pitch: 1, volume: 1, voiceURI: '' };
+const petChatTts = petChatTtsCreate({
+  getSpeech: () => (typeof window !== 'undefined' ? window.speechSynthesis : null),
+  getVoices: () => {
+    const speech = typeof window !== 'undefined' ? window.speechSynthesis : null;
+    return speech && typeof speech.getVoices === 'function' ? speech.getVoices() : [];
+  },
+  getConfig: () => petChatVoiceOut,
+  Utterance: typeof window !== 'undefined' ? window.SpeechSynthesisUtterance : undefined,
+  onHint: (code, message) => petChatStatus(message),
+});
 
 /** Float32 PCM → 16kHz 单声道 PCM16 WAV。 */
 function petChatEncodeWav(samples, sampleRate) {

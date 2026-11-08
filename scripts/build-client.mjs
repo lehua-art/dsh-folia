@@ -412,6 +412,11 @@ const INLINE_MODULES = [
     markers: ['const PANE_ANCHORS = ', 'function stampPanes()', 'function installSkinCompat()'],
   },
   {
+    file: 'src/pet-chat-tts.js',
+    why: '朗读回答：speechSynthesis 薄封装（整段读 / 流式按句读 / 取消），不碰 DOM、不改文字',
+    markers: ['function petChatTtsCreate(', 'function petChatTtsSplit(', 'const PET_CHAT_TTS_SENTENCE_END = '],
+  },
+  {
     file: 'src/pet-chat.js',
     why: '桌宠对话气泡：点宠物出输入框，走宿主 /folia/pet-chat/* 的 SSE；没配模型时给预设台词',
     markers: ['function mountPetChat()', 'const PET_CHAT_PRESET_LINES = ', 'function petChatParseFrame('],

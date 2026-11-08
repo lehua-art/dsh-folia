@@ -177,7 +177,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       },
       "host": {
@@ -347,7 +354,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       }
     },
@@ -535,7 +549,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       },
       "host": "__null__"
@@ -724,7 +745,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       },
       "host": "__null__"
@@ -913,7 +941,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       },
       "host": "__null__"
@@ -1094,7 +1129,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       },
       "host": {
@@ -1264,7 +1306,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       }
     },
@@ -1501,7 +1550,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       },
       "host": {
@@ -1671,7 +1727,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       }
     },
@@ -1953,7 +2016,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       },
       "host": {
@@ -2123,7 +2193,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       }
     },
@@ -2304,7 +2381,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       },
       "host": {
@@ -2474,7 +2558,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       }
     },
@@ -2669,7 +2760,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       },
       "host": {
@@ -2839,7 +2937,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       }
     },
@@ -3034,7 +3139,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       },
       "host": {
@@ -3204,7 +3316,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       }
     },
@@ -3386,7 +3505,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       },
       "host": {
@@ -3556,7 +3682,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       }
     },
@@ -3743,7 +3876,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       },
       "host": {
@@ -3913,7 +4053,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       }
     },
@@ -4097,7 +4244,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       },
       "host": {
@@ -4267,7 +4421,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       }
     },
@@ -4458,7 +4619,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       },
       "host": {
@@ -4628,7 +4796,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       }
     },
@@ -4884,7 +5059,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       },
       "host": {
@@ -5079,7 +5261,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       }
     },
@@ -5259,7 +5448,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       },
       "host": {
@@ -5429,7 +5625,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       }
     },
@@ -5609,7 +5812,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       },
       "host": {
@@ -5779,7 +5989,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       }
     },
@@ -5960,7 +6177,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       },
       "host": {
@@ -6130,7 +6354,14 @@
           "proactiveDailyLimit": 10,
           "proactiveMinGapMin": 120,
           "quietHours": "22:00-08:00",
-          "voiceEnabled": false
+          "voiceEnabled": false,
+          "voiceOut": {
+            "enabled": true,
+            "rate": 1,
+            "pitch": 1,
+            "volume": 1,
+            "voiceURI": ""
+          }
         }
       }
     }
