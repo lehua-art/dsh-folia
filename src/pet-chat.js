@@ -200,6 +200,7 @@ function petChatShow() {
 function petChatHide() {
   if (!petChatEls) return;
   petChatTts.cancel(); // 关闭气泡：立刻停读
+  if (petChatAudioPlayer) { try { petChatAudioPlayer.pause(); } catch { /* ignore */ } petChatAudioPlayer = null; }
   petChatEls.root.style.display = 'none';
 }
 
@@ -296,7 +297,7 @@ async function petChatSend() {
     // 没有模型：不假装在对话，直接给预设台词
     const presetLine = petChatPresetLine();
     petChatPush('assistant', presetLine);
-    petChatTts.finish(presetLine);
+    void petChatSpeak(presetLine, 'calm');
     petChatStatus(weT('未开启对话（设置 → 桌宠 → 桌宠对话）'));
     petChatBusy = false;
     return;
@@ -339,7 +340,7 @@ async function petChatSend() {
           petChatLines[petChatLines.length - 1] = { role: 'assistant', text: assistant };
           petChatRender();
         } else if (parsed.event === 'done') {
-          petChatTts.finish(assistant);
+          void petChatSpeak(assistant, parsed.data && parsed.data.emotion);
           petChatApplyEmotion(parsed.data && parsed.data.emotion);
           petChatStatus('');
         } else if (parsed.event === 'error') {
@@ -421,6 +422,26 @@ const PET_CHAT_VOICE_MAX_SECONDS = 15;
 let petChatVoice = null;
 let petChatVoiceEnabled = null;
 // 朗读（TTS）：默认开；配置由 /state 带回，没拿到时按默认值（开）
+/** 朗读入口：engine=edge 走宿主合成，其余（或失败）走系统音色。 */
+async function petChatSpeak(text, emotion) {
+  const config = petChatVoiceOut || {};
+  if (config.enabled !== true) return;
+  if (config.engine === 'edge') {
+    try {
+      const res = await apiPostJson('/pet-chat/speak', { text, emotion: emotion || 'calm' }, { parse: 'always' });
+      const doc = (res && res.data) || {};
+      if (doc.ok && doc.engine === 'edge' && doc.audio) {
+        const player = new Audio('data:' + (doc.mime || 'audio/mpeg') + ';base64,' + doc.audio);
+        petChatAudioPlayer = player;
+        void player.play();
+        return;
+      }
+      // doc.engine==='system'（含回落）⇒ 往下走系统音色
+    } catch { /* 网络问题一律回落系统音色 */ }
+  }
+  petChatTts.finish(text);
+}
+let petChatAudioPlayer = null;
 let petChatVoiceOut = { enabled: true, rate: 1, pitch: 1, volume: 1, voiceURI: '' };
 const petChatTts = petChatTtsCreate({
   getSpeech: () => (typeof window !== 'undefined' ? window.speechSynthesis : null),
