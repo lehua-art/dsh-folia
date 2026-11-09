@@ -189,6 +189,9 @@ function petChatStatus(text) {
 }
 
 function petChatShow() {
+  // 「关闭对话」时点宠物**不弹气泡**（判据⑥）：开关是显式 false 才拦，
+  // 还没探测过（null）时照常打开 —— 首次点击要能触发一次 /state 探测。
+  if (petChatVoiceOut && petChatChatEnabled === false) return;
   const els = petChatBuild();
   if (!els) return;
   els.root.style.display = 'flex';
@@ -239,6 +242,8 @@ async function petChatSyncState() {
     const doc = probe && probe.data;
     // 语音输入开关由宿主带回来：false ⇒ 按麦克风只提示"先去 DSH 开"，不弹权限框
     petChatVoiceEnabled = doc && doc.voiceEnabled === true;
+    // 对话总开关：显式 false ⇒ 点宠物不弹气泡（判据⑥）
+    petChatChatEnabled = Boolean(doc && doc.enabled === true);
     if (doc && doc.voiceOut && typeof doc.voiceOut === 'object') petChatVoiceOut = doc.voiceOut;
     if (!doc || doc.enabled !== true) {
       petChatStatus(weT('未开启对话（设置 → 桌宠 → 桌宠对话）'));
@@ -421,6 +426,8 @@ async function petChatRefreshUsage() {
 const PET_CHAT_VOICE_MAX_SECONDS = 15;
 let petChatVoice = null;
 let petChatVoiceEnabled = null;
+// 对话总开关：/state 带回；显式 false 时点宠物不弹气泡（判据⑥）
+let petChatChatEnabled = null;
 // 朗读（TTS）：默认开；配置由 /state 带回，没拿到时按默认值（开）
 /** 朗读入口：engine=edge 走宿主合成，其余（或失败）走系统音色。 */
 async function petChatSpeak(text, emotion) {

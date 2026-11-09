@@ -408,7 +408,261 @@ function PetsTabPanel() {
       weT("站点上还没有桌宠。")));
   }
 
+  // ── 桌宠对话（/folia/pet-chat/*）────────────────────────────────────────
+  // 放在页签底部，紧跟「显示桌宠 / 声音 / 音量 / 复位位置 / 大小」之后。
+  children.push(React.createElement(PetChatSettings, { key: "petChat" }));
+
   return React.createElement("div", { className: "we-picker__section" }, children);
+}
+
+/* ── 桌宠对话设置区 ─────────────────────────────────────────────────────── */
+
+const CHAT_DEFAULTS = {
+  enabled: false,
+  provider: 'openai',
+  baseUrl: 'https://api.deepseek.com',
+  model: 'deepseek-chat',
+  apiKey: '',
+  apiKeyMasked: '',
+  hasApiKey: false,
+  persona: { name: '', traits: '', notes: '' },
+  maxTurns: 8,
+  maxChars: 80,
+  voiceOut: { enabled: true, rate: 1, pitch: 1, volume: 1, voiceURI: '' },
+  voiceEngine: 'system',
+  memoryEnabled: true,
+  proactive: { enabled: false, dailyLimit: 10, minGapMin: 120, quietHours: '22:00-08:00' },
+  voiceEnabled: false,
+};
+
+const PROVIDER_PRESETS = {
+  openai: { baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' },
+  ollama: { baseUrl: 'http://127.0.0.1:11434/v1', model: 'llama3.1' },
+};
+
+function PetChatSettings() {
+  const [draft, setDraft] = React.useState(CHAT_DEFAULTS);
+  const [status, setStatus] = React.useState({ ok: null, text: '' });
+  const [note, setNote] = React.useState(null);
+  const [showKey, setShowKey] = React.useState(false);
+  const [memory, setMemory] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+  const update = React.useCallback((patch) => setDraft((prev) => ({ ...prev, ...patch })), []);
+
+  const load = React.useCallback(async () => {
+    try {
+      const resp = await apiJson('/pet-chat/config', { parse: 'always' });
+      const doc = (resp && resp.data) || null;
+      if (doc && doc.ok !== false) {
+        setDraft({ ...CHAT_DEFAULTS, ...doc, apiKey: '' });
+        setStatus(doc.hasApiKey
+          ? { ok: true, text: weT('已保存的 Key：{mask}', { mask: doc.apiKeyMasked || '••••' }) }
+          : { ok: null, text: weT('还没有填 API Key') });
+      }
+    } catch { /* 首次加载失败不打扰：保存时会报 */ }
+  }, []);
+  React.useEffect(() => { void load(); }, [load]);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      const resp = await apiJson('/pet-chat/config', {
+        method: 'POST',
+        body: { ...draft, apiKey: draft.apiKey || '' },
+        parse: 'always',
+      });
+      const doc = (resp && resp.data) || {};
+      if (doc.saved) {
+        setNote({ ok: true, text: weT('已保存') });
+        await load();
+        const state = await apiJson('/pet-chat/state', { parse: 'always' });
+        const sdoc = (state && state.data) || {};
+        setStatus(sdoc.reachable
+          ? { ok: true, text: weT('已连接 · {p} · {m}', { p: sdoc.provider || draft.provider, m: sdoc.model || draft.model }) }
+          : { ok: false, text: sdoc.lastError ? weT('未连接：{e}', { e: sdoc.lastError }) : weT('已保存，但还没连上') });
+      } else {
+        setNote({ ok: false, text: weT('保存失败') });
+      }
+    } catch (e) {
+      setNote({ ok: false, text: weT('保存失败：{msg}', { msg: (e && e.message) || '' }) });
+    } finally { setBusy(false); }
+  };
+
+  const testConnection = async () => {
+    setBusy(true);
+    try {
+      const resp = await apiJson('/pet-chat/test', {
+        method: 'POST',
+        body: { provider: draft.provider, baseUrl: draft.baseUrl, apiKey: draft.apiKey || '' },
+        parse: 'always',
+      });
+      const doc = (resp && resp.data) || {};
+      setStatus(doc.ok
+        ? { ok: true, text: weT('已连接 · {p}', { p: doc.provider || draft.provider }) }
+        : { ok: false, text: doc.message || weT('连接失败') });
+    } catch (e) {
+      setStatus({ ok: false, text: weT('连接失败：{msg}', { msg: (e && e.message) || '' }) });
+    } finally { setBusy(false); }
+  };
+
+  const switchProvider = (provider) => {
+    const preset = PROVIDER_PRESETS[provider] || PROVIDER_PRESETS.openai;
+    update({ provider, baseUrl: preset.baseUrl, model: preset.model, ...(provider === 'ollama' ? { apiKey: '' } : {}) });
+  };
+
+  const voices = (() => {
+    try {
+      const list = typeof window !== 'undefined' && window.speechSynthesis && window.speechSynthesis.getVoices
+        ? window.speechSynthesis.getVoices() : [];
+      return Array.isArray(list) ? list : [];
+    } catch { return []; }
+  })();
+
+  const row = (label, node) => React.createElement('label', { key: label, style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', margin: '4px 0' } },
+    weT(label), node);
+
+  const child = [];
+  child.push(React.createElement('div', { key: 'title', style: { fontWeight: 600, margin: '14px 0 6px', fontSize: '13px' } }, weT('桌宠对话')));
+  child.push(row('开启对话', React.createElement('input', {
+    type: 'checkbox', checked: Boolean(draft.enabled), disabled: busy,
+    onChange: (e) => update({ enabled: e.target.checked }),
+  })));
+  child.push(row('模型来源', React.createElement('select', {
+    value: draft.provider, disabled: busy,
+    onChange: (e) => switchProvider(e.target.value),
+  },
+  React.createElement('option', { value: 'openai' }, 'OpenAI 兼容'),
+  React.createElement('option', { value: 'ollama' }, weT('本机 Ollama')))));
+  child.push(row('接口地址', React.createElement('input', {
+    type: 'text', value: draft.baseUrl, disabled: busy || draft.provider === 'ollama',
+    style: { flex: 1, minWidth: 0 }, onChange: (e) => update({ baseUrl: e.target.value }),
+  })));
+  child.push(row('模型名', React.createElement('input', {
+    type: 'text', value: draft.model, disabled: busy,
+    style: { flex: 1, minWidth: 0 }, onChange: (e) => update({ model: e.target.value }),
+  })));
+  child.push(React.createElement('div', { key: 'key', style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', margin: '4px 0' } },
+    weT('API Key'),
+    React.createElement('input', {
+      type: showKey ? 'text' : 'password',
+      value: draft.apiKey || '',
+      placeholder: draft.hasApiKey ? (draft.apiKeyMasked || '••••••••') : '',
+      disabled: busy || draft.provider === 'ollama',
+      style: { flex: 1, minWidth: 0 },
+      onChange: (e) => update({ apiKey: e.target.value }),
+    }),
+    React.createElement('button', { type: 'button', className: 'we-picker__btn', disabled: busy, onClick: () => setShowKey((v) => !v) }, showKey ? weT('隐藏') : weT('显示')),
+    React.createElement('button', { type: 'button', className: 'we-picker__btn', disabled: busy, onClick: testConnection }, weT('测试连接')),
+  ));
+
+  child.push(React.createElement('div', { key: 'persona', style: { display: 'flex', gap: '6px', fontSize: '12px', margin: '4px 0', flexWrap: 'wrap' } },
+    weT('人设'),
+    React.createElement('input', { type: 'text', placeholder: weT('名字'), value: (draft.persona && draft.persona.name) || '', style: { width: '80px' }, disabled: busy, onChange: (e) => update({ persona: { ...draft.persona, name: e.target.value } }) }),
+    React.createElement('input', { type: 'text', placeholder: weT('性格'), value: (draft.persona && draft.persona.traits) || '', style: { flex: 1, minWidth: '120px' }, disabled: busy, onChange: (e) => update({ persona: { ...draft.persona, traits: e.target.value } }) }),
+    React.createElement('input', { type: 'text', placeholder: weT('备注'), value: (draft.persona && draft.persona.notes) || '', style: { flex: 1, minWidth: '120px' }, disabled: busy, onChange: (e) => update({ persona: { ...draft.persona, notes: e.target.value } }) }),
+  ));
+  child.push(React.createElement('div', { key: 'limits', style: { display: 'flex', gap: '8px', alignItems: 'center', fontSize: '12px', margin: '4px 0' } },
+    weT('上下文轮数'),
+    React.createElement('input', { type: 'number', min: 1, max: 12, value: draft.maxTurns, style: { width: '64px' }, disabled: busy, onChange: (e) => update({ maxTurns: Number(e.target.value) }) }),
+    weT('字数上限'),
+    React.createElement('input', { type: 'number', min: 20, max: 160, value: draft.maxChars, style: { width: '64px' }, disabled: busy, onChange: (e) => update({ maxChars: Number(e.target.value) }) }),
+  ));
+
+  child.push(React.createElement('div', { key: 'voice', style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', margin: '6px 0 0', flexWrap: 'wrap' } },
+    React.createElement('label', { style: { display: 'flex', gap: '4px', alignItems: 'center' } },
+      React.createElement('input', { type: 'checkbox', checked: Boolean(draft.voiceOut && draft.voiceOut.enabled), disabled: busy, onChange: (e) => update({ voiceOut: { ...draft.voiceOut, enabled: e.target.checked } }) }),
+      weT('朗读回答')),
+    weT('音色'),
+    React.createElement('select', {
+      className: 'we-picker__playlist-select', value: (draft.voiceOut && draft.voiceOut.voiceURI) || '', disabled: busy,
+      onChange: (e) => update({ voiceOut: { ...draft.voiceOut, voiceURI: e.target.value } }),
+    }, React.createElement('option', { value: '' }, weT('自动（中文）')), voices.slice(0, 40).map((v) => React.createElement('option', { key: v.voiceURI, value: v.voiceURI }, v.name))),
+    weT('语速'),
+    React.createElement('input', { type: 'range', min: 0.5, max: 2, step: 0.1, value: (draft.voiceOut && draft.voiceOut.rate) || 1, disabled: busy, style: { width: '80px' }, onChange: (e) => update({ voiceOut: { ...draft.voiceOut, rate: Number(e.target.value) } }) }),
+    weT('音量'),
+    React.createElement('input', { type: 'range', min: 0, max: 1, step: 0.1, value: (draft.voiceOut && draft.voiceOut.volume) || 1, disabled: busy, style: { width: '80px' }, onChange: (e) => update({ voiceOut: { ...draft.voiceOut, volume: Number(e.target.value) } }) }),
+    React.createElement('button', {
+      type: 'button', className: 'we-picker__btn', disabled: busy,
+      onClick: () => {
+        try {
+          const synth = window.speechSynthesis;
+          if (!synth) { setNote({ ok: false, text: weT('这台机器没有系统语音') }); return; }
+          synth.cancel();
+          const utter = new window.SpeechSynthesisUtterance(weT('你好，我是你的桌宠。'));
+          utter.rate = (draft.voiceOut && draft.voiceOut.rate) || 1;
+          utter.volume = (draft.voiceOut && draft.voiceOut.volume) || 1;
+          synth.speak(utter);
+        } catch { setNote({ ok: false, text: weT('试听失败') }); }
+      },
+    }, weT('试听')),
+  ));
+
+  child.push(row('朗读引擎', React.createElement('select', {
+    value: draft.voiceEngine || 'system', disabled: busy,
+    onChange: (e) => update({ voiceEngine: e.target.value }),
+  },
+  React.createElement('option', { value: 'system' }, weT('系统语音')),
+  React.createElement('option', { value: 'edge' }, weT('在线情感 edge-tts')))));
+
+  child.push(React.createElement('div', { key: 'memory', style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', margin: '4px 0' } },
+    React.createElement('label', { style: { display: 'flex', gap: '4px', alignItems: 'center' } },
+      React.createElement('input', { type: 'checkbox', checked: draft.memoryEnabled !== false, disabled: busy, onChange: (e) => update({ memoryEnabled: e.target.checked }) }),
+      weT('长期记忆')),
+    React.createElement('button', {
+      type: 'button', className: 'we-picker__btn', disabled: busy,
+      onClick: async () => {
+        try {
+          const resp = await apiJson('/pet-chat/memory', { parse: 'always' });
+          setMemory(((resp && resp.data) || {}).memory || {});
+        } catch { setNote({ ok: false, text: weT('读取记忆失败') }); }
+      },
+    }, weT('查看记忆')),
+    React.createElement('button', {
+      type: 'button', className: 'we-picker__btn', disabled: busy,
+      onClick: async () => {
+        try {
+          await apiJson('/pet-chat/memory', { method: 'DELETE', parse: 'always' });
+          setMemory(null);
+          setNote({ ok: true, text: weT('记忆已清空') });
+        } catch { setNote({ ok: false, text: weT('清空失败') }); }
+      },
+    }, weT('清空记忆')),
+  ));
+  if (memory) {
+    const parts = [];
+    if (memory.nickname) parts.push(weT('称呼') + '：' + memory.nickname);
+    if (Array.isArray(memory.likes) && memory.likes.length) parts.push(weT('喜欢') + '：' + memory.likes.join('、'));
+    if (Array.isArray(memory.notes) && memory.notes.length) parts.push(weT('备注') + '：' + memory.notes.join('、'));
+    child.push(React.createElement('div', { key: 'memoryView', className: 'we-picker__hint', style: { margin: '2px 0 6px' } }, parts.length ? parts.join('  ·  ') : weT('还没有记住任何偏好')));
+  }
+
+  child.push(React.createElement('div', { key: 'proactive', style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', margin: '4px 0', flexWrap: 'wrap' } },
+    React.createElement('label', { style: { display: 'flex', gap: '4px', alignItems: 'center' } },
+      React.createElement('input', { type: 'checkbox', checked: Boolean(draft.proactive && draft.proactive.enabled), disabled: busy, onChange: (e) => update({ proactive: { ...draft.proactive, enabled: e.target.checked } }) }),
+      weT('主动闲聊')),
+    weT('每日'),
+    React.createElement('input', { type: 'number', min: 1, max: 20, value: (draft.proactive && draft.proactive.dailyLimit) || 10, style: { width: '56px' }, disabled: busy, onChange: (e) => update({ proactive: { ...draft.proactive, dailyLimit: Number(e.target.value) } }) }),
+    weT('间隔(分)'),
+    React.createElement('input', { type: 'number', min: 30, max: 720, value: (draft.proactive && draft.proactive.minGapMin) || 120, style: { width: '64px' }, disabled: busy, onChange: (e) => update({ proactive: { ...draft.proactive, minGapMin: Number(e.target.value) } }) }),
+    weT('夜间静默'),
+    React.createElement('input', { type: 'text', value: (draft.proactive && draft.proactive.quietHours) || '22:00-08:00', style: { width: '110px' }, disabled: busy, onChange: (e) => update({ proactive: { ...draft.proactive, quietHours: e.target.value } }) }),
+  ));
+
+  child.push(React.createElement('label', { key: 'asr', style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', margin: '4px 0 8px', opacity: 0.7 } },
+    React.createElement('input', { type: 'checkbox', checked: Boolean(draft.voiceEnabled), disabled: true }),
+    weT('语音输入（需先在 DSH 开启）'),
+  ));
+
+  child.push(React.createElement('div', { key: 'status', className: 'we-picker__hint', style: { margin: '2px 0 6px', color: status.ok === false ? '#f87171' : undefined } },
+    status.text || weT('未连接')));
+  if (note && note.text) {
+    child.push(React.createElement('div', { key: 'note', className: 'we-picker__hint', style: { color: note.ok ? undefined : '#f87171' } }, note.text));
+  }
+  child.push(React.createElement('div', { key: 'save', style: { display: 'flex', gap: '6px', marginTop: '4px' } },
+    React.createElement('button', { type: 'button', className: 'we-picker__btn', disabled: busy, onClick: save }, weT('保存')),
+  ));
+
+  return React.createElement('div', { style: { ...PET_STYLE.card, marginTop: '10px' } }, child);
 }
 
 /** 页签组装点调用它。 */

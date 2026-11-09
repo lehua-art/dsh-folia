@@ -1073,6 +1073,14 @@
           "args": [],
           "tier": "hard",
           "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-pet-settings.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
         }
       ]
     },
@@ -2259,6 +2267,14 @@
           "kind": "guard",
           "npm": null,
           "file": "test/verify-pet-chat.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-pet-settings.mjs",
           "args": [],
           "tier": "hard",
           "probe": false

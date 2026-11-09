@@ -452,6 +452,8 @@ const VERIFY_STEPS = [
   // 门 2：桌宠对话的九条判据（SSE 逐字 / 无模型兜底 / 401 / 超时 / 上下文 8 条 /
   // 超长 / 限频 / 情绪兜底 / key 不外泄）。模型端点是自建的，不依赖 Ollama 或站点。
   step('test/verify-pet-chat.mjs'),
+  // 桌宠对话设置区（6 条）：控件齐全 / 保存生效 / 切 Ollama / 测试失败原因 / 记忆清空 / 关对话不弹气泡
+  step('test/verify-pet-settings.mjs'),
 ];
 
 /** `npm run verify:docs` —— 软档（只出声）。全部经 warn-only 降级。 */
