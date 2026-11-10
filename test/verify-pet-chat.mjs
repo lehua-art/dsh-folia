@@ -767,58 +767,60 @@ const toBase64 = (bytes) => Buffer.from(bytes).toString('base64');
   }
 }
 
-/* ── F 块：edge-tts 在线情感朗读（5 条判据）────────────────────────────── */
+/* ── F 块：朗读（v0.1 只有 edge 一档 + 静音）────────────────────────────── */
 {
-  const voiceOutOn = (over = {}) => ({ petChat: { enabled: true, voiceOut: { enabled: true, rate: 1, pitch: 1, volume: 1, voiceURI: '' }, ...over } });
+  // 新结构：voice = { name, muted }（没有 voiceEngine / voiceOut 五件套了）
+  const voiceOn = (over = {}) => ({ petChat: { enabled: true, voice: { name: 'zh-CN-XiaoxiaoNeural', muted: false }, ...over } });
   const postSpeak = (host, payload) => fetch(`${host.base}/speak`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload),
   });
   const audio = new Uint8Array([1, 2, 3, 4, 5]);
 
-  /* F① engine=system ⇒ 不请求网络 */
+  /* F① 静音 ⇒ 连网络都不发 */
   {
     let edgeCalls = 0;
-    const host = await startHost(voiceOutOn(), undefined, async () => { edgeCalls += 1; return { audio, mime: 'audio/mpeg', style: 'narration' }; });
-    const res = await postSpeak(host, { text: '你好', emotion: 'happy' });
-    const doc = await res.json();
-    check('F① engine=system ⇒ 不发网络请求（engine 回 system）',
-      doc.ok === true && doc.engine === 'system' && edgeCalls === 0,
-      `engine=${doc.engine} · edge 调用 ${edgeCalls} 次`);
+    const host = await startHost(voiceOn({ voice: { name: 'zh-CN-XiaoxiaoNeural', muted: true } }), undefined, async () => {
+      edgeCalls += 1;
+      return { audio, mime: 'audio/mpeg', style: 'narration' };
+    });
+    const doc = await (await postSpeak(host, { text: '你好', emotion: 'happy' })).json();
+    check('F① 静音 ⇒ 不发网络请求（voice-muted）',
+      doc.ok === false && doc.code === 'voice-muted' && edgeCalls === 0,
+      `code=${doc.code} · edge 调用 ${edgeCalls} 次`);
     await host.close();
   }
 
-  /* F② engine=edge ⇒ 成功返回音频 */
+  /* F② edge 成功 ⇒ 返回音频（并带上配置里的音色名） */
   {
     let seen = null;
-    const host = await startHost(voiceOutOn({ voiceEngine: 'edge' }), undefined, async (args) => {
+    const host = await startHost(voiceOn({ voice: { name: 'zh-CN-YunxiNeural', muted: false } }), undefined, async (args) => {
       seen = args;
       return { audio, mime: 'audio/mpeg', style: 'cheerful' };
     });
-    const res = await postSpeak(host, { text: '今天天气不错', emotion: 'happy' });
-    const doc = await res.json();
+    const doc = await (await postSpeak(host, { text: '今天天气不错', emotion: 'happy' })).json();
     const decoded = doc.audio ? Buffer.from(doc.audio, 'base64') : null;
-    check('F② engine=edge ⇒ 返回音频（base64 可解码、mime 正确）',
+    check('F② 朗读 ⇒ 返回音频（base64 可解码、音色透传）',
       doc.ok === true && doc.engine === 'edge' && doc.mime === 'audio/mpeg'
-        && decoded && decoded.length === audio.length && seen && seen.text === '今天天气不错',
-      `engine=${doc.engine} · mime=${doc.mime} · 字节 ${decoded ? decoded.length : 0} · 传参 text=${seen && seen.text}`);
+        && decoded && decoded.length === audio.length && seen && seen.voice === 'zh-CN-YunxiNeural',
+      `engine=${doc.engine} · 字节 ${decoded ? decoded.length : 0} · voice=${seen && seen.voice}`);
     await host.close();
   }
 
-  /* F③ edge 失败 ⇒ 回落 system 且日志只记一次 */
+  /* F③ edge 失败 ⇒ 回落系统音色，日志只记一次 */
   {
     let edgeCalls = 0;
-    const host = await startHost(voiceOutOn({ voiceEngine: 'edge' }), undefined, async () => { edgeCalls += 1; throw new Error('edge-timeout'); });
+    const host = await startHost(voiceOn(), undefined, async () => { edgeCalls += 1; throw new Error('edge-timeout'); });
     const first = await (await postSpeak(host, { text: '第一句' })).json();
     const second = await (await postSpeak(host, { text: '第二句' })).json();
     const fallbackLogs = host.logs.filter((line) => /edge-tts 失败/.test(line));
     check('F③ edge 失败 ⇒ 回落 system，且日志只记一次',
       first.engine === 'system' && first.fallback === 'edge-failed'
         && second.engine === 'system' && fallbackLogs.length === 1 && edgeCalls === 2,
-      `首次=${first.engine}/${first.fallback} · 二次=${second.engine}/${second.fallback} · 日志 ${fallbackLogs.length} 条 · edge 调用 ${edgeCalls} 次`);
+      `首次=${first.engine}/${first.fallback} · 日志 ${fallbackLogs.length} 条 · edge 调用 ${edgeCalls} 次`);
     await host.close();
   }
 
-  /* F④ 风格随 emotion 变化（断言 SSML style 映射） */
+  /* F④ 风格随 emotion 变化 */
   {
     const { buildEdgeSsml, EDGE_STYLE_MAP } = await import('../lib/pet-chat-edge-tts.js');
     const ssml = (emotion) => buildEdgeSsml({ text: '测试', emotion });
@@ -826,19 +828,8 @@ const toBase64 = (bytes) => Buffer.from(bytes).toString('base64');
       && EDGE_STYLE_MAP.angry === 'angry' && EDGE_STYLE_MAP.calm === 'narration';
     const okSsml = /style="cheerful"/.test(ssml('happy')) && /style="gentle"/.test(ssml('tired'))
       && /style="angry"/.test(ssml('angry')) && /style="narration"/.test(ssml('calm'));
-    check('F④ 风格随 emotion 变化（cheerful/gentle/angry/narration）',
-      okMap && okSsml, `映射正确=${okMap} · SSML 正确=${okSsml}`);
-  }
-
-  /* F⑤ 关闭朗读 ⇒ 两档都不触发 */
-  {
-    let edgeCalls = 0;
-    const host = await startHost({ petChat: { enabled: true, voiceEngine: 'edge', voiceOut: { enabled: false } } }, undefined, async () => { edgeCalls += 1; return { audio, mime: 'audio/mpeg', style: 'narration' }; });
-    const doc = await (await postSpeak(host, { text: '不该读' })).json();
-    check('F⑤ 关闭朗读 ⇒ 两档都不触发',
-      doc.ok === false && doc.code === 'voice-out-disabled' && edgeCalls === 0,
-      `code=${doc.code} · edge 调用 ${edgeCalls} 次`);
-    await host.close();
+    check('F④ 风格随 emotion 变化（cheerful/gentle/angry/narration）', okMap && okSsml,
+      `映射=${okMap} · SSML=${okSsml}`);
   }
 }
 

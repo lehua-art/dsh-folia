@@ -172,7 +172,7 @@ function petChatStatus(text) {
 function petChatShow() {
   // 「关闭对话」时点宠物**不弹气泡**（判据⑥）：开关是显式 false 才拦，
   // 还没探测过（null）时照常打开 —— 首次点击要能触发一次 /state 探测。
-  if (petChatVoiceOut && petChatChatEnabled === false) return;
+  if (petChatChatEnabled === false) return;
   const els = petChatBuild();
   if (!els) return;
   els.root.style.display = 'flex';
@@ -210,10 +210,10 @@ async function petChatSyncState() {
     const probe = await apiJson('/pet-chat/state', { parse: 'always' });
     const doc = probe && probe.data;
     // 语音输入开关由宿主带回来：false ⇒ 按麦克风只提示"先去 DSH 开"，不弹权限框
-    petChatVoiceEnabled = doc && doc.voiceEnabled === true;
+    // v0.1：只有"音色 + 静音"两项（voice），语音输入开关随设置收敛去掉
+    if (doc && doc.voice && typeof doc.voice === 'object') petChatVoiceCfg = doc.voice;
     // 对话总开关：显式 false ⇒ 点宠物不弹气泡（判据⑥）
     petChatChatEnabled = Boolean(doc && doc.enabled === true);
-    if (doc && doc.voiceOut && typeof doc.voiceOut === 'object') petChatVoiceOut = doc.voiceOut;
     if (!doc || doc.enabled !== true) {
       petChatStatus(weT('未开启对话（设置 → 桌宠 → 桌宠对话）'));
       return null;
@@ -346,38 +346,44 @@ async function petChatSend() {
  */
 const PET_CHAT_VOICE_MAX_SECONDS = 15;
 let petChatVoice = null;
-let petChatVoiceEnabled = null;
 // 对话总开关：/state 带回；显式 false 时点宠物不弹气泡（判据⑥）
 let petChatChatEnabled = null;
 // 朗读（TTS）：默认开；配置由 /state 带回，没拿到时按默认值（开）
-/** 朗读入口：engine=edge 走宿主合成，其余（或失败）走系统音色。 */
+/**
+ * 朗读入口（v0.1）：**只有 edge 一档**，失败自动回落系统音色。
+ * 没有 system/edge 切换（工单 §0），`voice.muted` 是唯一开关。
+ */
 async function petChatSpeak(text, emotion) {
-  const config = petChatVoiceOut || {};
-  if (config.enabled !== true) return;
-  if (config.engine === 'edge') {
-    try {
-      const res = await apiPostJson('/pet-chat/speak', { text, emotion: emotion || 'calm' }, { parse: 'always' });
-      const doc = (res && res.data) || {};
-      if (doc.ok && doc.engine === 'edge' && doc.audio) {
-        const player = new Audio('data:' + (doc.mime || 'audio/mpeg') + ';base64,' + doc.audio);
-        petChatAudioPlayer = player;
-        void player.play();
-        return;
-      }
-      // doc.engine==='system'（含回落）⇒ 往下走系统音色
-    } catch { /* 网络问题一律回落系统音色 */ }
-  }
+  const config = petChatVoiceCfg || {};
+  if (config.muted === true) return;
+  try {
+    const res = await apiPostJson('/pet-chat/speak', { text, emotion: emotion || 'calm' }, { parse: 'always' });
+    const doc = (res && res.data) || {};
+    if (doc.ok && doc.engine === 'edge' && doc.audio) {
+      const player = new Audio('data:' + (doc.mime || 'audio/mpeg') + ';base64,' + doc.audio);
+      petChatAudioPlayer = player;
+      void player.play();
+      return;
+    }
+    // 宿主回落 system / 静音 ⇒ 往下走系统音色
+  } catch { /* 网络问题一律回落系统音色 */ }
   petChatTts.finish(text);
 }
 let petChatAudioPlayer = null;
-let petChatVoiceOut = { enabled: true, rate: 1, pitch: 1, volume: 1, voiceURI: '' };
+/** 朗读配置（/state 带回）：{ name, muted }。 */
+let petChatVoiceCfg = { name: 'zh-CN-XiaoxiaoNeural', muted: false };
 const petChatTts = petChatTtsCreate({
   getSpeech: () => (typeof window !== 'undefined' ? window.speechSynthesis : null),
   getVoices: () => {
     const speech = typeof window !== 'undefined' ? window.speechSynthesis : null;
     return speech && typeof speech.getVoices === 'function' ? speech.getVoices() : [];
   },
-  getConfig: () => petChatVoiceOut,
+  // TTS 引擎仍按"enabled + voiceURI"工作：这里把新结构映射过去（单一真源在设置里）
+  getConfig: () => ({
+    enabled: petChatVoiceCfg ? petChatVoiceCfg.muted !== true : true,
+    rate: 1, pitch: 1, volume: 1,
+    voiceURI: (petChatVoiceCfg && petChatVoiceCfg.name) || '',
+  }),
   Utterance: typeof window !== 'undefined' ? window.SpeechSynthesisUtterance : undefined,
   onHint: (code, message) => petChatStatus(message),
 });
@@ -415,10 +421,6 @@ function petChatToBase64(bytes) {
 /** 开始录音。返回是否真的开始了。 */
 async function petChatVoiceStart() {
   if (petChatVoice) return true;
-  if (petChatVoiceEnabled === false) {
-    petChatStatus(weT('语音输入未开启：请先在 DSH 设置里启用（需下载模型）'));
-    return false;
-  }
   try {
     const media = navigator.mediaDevices && navigator.mediaDevices.getUserMedia
       ? await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } })

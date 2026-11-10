@@ -164,24 +164,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       },
       "host": {
@@ -338,24 +332,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       }
     },
@@ -530,24 +518,18 @@
           "baseUrl": "https://api.deepseek.com",
           "apiKey": "",
           "model": "deepseek-chat",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       },
       "host": "__null__"
@@ -723,24 +705,18 @@
           "baseUrl": "https://api.deepseek.com",
           "apiKey": "",
           "model": "deepseek-chat",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       },
       "host": "__null__"
@@ -916,24 +892,18 @@
           "baseUrl": "https://api.deepseek.com",
           "apiKey": "",
           "model": "deepseek-chat",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       },
       "host": "__null__"
@@ -1101,24 +1071,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       },
       "host": {
@@ -1275,24 +1239,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       }
     },
@@ -1516,24 +1474,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       },
       "host": {
@@ -1690,24 +1642,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       }
     },
@@ -1976,24 +1922,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       },
       "host": {
@@ -2150,24 +2090,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       }
     },
@@ -2335,24 +2269,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       },
       "host": {
@@ -2509,24 +2437,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       }
     },
@@ -2708,24 +2630,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       },
       "host": {
@@ -2882,24 +2798,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       }
     },
@@ -3081,24 +2991,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       },
       "host": {
@@ -3255,24 +3159,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       }
     },
@@ -3441,24 +3339,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       },
       "host": {
@@ -3615,24 +3507,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       }
     },
@@ -3806,24 +3692,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       },
       "host": {
@@ -3980,24 +3860,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       }
     },
@@ -4168,24 +4042,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       },
       "host": {
@@ -4342,24 +4210,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       }
     },
@@ -4537,24 +4399,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       },
       "host": {
@@ -4711,24 +4567,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       }
     },
@@ -4971,24 +4821,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       },
       "host": {
@@ -5170,24 +5014,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       }
     },
@@ -5354,24 +5192,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       },
       "host": {
@@ -5528,24 +5360,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       }
     },
@@ -5712,24 +5538,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       },
       "host": {
@@ -5886,24 +5706,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       }
     },
@@ -6071,24 +5885,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       },
       "host": {
@@ -6245,24 +6053,18 @@
           "baseUrl": "",
           "apiKey": "",
           "model": "",
-          "persona": {
-            "name": "Folia",
-            "style": "元气、短句、偶尔颜文字、不说教",
-            "traits": "喜欢壁纸和游戏，被夸会害羞"
+          "petName": "",
+          "ownerName": "",
+          "voice": {
+            "name": "zh-CN-XiaoxiaoNeural",
+            "muted": false
           },
-          "maxTurns": 8,
-          "maxChars": 80,
-          "memoryEnabled": true,
-          "memoryEveryTurns": 10,
-          "voiceEnabled": false,
-          "voiceOut": {
-            "enabled": true,
-            "rate": 1,
-            "pitch": 1,
-            "volume": 1,
-            "voiceURI": ""
+          "wake": {
+            "click": true,
+            "name": false,
+            "keyword": ""
           },
-          "voiceEngine": "system"
+          "memoryEnabled": true
         }
       }
     }
