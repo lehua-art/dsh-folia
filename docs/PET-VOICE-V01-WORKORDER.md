@@ -1,0 +1,140 @@
+# 桌宠语音助手 v0.1 —— 开发工单（A 机执行）
+
+> 设计稿：讨论稿 v0.1（已定）
+> 原则：**皮肤是外观、助手是能力，一套引擎插多只皮肤**；v0.1 只做"在线情感音色"，不做离线。
+> 目标：一次交付干净版本 —— 围绕桌宠的语音交互，删掉旧的聊天面板，不留死代码。
+> 铁律：不改公开字段、不发 npm（主机器发）、每步 commit + push + 门禁全绿。
+
+---
+
+## 0. v0.1 范围（只做这些）
+
+```
+✅ 点桌宠唤醒 / 叫名字唤醒
+✅ 语音优先：唤醒后自动听 → 转录 → 模型回答
+✅ 头顶气泡：逐字显示、跟随桌宠、朗读结束 +3 秒淡出、点一下立刻消失
+✅ 朗读：edge-tts 在线情感音色（默认 zh-CN-XiaoxiaoNeural），情绪 → 风格
+✅ 音色选择：4–6 个中文音色 + 试听
+✅ 起名字（唤醒词 + 称呼）+ 记忆（名字/偏好，全局）
+✅ 右键菜单：打字说… / 静音 / 今天别说了 / 换音色 / 记忆 / 设置
+✅ 配置 3 步：下载桌宠 → 填 key + 选音色 → 起名字
+
+❌ 不做：离线本地音色（EmotiVoice / sherpa TTS）
+❌ 不做：聊天窗口 / 历史列表 UI
+❌ 不做：主动闲聊（v0.1 移出，代码删除或彻底封存）
+❌ 不做：朗读引擎 system/edge 手动切换（改为自动回落）
+```
+
+---
+
+## 1. 明确删除清单（旧实现里"不需要"的东西）
+
+> 判断标准：与 v0.1 交互冲突、或只是"能跑但不是产品形态"的，一律删；不做"留着以后可能用"。
+
+| 删除项 | 位置（当前实现） | 理由 |
+|---|---|---|
+| **聊天面板式 UI**（气泡里带大输入框 + 历史列表 + 关闭按钮） | `src/pet-chat.js` | 改为"头顶气泡（只显示）+ 右键打字入口" |
+| **面板里的「桌宠对话」设置区**（provider/baseUrl/model/key/人设/轮数/字数 一长串） | `src/panel-tabs-pets.js` | 合并成"右键 → 设置"里的**一页 4 项**（key/音色/名字/静音），其余走默认值 |
+| **朗读引擎切换 UI**（system / edge 二选一） | 设置项 `voiceEngine` + 面板控件 | 改为内部逻辑：edge 失败自动回落系统音色，不需要用户选 |
+| **主动闲聊全部代码**（判定层 + 客户端的定时器/空闲检测/全屏检测/今日计数/今天别说了） | `lib/pet-chat-proactive.js`、`lib/routes/pet-chat.js` 相关分支、`src/pet-chat.js` 相关代码 | v0.1 不做主动说话；"今天别说了"只保留"静音当天"这一条，且仅作用于朗读 |
+| **voiceOut 子对象**（enabled/rate/pitch/volume/voiceURI 五件套） | `lib/settings-schema.js` | 收敛为 `voice: { name:'zh-CN-XiaoxiaoNeural', muted:false }` 两项 |
+| **历史列表与"清空记忆"两个入口** | 气泡 + 面板 | 记忆只有右键 → 记忆（查看/清空），气泡只显示当轮 |
+| **"显示桌宠/声音/音量/复位位置/大小"里的重复项**（若与右键菜单重复） | 面板 | 保留一套，优先右键菜单 |
+
+**删除要求**：
+```
+· 真删代码，不要注释掉/不要留 `if (false)`；对应测试一并删或改写
+· 删除后 run-audit 的"退役"数只增不减可以，但"失败"必须 0
+· 每个删除在 commit message 里写明"删除原因 + 替代入口"，一条 commit 只做一类删除
+```
+
+---
+
+## 2. 保留并复用（不要重写）
+
+```
+· lib/routes/pet-chat.js 的 chat（SSE 流式）—— 保留，作为回答来源
+· lib/pet-chat-memory.js —— 保留，改为"全局 profile + 按宠物 persona"
+· lib/pet-chat-edge-tts.js —— 保留，作为唯一朗读引擎（+ 系统音色自动回落）
+· 语音输入链路（/transcribe + DSH speechToText）—— 保留
+· 站点桌宠安装（下载/sha/解压/启用）—— 保留
+· 测试 verify-pet-chat / verify-pet-settings —— 保留并按新交互改写
+```
+
+---
+
+## 3. 需要新建/改造的模块
+
+```
+S1 设置收敛（0.5 天）
+   · lib/settings-schema.js：petChat 收敛为
+       { enabled, apiKey, provider, baseUrl, model,
+         petName, ownerName,
+         voice: { name, muted },
+         wake: { click: true, name: false, keyword: '' },
+         memoryEnabled }
+   · 迁移：旧键（voiceOut/voiceEngine/persona/maxTurns/...）读入时映射，写回只写新结构
+   · 面板：删掉长设置区；新增"右键菜单入口"开关说明
+   · 判据：旧配置升级后不丢 key、不丢名字；新结构持久化正确
+
+S2 头顶气泡（1 天）
+   · src/pet-bubble.js（新）：锚定桌宠头顶、跟随位置/缩放、逐字、最多 6 行
+   · 状态：show(text) / append(chunk) / hide(delay) / setState('listen'|'think'|'answer')
+   · 行为：朗读结束 +3s 淡出；点桌宠立即隐藏；隐藏后再点必能重开（关键回归项）
+   · 删除旧面板气泡代码（src/pet-chat.js 里的 build/render 部分）
+   · 判据：6 条（锚定/跟随/逐字/3s 淡出/点击重开/超长换行）
+
+S3 语音主链路（1 天）
+   · 点桌宠 → 唤醒态（抬头动作 + 音效）→ 自动开始录音（VAD 静音 1.2s 结束）
+   · 录音 → /transcribe → 文本 → /chat（SSE）→ 气泡逐字 + 朗读
+   · 中断：再点一下 / 说话 / 关闭 ⇒ 立刻停录音与朗读
+   · 失败：无麦克风权限 → 提示 + 自动切右键打字；转录失败 → 提示重试
+   · 判据：6 条（唤醒→听→答 全链路、打断、权限拒绝、转录失败、超时 15s、朗读同步）
+
+S4 音色与情感（0.5 天）
+   · 音色列表：zh-CN-XiaoxiaoNeural（默认）/ Xiaoyi / Yunxi / Yunyang / Yunjian / Yunxia
+   · 试听按钮（念固定样例 5 秒）
+   · 情绪 → edge 风格映射（happy→cheerful / tired→gentle / angry→angry / calm→narration）
+   · 失败回落：edge 报错 ⇒ 系统音色（Huihui/Yaoyao/Kangkang）
+   · 判据：5 条（列表/试听/风格参数随情绪变/回落/无中文系统音色时只显示文字）
+
+S5 名字与记忆（0.5 天）
+   · 起名字：petName（默认 = 宠物包 displayName）、ownerName
+   · 唤醒词 = petName（S6 用）；记忆全局：likes/dislikes/notes
+   · 注入 system prompt ≤80 tokens；右键 → 记忆（查看/删除条目/清空）
+   · 判据：4 条（起名生效、重启后仍记得、换宠物不丢、清空后不再注入）
+
+S6 叫名字唤醒（1 天，可独立开关）
+   · 本地关键词检测（sherpa-onnx keyword-spotter + 几 MB 模型；模型从我们站点下载）
+   · 常开麦克风开关（默认关）+ 可见监听指示 + 关闭立即释放麦克风
+   · 判据：4 条（开关生效、命中唤醒、非命中不误触、关闭后不再占用麦克风）
+```
+
+---
+
+## 4. 解耦硬规则（写进代码注释与测试）
+
+```
+① 换宠物不清空 apiKey / 音色 / 名字 / 记忆
+② 宠物包可声明默认人设与音色（pet.json: assistant.persona / assistant.voice），用户覆盖优先
+③ 记忆（名字/偏好）全局；人设（说话风格/音色）按宠物
+④ 所有设置只有一个写入口（右键 → 设置），面板里不再有第二份
+```
+
+## 5. 代码质量要求（本次验收重点）
+
+```
+· 不留死代码：删掉的模块从 import/注册表/测试里彻底移除
+· 配置单一真源：petChat 一个对象，禁止并行第二套 voiceEngine/voiceOut
+· 默认值只在 settings-schema 定义一次；UI 不再硬编码默认值
+· 新增模块 <300 行/个；复杂逻辑必须有函数级注释说明"为什么"
+· 测试：每个 S 的判据进 run-audit；删掉的旧用例同步删（不留 skip）
+· 门禁：build-client 0 / run-audit 0 失败 / verify-entry-load 通过 / 对应 verify 全绿
+```
+
+## 6. 汇报
+
+```
+每步：commit / 删除清单（真删了什么）/ 新增文件行数 / 判据数 / 门禁结果
+最后：v0.1 完成度 + 与讨论稿 v0.1 的差异（如有）
+```
