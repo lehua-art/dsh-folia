@@ -900,6 +900,35 @@ const toBase64 = (bytes) => Buffer.from(bytes).toString('base64');
   }
 }
 
+  /* H④ 静默后：用户主动唤醒对话照常，"叫停"仍被识别，且不会主动搭话 */
+  {
+    const { clearProactiveState: clear4, enterSilence: silence4, canSpeak: can4 } = await import('../lib/pet-chat-proactive.js');
+    clear4();
+    const host = await startHost({ petChat: { enabled: true, provider: 'ollama', baseUrl: 'http://127.0.0.1:9', model: 'x' } });
+    const say = async (text) => {
+      const response = await fetch(`${host.base}/chat`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }),
+      });
+      return response.text();
+    };
+    // 静默期间：主动搭话必须完全不发（tick 返回 silent，没有 line）
+    silence4();
+    const tick = await fetch(`${host.base}/proactive/tick`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ idleMinutes: 30, fullscreen: false }),
+    });
+    const tickDoc = await tick.json();
+    // 用户点一下桌宠再说话：对话链路照常（这里说"别说了"，指令仍被识别）
+    const stream = await say('别说了');
+    const stillSilent = can4({ idleMinutes: 30, fullscreen: false, randomHit: true });
+    await host.close();
+    clear4();
+    check('H④ 静默后：主动搭话不发；用户主动说的"别说了"仍被识别',
+      tickDoc.ok === false && tickDoc.reason === 'silent' && !tickDoc.line
+        && /安静/.test(stream) && stillSilent.reason === 'silent',
+      `tick=${tickDoc.reason} · 指令识别=${/安静/.test(stream)} · 仍静默=${stillSilent.reason}`);
+  }
+
+
 /* ── 收账 ─────────────────────────────────────────────────────────────── */
 const failed = results.filter((item) => !item.ok);
 console.log(`\nPET CHAT CHECKS ${failed.length ? 'FAILED' : 'PASSED'} — ${results.length - failed.length} 通过 / ${failed.length} 失败`);

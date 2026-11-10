@@ -435,12 +435,12 @@ const PROVIDER_PRESETS = {
 };
 
 /**
- * 设置页（v0.1 定稿）：**只有三项** —— 模型 Key / 名字 / 暂时不说话。
+ * 设置页（v0.1 追加剧正）：**只有模型 Key / 名字**；朗读相关的旋钮归 v0.2。
  *
  * 为什么这么短：工单「追加决定 1」明确"用户不需要做任何选择/开关"。
  * 主动搭话是固定策略（40–90 分钟、夜间静默、空闲才说），记忆常开，
  * 朗读相关的旋钮按工单归到 v0.2；这里每多一个旋钮，用户就多一次要做决定的机会。
- * 「暂时不说话」是唯一的临时开关（等价于说"别说了"，次日 0 点自动恢复）。
+ * 停止/恢复主动搭话**只靠语音指令**或次日 0 点自动 —— 设置里不放任何开关。
  */
 function PetChatSettings() {
   const [draft, setDraft] = React.useState(CHAT_DEFAULTS);
@@ -448,7 +448,6 @@ function PetChatSettings() {
   const [note, setNote] = React.useState(null);
   const [showKey, setShowKey] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
-  const [silent, setSilent] = React.useState(false);
   const update = React.useCallback((patch) => setDraft((prev) => ({ ...prev, ...patch })), []);
 
   const load = React.useCallback(async () => {
@@ -461,9 +460,6 @@ function PetChatSettings() {
           ? { ok: true, text: weT('已保存的 Key：{mask}', { mask: doc.apiKeyMasked || '••••' }) }
           : { ok: null, text: weT('还没有填 API Key') });
       }
-      const usage = await apiJson('/pet-chat/proactive', { parse: 'always' });
-      const udoc = (usage && usage.data) || {};
-      if (udoc.silent === true) setSilent(true);
     } catch { /* 首次加载失败不打扰 */ }
   }, []);
   React.useEffect(() => { void load(); }, [load]);
@@ -500,17 +496,7 @@ function PetChatSettings() {
     } finally { setBusy(false); }
   };
 
-  const toggleSilence = async () => {
-    setBusy(true);
-    try {
-      const next = !silent;
-      await apiJson('/pet-chat/silence', { method: 'POST', body: { silent: next }, parse: 'always' });
-      setSilent(next);
-      setNote({ ok: true, text: next ? weT('好，那我安静一会儿（明天 0 点自动恢复）') : weT('好，我回来了') });
-    } catch {
-      setNote({ ok: false, text: weT('操作失败') });
-    } finally { setBusy(false); }
-  };
+
 
   const row = (key, label, node) => React.createElement('label', {
     key, style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', margin: '4px 0' },
@@ -547,13 +533,7 @@ function PetChatSettings() {
     style: { flex: 1, minWidth: 0 }, onChange: (e) => update({ ownerName: e.target.value }),
   })));
 
-  child.push(React.createElement('div', { key: 'silence', style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', margin: '6px 0' } },
-    React.createElement('button', {
-      type: 'button', className: 'we-picker__btn', disabled: busy, onClick: toggleSilence,
-    }, silent ? weT('可以说话了') : weT('暂时不说话')),
-    React.createElement('span', { className: 'we-picker__hint' },
-      silent ? weT('静默中：明天 0 点自动恢复') : weT('它不会主动搭话（对话仍可用）')),
-  ));
+
 
   child.push(React.createElement('div', { key: 'status', className: 'we-picker__hint', style: { margin: '2px 0 6px', color: status.ok === false ? '#f87171' : undefined } },
     status.text || weT('未连接')));
