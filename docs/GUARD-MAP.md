@@ -5,7 +5,7 @@
 > 口径：只统计守卫**代码**里真正碰到的模块（先剥注释），并区分"直接读源文件"与"隔着产物 `lib/client.js`"。
 > 写法：字面量路径 / `join(...)` 拼接 / 唯一 basename / 产物配方 / **前缀族读法** `scopeFiles|scopeText(<前缀>)` / **经共享族助手读**（`import { panelText } from './tools/src-scope.mjs'` + 真调用；族口径封在那个库里，见 DEV-GUIDE §4.6「同时是守卫的库」）/ **真源定位读**（`locate('符号')` / `locateFile('文件名')`，`test/tools/source-locator.mjs`：符号唯一声明在哪就是读了哪个模块）。
 
-模块面 210 个 · 守卫 150 个
+模块面 209 个 · 守卫 150 个
 
 ## 守卫 → 模块
 
@@ -93,7 +93,7 @@
 | `verify-package-publish.mjs` | `lib/index.js` `lib/pkg-read.js` `src/client.js` | ✅ |
 | `verify-panel-defensive.mjs` | `lib/routes/kernel.js` `lib/routes/skins.js` `src/panel-tabs-skins.js` `src/quick-panel.js` |  |
 | `verify-panel-interactions.mjs` | `src/panel-tabs-boot.js` `src/panel-tabs-pets.js` |  |
-| `verify-pet-chat.mjs` | `lib/pet-chat-edge-tts.js` `lib/pet-chat-memory.js` `lib/pet-chat-proactive.js` `lib/routes/pet-chat.js` `lib/settings-schema.js` `src/pet-chat-tts.js` `src/pet-chat.js` |  |
+| `verify-pet-chat.mjs` | `lib/pet-chat-edge-tts.js` `lib/pet-chat-memory.js` `lib/routes/pet-chat.js` `lib/settings-schema.js` `src/pet-chat-tts.js` `src/pet-chat.js` |  |
 | `verify-pet-hotplug-client.mjs` | `lib/components/pet-link/src/official-pet.js` `lib/components/pet-link/src/pet-link.js` |  |
 | `verify-pet-hotplug-host.mjs` | `lib/components/pet-link/src/official-pet.js` `lib/subpackage-boot.js` |  |
 | `verify-pet-hotplug-integration.mjs` | `lib/components/pet-link/lib/client.pet-link.js` `lib/subpackage-boot.js` |  |
@@ -243,7 +243,6 @@
 | `lib/occlusion/x11.js` | 1 | `verify-occlusion-hub` |
 | `lib/pet-chat-edge-tts.js` | 1 | `verify-pet-chat` |
 | `lib/pet-chat-memory.js` | 1 | `verify-pet-chat` |
-| `lib/pet-chat-proactive.js` | 1 | `verify-pet-chat` |
 | `lib/pkg-read.js` | 4 | `verify-package-files` `verify-package-publish` `verify-scene-probe` `verify-scene` |
 | `lib/route-registry.js` | 2 | `verify-cache-manager` `verify-route-registry` |
 | `lib/routes/boot.js` | 5 | `verify-download-first` `verify-downloads` `verify-features` `verify-hash-source` `verify-site-v1-sync` |

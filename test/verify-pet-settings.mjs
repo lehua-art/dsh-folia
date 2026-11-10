@@ -56,7 +56,7 @@ const settings = { petChat: { enabled: false } };
   const required = [
     '开启对话', '模型来源', 'OpenAI 兼容', '本机 Ollama', '接口地址', '模型名', 'API Key', '测试连接',
     '人设', '上下文轮数', '字数上限', '朗读回答', '音色', '语速', '音量', '试听', '朗读引擎',
-    '长期记忆', '查看记忆', '清空记忆', '主动闲聊', '语音输入（需先在 DSH 开启）', '保存',
+    '长期记忆', '查看记忆', '清空记忆', '语音输入（需先在 DSH 开启）', '保存',
   ];
   const missing = required.filter((label) => !source.includes(label));
   check('① 控件齐全（24 个标签）', missing.length === 0, missing.length ? `缺：${missing.join('、')}` : '全部存在');
@@ -69,7 +69,7 @@ const settings = { petChat: { enabled: false } };
     enabled: true, provider: 'openai', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', apiKey: 'sk-test-1234',
     persona: { name: '小鲸', traits: '元气', notes: '喜欢壁纸' }, maxTurns: 6, maxChars: 60,
     voiceOut: { enabled: true, rate: 1.2, volume: 0.8, voiceURI: '' }, voiceEngine: 'edge',
-    memoryEnabled: true, proactive: { enabled: true, dailyLimit: 5, minGapMin: 90, quietHours: '23:00-07:00' },
+    memoryEnabled: true,
   });
   const state = await getJson(`${host.base}/state`);
   const config = await getJson(`${host.base}/config`);
@@ -77,8 +77,7 @@ const settings = { petChat: { enabled: false } };
     saved.body.data.saved === true
       && state.body.enabled === true && state.body.provider === 'openai' && state.body.model === 'deepseek-chat'
       && config.body.data.persona.name === '小鲸' && config.body.data.maxTurns === 6
-      && config.body.data.voiceOut.rate === 1.2 && config.body.data.voiceEngine === 'edge'
-      && config.body.data.proactive.dailyLimit === 5,
+      && config.body.data.voiceOut.rate === 1.2 && config.body.data.voiceEngine === 'edge',
     `saved=${saved.body.data.saved} · state=${state.body.provider}/${state.body.model} · persona=${config.body.data.persona.name}`);
   await host.close();
 }

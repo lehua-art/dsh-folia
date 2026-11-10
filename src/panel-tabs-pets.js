@@ -431,7 +431,6 @@ const CHAT_DEFAULTS = {
   voiceOut: { enabled: true, rate: 1, pitch: 1, volume: 1, voiceURI: '' },
   voiceEngine: 'system',
   memoryEnabled: true,
-  proactive: { enabled: false, dailyLimit: 10, minGapMin: 120, quietHours: '22:00-08:00' },
   voiceEnabled: false,
 };
 
@@ -635,18 +634,6 @@ function PetChatSettings() {
     if (Array.isArray(memory.notes) && memory.notes.length) parts.push(weT('备注') + '：' + memory.notes.join('、'));
     child.push(React.createElement('div', { key: 'memoryView', className: 'we-picker__hint', style: { margin: '2px 0 6px' } }, parts.length ? parts.join('  ·  ') : weT('还没有记住任何偏好')));
   }
-
-  child.push(React.createElement('div', { key: 'proactive', style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', margin: '4px 0', flexWrap: 'wrap' } },
-    React.createElement('label', { style: { display: 'flex', gap: '4px', alignItems: 'center' } },
-      React.createElement('input', { type: 'checkbox', checked: Boolean(draft.proactive && draft.proactive.enabled), disabled: busy, onChange: (e) => update({ proactive: { ...draft.proactive, enabled: e.target.checked } }) }),
-      weT('主动闲聊')),
-    weT('每日'),
-    React.createElement('input', { type: 'number', min: 1, max: 20, value: (draft.proactive && draft.proactive.dailyLimit) || 10, style: { width: '56px' }, disabled: busy, onChange: (e) => update({ proactive: { ...draft.proactive, dailyLimit: Number(e.target.value) } }) }),
-    weT('间隔(分)'),
-    React.createElement('input', { type: 'number', min: 30, max: 720, value: (draft.proactive && draft.proactive.minGapMin) || 120, style: { width: '64px' }, disabled: busy, onChange: (e) => update({ proactive: { ...draft.proactive, minGapMin: Number(e.target.value) } }) }),
-    weT('夜间静默'),
-    React.createElement('input', { type: 'text', value: (draft.proactive && draft.proactive.quietHours) || '22:00-08:00', style: { width: '110px' }, disabled: busy, onChange: (e) => update({ proactive: { ...draft.proactive, quietHours: e.target.value } }) }),
-  ));
 
   child.push(React.createElement('label', { key: 'asr', style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', margin: '4px 0 8px', opacity: 0.7 } },
     React.createElement('input', { type: 'checkbox', checked: Boolean(draft.voiceEnabled), disabled: true }),

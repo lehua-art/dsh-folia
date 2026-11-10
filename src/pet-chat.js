@@ -111,17 +111,6 @@ function petChatBuild() {
   const log = document.createElement('div');
   log.style.cssText = 'flex:1 1 auto;overflow:auto;display:flex;flex-direction:column;gap:6px;min-height:80px';
 
-  // C2：今日已说 N/10 + 「今天别说了」（只有开启主动闲聊时才显示整行）
-  const usage = document.createElement('div');
-  usage.style.cssText = 'display:none;align-items:center;justify-content:space-between;gap:6px;font-size:11px;color:#9a9aa5';
-  const usageText = document.createElement('span');
-  const skipBtn = document.createElement('button');
-  skipBtn.type = 'button';
-  skipBtn.textContent = weT('今天别说了');
-  skipBtn.style.cssText = 'background:none;border:1px solid rgba(255,255,255,.14);border-radius:7px;color:#c9c9d1;font-size:11px;padding:1px 6px;cursor:pointer';
-  petChatOn(skipBtn, 'click', () => petChatSkipToday());
-  petChatAppend(usage, usageText, skipBtn);
-
   const status = document.createElement('div');
   status.style.cssText = 'font-size:11px;color:#9a9aa5;min-height:14px';
 
@@ -141,9 +130,9 @@ function petChatBuild() {
   });
   petChatAppend(row, input, send);
 
-  petChatAppend(root, head, usage, log, status, row);
+  petChatAppend(root, head, log, status, row);
   petChatAppend(document.body, root);
-  petChatEls = { root, log, status, input, send, usage, usageText };
+  petChatEls = { root, log, status, input, send };
   return petChatEls;
   } catch {
     // 替身 DOM 撑不起这套结构：当成"没有气泡"，不影响其它功能
@@ -189,7 +178,6 @@ function petChatShow() {
   els.root.style.display = 'flex';
   if (typeof els.input.focus === 'function') els.input.focus();
   petChatSyncState();
-  petChatRefreshUsage();
 }
 
 function petChatHide() {
@@ -349,33 +337,6 @@ async function petChatSend() {
  * 常驻挂载（`WE_FEATURE_MOUNTS` 的一项）：绑定点宠物 / 快捷键。
  * 返回 cleanup —— 卸载时要摘掉监听、删掉 DOM。
  */
-/** C2「今天别说了」：当天不再主动。 */
-async function petChatSkipToday() {
-  try {
-    const res = await apiPostJson('/pet-chat/skip', {}, { parse: 'always' });
-    petChatStatus(res && res.ok ? weT('今天不主动打扰了') : weT('操作失败'));
-    await petChatRefreshUsage();
-  } catch {
-    petChatStatus(weT('操作失败'));
-  }
-}
-
-/** 刷新「今日已说 N/10」（开启主动闲聊时显示）。 */
-async function petChatRefreshUsage() {
-  const els = petChatEls || petChatBuild();
-  if (!els || !els.usage) return;
-  try {
-    const res = await apiJson('/pet-chat/proactive', { parse: 'always' });
-    const doc = (res && res.data) || {};
-    if (!doc.enabled) { els.usage.style.display = 'none'; return; }
-    const usage = doc.usage || {};
-    els.usageText.textContent = `今日已说 ${Number(usage.said) || 0}/${Number(usage.limit) || 0}`;
-    els.usage.style.display = 'flex';
-  } catch {
-    els.usage.style.display = 'none';
-  }
-}
-
 /* ── 语音输入（按住说话）──────────────────────────────────────────────────────
  * 三层分工：
  *   ① 录音（这里）：getUserMedia + AudioWorklet 采 PCM → 16kHz 单声道 PCM16 WAV；
@@ -528,36 +489,6 @@ async function petChatVoiceStop() {
   }
 }
 
-/**
- * C1：每 5 分钟问一次"现在能主动说话吗"。
- *
- * 五条件里渲染进程能拿到的事实：开关/计数/间隔/静默时段由宿主判，
- * 客户端只提供 `fullscreen`（document.fullscreenElement）、`focused`（document.hasFocus()）
- * 和 `idleMinutes`（**窗口内**最近一次键鼠事件距现在多久）。
- * ⚠️ 这不是系统全局空闲（Electron 的 powerMonitor.getSystemIdleTime 在渲染进程拿不到），
- * 只是"这个窗口最近有没有人动"的近似 —— 已在 docs/PET-CHAT-DONE.md 写明。
- */
-async function petChatProactiveCheck() {
-  if (petChatBusy) return;
-  const idleMinutes = (Date.now() - petChatLastActivityAt) / 60000;
-  const fullscreen = typeof document !== 'undefined' && Boolean(document.fullscreenElement);
-  const focused = typeof document !== 'undefined' && typeof document.hasFocus === 'function' ? document.hasFocus() : true;
-  try {
-    const res = await apiPostJson('/pet-chat/proactive/tick', { idleMinutes, fullscreen, focused, randomHit: Math.random() < 0.25 }, { parse: 'always' });
-    const doc = (res && res.data) || {};
-    if (doc.line) {
-      petChatShow();
-      petChatPush('assistant', doc.line);
-    }
-    await petChatRefreshUsage();
-  } catch { /* 主动闲聊失败不打扰用户 */ }
-}
-
-/** 最近一次窗口内活动的时间（C1 的 idleMinutes 来自它）。 */
-let petChatLastActivityAt = Date.now();
-/** 5 分钟检查定时器（渲染进程能拿到的事实，仅窗口内）。 */
-const PET_CHAT_CHECK_INTERVAL_MS = 5 * 60 * 1000;
-
 function mountPetChat() {
   // 宿主 / 测试替身里可能没有 DOM 能力：没有就安静地不挂，而不是让装配层炸掉
   if (typeof document === 'undefined' || typeof document.addEventListener !== 'function'
@@ -577,23 +508,11 @@ function mountPetChat() {
     }
     if (event.key === 'Escape' && petChatEls && petChatEls.root.style.display === 'flex') petChatHide();
   };
-  // C1 的"窗口内活动"：键鼠/滚轮/触摸都算（passive，不拦截任何默认行为）
-  const markActivity = () => { petChatLastActivityAt = Date.now(); };
-  const activityEvents = ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'];
   document.addEventListener('click', onDocumentClick, true);
   document.addEventListener('keydown', onKeyDown, true);
-  for (const name of activityEvents) window.addEventListener(name, markActivity, { passive: true });
-  // 每 5 分钟问一次（不是每秒）：拿不到系统级空闲，用窗口内活动近似。
-  // 替身环境里没有 setInterval ⇒ 跳过（只影响主动闲聊，不影响聊天本身）
-  const timer = typeof setInterval === 'function'
-    ? setInterval(() => { void petChatProactiveCheck(); }, PET_CHAT_CHECK_INTERVAL_MS)
-    : null;
-  if (timer && typeof timer.unref === 'function') timer.unref();
   return () => {
-    if (timer && typeof clearInterval === 'function') clearInterval(timer);
     document.removeEventListener('click', onDocumentClick, true);
     document.removeEventListener('keydown', onKeyDown, true);
-    for (const name of activityEvents) window.removeEventListener(name, markActivity);
     if (petChatEls && petChatEls.root.parentNode) petChatEls.root.parentNode.removeChild(petChatEls.root);
     petChatEls = null;
     petChatLines = [];
