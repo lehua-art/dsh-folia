@@ -418,7 +418,6 @@ function PetsTabPanel() {
 /* ── 桌宠对话设置区 ─────────────────────────────────────────────────────── */
 
 const CHAT_DEFAULTS = {
-  enabled: false,
   provider: 'openai',
   baseUrl: 'https://api.deepseek.com',
   model: 'deepseek-chat',
@@ -429,24 +428,17 @@ const CHAT_DEFAULTS = {
   ownerName: '',
 };
 
-const PROVIDER_PRESETS = {
-  openai: { baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' },
-  ollama: { baseUrl: 'http://127.0.0.1:11434/v1', model: 'qwen2.5:7b' },
-};
-
 /**
- * 设置页（v0.1 追加剧正）：**只有模型 Key / 名字**；朗读相关的旋钮归 v0.2。
+ * 设置页（v0.1 验收口径）：**三项，无开关**。
+ *   1) 模型 Key   2) 名字（桌宠名 = 唤醒词 + 你的称呼）   3) 音色（v0.2 占位，灰色只读）
  *
- * 为什么这么短：工单「追加决定 1」明确"用户不需要做任何选择/开关"。
- * 主动搭话是固定策略（40–90 分钟、夜间静默、空闲才说），记忆常开，
- * 朗读相关的旋钮按工单归到 v0.2；这里每多一个旋钮，用户就多一次要做决定的机会。
- * 停止/恢复主动搭话**只靠语音指令**或次日 0 点自动 —— 设置里不放任何开关。
+ * 为什么连"开启对话"都没有：工单要求用户不做选择 —— 填了 Key 就等于启用，
+ * 主动搭话/记忆都是固定策略。删除任何开关，就少一次"用户要不要打开"的决策。
  */
 function PetChatSettings() {
   const [draft, setDraft] = React.useState(CHAT_DEFAULTS);
   const [status, setStatus] = React.useState({ ok: null, text: '' });
   const [note, setNote] = React.useState(null);
-  const [showKey, setShowKey] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const update = React.useCallback((patch) => setDraft((prev) => ({ ...prev, ...patch })), []);
 
@@ -467,7 +459,9 @@ function PetChatSettings() {
   const save = async () => {
     setBusy(true);
     try {
-      const resp = await apiJson('/pet-chat/config', { method: 'POST', body: { ...draft, apiKey: draft.apiKey || '' }, parse: 'always' });
+      // 填了 Key 就启用：面板不放任何开关，语义由 Key 的有无决定
+      const body = { ...draft, apiKey: draft.apiKey || '', enabled: Boolean(draft.apiKey) || Boolean(draft.hasApiKey) };
+      const resp = await apiJson('/pet-chat/config', { method: 'POST', body, parse: 'always' });
       const doc = (resp && resp.data) || {};
       if (doc.saved) {
         setNote({ ok: true, text: weT('已保存') });
@@ -483,21 +477,6 @@ function PetChatSettings() {
     } finally { setBusy(false); }
   };
 
-  const testConnection = async () => {
-    setBusy(true);
-    try {
-      const resp = await apiJson('/pet-chat/test', {
-        method: 'POST', body: { provider: draft.provider, baseUrl: draft.baseUrl, apiKey: draft.apiKey || '' }, parse: 'always',
-      });
-      const doc = (resp && resp.data) || {};
-      setStatus(doc.ok ? { ok: true, text: weT('已连接') } : { ok: false, text: doc.message || weT('连接失败') });
-    } catch (e) {
-      setStatus({ ok: false, text: weT('连接失败：{msg}', { msg: (e && e.message) || '' }) });
-    } finally { setBusy(false); }
-  };
-
-
-
   const row = (key, label, node) => React.createElement('label', {
     key, style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', margin: '4px 0' },
   }, weT(label), node);
@@ -505,27 +484,20 @@ function PetChatSettings() {
   const child = [];
   child.push(React.createElement('div', { key: 'title', style: { fontWeight: 600, margin: '14px 0 4px', fontSize: '13px' } }, weT('桌宠语音助手')));
   child.push(React.createElement('div', { key: 'hint', className: 'we-picker__hint', style: { margin: '0 0 6px' } },
-    weT('只有三项要配。主动搭话与记忆都是固定策略，不需要设置；更多操作见桌宠右键菜单。')));
+    weT('三项就够：填 Key、起名字、选音色。主动搭话与记忆是固定策略；停止/恢复对它说一声就行。')));
 
-  child.push(row('on', '开启对话', React.createElement('input', {
-    type: 'checkbox', checked: Boolean(draft.enabled), disabled: busy,
-    onChange: (e) => update({ enabled: e.target.checked }),
-  })));
   child.push(React.createElement('div', { key: 'key', style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', margin: '4px 0' } },
-    weT('API Key'),
+    weT('模型 Key'),
     React.createElement('input', {
-      type: showKey ? 'text' : 'password', value: draft.apiKey || '',
-      placeholder: draft.hasApiKey ? (draft.apiKeyMasked || '••••••••') : '',
+      type: 'password', value: draft.apiKey || '',
+      placeholder: draft.hasApiKey ? (draft.apiKeyMasked || '••••••••') : weT('填 DeepSeek API Key'),
       disabled: busy, style: { flex: 1, minWidth: 0 },
       onChange: (e) => update({ apiKey: e.target.value }),
     }),
-    React.createElement('button', { type: 'button', className: 'we-picker__btn', disabled: busy, onClick: () => setShowKey((v) => !v) },
-      showKey ? weT('隐藏') : weT('显示')),
-    React.createElement('button', { type: 'button', className: 'we-picker__btn', disabled: busy, onClick: testConnection }, weT('测试连接')),
   ));
 
   child.push(row('name', '名字', React.createElement('input', {
-    type: 'text', value: draft.petName || '', placeholder: weT('桌宠叫什么（也叫它的唤醒词）'), disabled: busy,
+    type: 'text', value: draft.petName || '', placeholder: weT('桌宠叫什么（也是唤醒词）'), disabled: busy,
     style: { flex: 1, minWidth: 0 }, onChange: (e) => update({ petName: e.target.value }),
   })));
   child.push(row('owner', '称呼', React.createElement('input', {
@@ -533,9 +505,14 @@ function PetChatSettings() {
     style: { flex: 1, minWidth: 0 }, onChange: (e) => update({ ownerName: e.target.value }),
   })));
 
+  // 音色：v0.2 占位（灰色、不可改），避免用户以为现在能选
+  child.push(row('voice', '音色', React.createElement('select', {
+    className: 'we-picker__playlist-select', disabled: true, value: 'zh-CN-XiaoxiaoNeural',
+  },
+  React.createElement('option', { value: 'zh-CN-XiaoxiaoNeural' }, weT('晓晓（v0.2 可选）')),
+  )));
 
-
-  child.push(React.createElement('div', { key: 'status', className: 'we-picker__hint', style: { margin: '2px 0 6px', color: status.ok === false ? '#f87171' : undefined } },
+  child.push(React.createElement('div', { key: 'status', className: 'we-picker__hint', style: { margin: '6px 0', color: status.ok === false ? '#f87171' : undefined } },
     status.text || weT('未连接')));
   if (note && note.text) {
     child.push(React.createElement('div', { key: 'note', className: 'we-picker__hint', style: { color: note.ok ? undefined : '#f87171' } }, note.text));

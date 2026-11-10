@@ -424,8 +424,8 @@ const INLINE_MODULES = [
   },
   {
     file: 'src/pet-chat.js',
-    why: '桌宠对话气泡：点宠物出输入框，走宿主 /folia/pet-chat/* 的 SSE；没配模型时给预设台词',
-    markers: ['function mountPetChat()', 'const PET_CHAT_PRESET_LINES = ', 'function petChatParseFrame('],
+    why: '桌宠语音助手客户端：点桌宠唤醒 → 气泡显示 + edge 朗读（失败回落系统音色），无面板无输入框',
+    markers: ['function mountPetChat()', 'const PET_CHAT_PRESET_LINES = ', 'function petChatWake()'],
   },
   {
     file: 'src/features.js',

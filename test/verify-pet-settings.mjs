@@ -46,15 +46,21 @@ const getJson = async (url, init) => {
 const postJson = (url, body) => getJson(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) });
 const settings = { petChat: { enabled: false } };
 
-/* ① 控件齐全（源码级：面板只有 Key / 名字，没有任何静默开关） */
+/* ① 控件齐全（源码级：面板三项 —— Key / 名字 / 音色占位，无开关） */
 {
-  const source = readFileSync(join(ROOT, 'src', 'panel-tabs-pets.js'), 'utf8');
-  // 追加剧正：设置页 = 模型 Key / 名字（音色归 v0.2）；停止靠语音指令，不放开关
-  const required = ['API Key', '测试连接', '名字', '称呼', '保存', '右键'];
+  const full = readFileSync(join(ROOT, 'src', 'panel-tabs-pets.js'), 'utf8');
+  // 只看桌宠语音助手那一块：桌宠自身还有「显示桌宠/声音/音量」开关，不属于本页签的对话设置
+  const at = full.indexOf('function PetChatSettings');
+  const source = at >= 0 ? full.slice(at) : full;
+  // 验收口径：模型 Key / 名字（含称呼）/ 音色占位；只有保存按钮
+  const required = ['模型 Key', '名字', '称呼', '音色', '保存'];
   const missing = required.filter((label) => !source.includes(label));
-  // 旧的长设置区 + v0.2 控件 + 「暂时不说话」都必须不在
-  const legacy = ['上下文轮数', '字数上限', '朗读引擎', '主动闲聊', '人设', '音色', '试听', '暂时不说话'].filter((label) => source.includes(label));
-  check('① 面板只有 Key / 名字（无任何静默开关）+ 右键说明',
+  // 旧长设置区、静默开关、多余按钮都必须不在
+  const legacy = [
+    '上下文轮数', '字数上限', '朗读引擎', '主动闲聊', '人设', '试听', '暂时不说话',
+    '开启对话', '测试连接', '显示', '隐藏', '静音',
+  ].filter((label) => source.includes(label));
+  check('① 面板三项（Key / 名字 / 音色占位）+ 无开关无多余按钮',
     missing.length === 0 && legacy.length === 0,
     `缺=${missing.join('、') || '无'} · 残留=${legacy.join('、') || '无'}`);
 }
@@ -124,11 +130,17 @@ const settings = { petChat: { enabled: false } };
   await host.close();
 }
 
-/* ⑥ 关闭对话后点宠物不弹气泡（源码级） */
+/* ⑥ 旧聊天面板已删除：没有历史列表 / 输入框 / 发送按钮，点桌宠只唤醒气泡（源码级） */
 {
   const source = readFileSync(join(ROOT, 'src', 'pet-chat.js'), 'utf8');
-  const guarded = /function petChatShow\(\)[\s\S]{0,220}petChatChatEnabled === false\) return;/.test(source);
-  check('⑥ 关闭对话 ⇒ petChatShow 直接返回（不弹气泡）', guarded, `守卫存在=${guarded}`);
+  const markers = [];
+  if (source.includes('els.log')) markers.push('历史列表');
+  if (source.includes("createElement('input')")) markers.push('输入框');
+  if (source.includes('petChatSend')) markers.push('发送按钮');
+  const wakes = /function petChatWake\(\)/.test(source) && /petBubble\.show\(/.test(source);
+  check('⑥ 旧面板已删（无历史列表/输入框/发送按钮），点桌宠只唤醒气泡',
+    markers.length === 0 && wakes,
+    `残留=${markers.join('、') || '无'} · 唤醒=${wakes}`);
 }
 
 /* ⑦ S1 迁移：旧档升级后不丢 key、不丢名字、不丢音色 */

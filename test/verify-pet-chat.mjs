@@ -607,31 +607,8 @@ const toBase64 = (bytes) => Buffer.from(bytes).toString('base64');
   await host.close();
 }
 
-/* D⑤ 录音失败（无麦克风权限）⇒ 前端提示且不崩（源码级判据：try/catch + 状态提示） */
-{
-  const source = readFileSync(join(ROOT, 'src', 'pet-chat.js'), 'utf8');
-  // 判据：录音函数在 try 里申请麦克风，catch 里只写状态行（不抛、不弹框）
-  const fnAt = source.indexOf('async function petChatVoiceStart');
-  const fnBody = fnAt >= 0 ? source.slice(fnAt, fnAt + 1800) : '';
-  const guarded = /try\s*\{[\s\S]{0,900}?getUserMedia/.test(fnBody) && /catch[\s\S]{0,300}?petChatStatus/.test(fnBody);
-  const noThrowOnDenied = /未授权|没有麦克风|打不开麦克风/.test(fnBody);
-  check('D⑤ 录音失败 ⇒ 只给一行提示，不崩（getUserMedia 在 try/catch 里）',
-    fnAt >= 0 && guarded && noThrowOnDenied,
-    `有录音函数=${fnAt >= 0} · try/catch 包裹=${guarded} · 有权限失败文案=${noThrowOnDenied}`);
-}
-
-/* D⑥ 识别结果只填输入框，不自动发送 */
-{
-  const source = readFileSync(join(ROOT, 'src', 'pet-chat.js'), 'utf8');
-  // 从**调用点**往后扫（文档注释里也出现过这个路径，不能用 indexOf 的第一次命中）
-  const at = source.indexOf("apiPostJson('/pet-chat/transcribe'");
-  const body = at >= 0 ? source.slice(at, at + 900) : '';
-  const fillsInput = /els\.input\.value\s*=\s*doc\.text/.test(body);
-  const sends = /petChatSend\s*\(/.test(body);
-  check('D⑥ 识别结果只填输入框，不自动发送',
-    at >= 0 && fillsInput && !sends,
-    `填 input=${fillsInput} · 同一段里调用 send=${sends}`);
-}
+/* D⑤/D⑥ 已随旧面板一起删除：v0.1 没有输入框，语音输入链路（唤醒→录音→转录→回填）
+   会在 S3 重建，届时判据一并重写。删掉而不是 skip，避免"看起来还测着"的假覆盖。 */
 
 /* ── E 块：朗读回答（6 条判据，mock speechSynthesis）────────────────────── */
 {
