@@ -380,12 +380,15 @@ async function petChatSpeak(text, emotion) {
     if (doc.ok && doc.engine === 'edge' && doc.audio) {
       const player = new Audio('data:' + (doc.mime || 'audio/mpeg') + ';base64,' + doc.audio);
       petChatAudioPlayer = player;
+      // S2：朗读结束 +3s 再淡出（提前淡出会看不到结论）
+      player.onended = () => petBubble.hide(3000);
       void player.play();
       return;
     }
     // 宿主回落 system / 静音 ⇒ 往下走系统音色
   } catch { /* 网络问题一律回落系统音色 */ }
   petChatTts.finish(text);
+  petBubble.hide(3000);
 }
 let petChatAudioPlayer = null;
 /** 朗读配置（/state 带回）：{ name, muted }。 */
@@ -518,7 +521,11 @@ function mountPetChat() {
   const onDocumentClick = (event) => {
     const target = event.target;
     if (!target || typeof target.closest !== 'function') return;
-    if (target.closest('#we-pet-layer')) petChatShow();
+    if (target.closest('#we-pet-layer')) {
+    // S2：点桌宠先让气泡立刻消失；再点一次才开面板（"点一下立刻消失" + "隐藏后必能重开"）
+    if (petBubble.isVisible()) { petBubble.hide(0); return; }
+    petChatShow();
+  }
   };
   const onKeyDown = (event) => {
     if (event.altKey && event.ctrlKey && String(event.key).toLowerCase() === 'p') {
