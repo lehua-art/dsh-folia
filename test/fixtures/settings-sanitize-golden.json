@@ -528,8 +528,7 @@
             "click": true,
             "name": false,
             "keyword": ""
-          },
-          "memoryEnabled": true
+          }
         }
       },
       "host": "__null__"
@@ -715,8 +714,7 @@
             "click": true,
             "name": false,
             "keyword": ""
-          },
-          "memoryEnabled": true
+          }
         }
       },
       "host": "__null__"
@@ -902,8 +900,7 @@
             "click": true,
             "name": false,
             "keyword": ""
-          },
-          "memoryEnabled": true
+          }
         }
       },
       "host": "__null__"

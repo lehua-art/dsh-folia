@@ -466,7 +466,7 @@ const resetMem = () => { try { rmSync(MEMORY_FILE, { force: true }); } catch { /
   await model.close();
 }
 
-/* B④ 关闭记忆 ⇒ 不写、不注入 */
+/* B④ v0.1 零配置：记忆常开 —— 旧档写 memoryEnabled=false 也照常记、照常注入 */
 {
   resetMem();
   const model = await startModel(() => ({ lines: ollamaLines('好') }));
@@ -476,9 +476,10 @@ const resetMem = () => { try { rmSync(MEMORY_FILE, { force: true }); } catch { /
   });
   await readSse(response);
   const lastSystem = String((model.seen[model.seen.length - 1].body.messages || [])[0].content || '');
-  check('B④ 关闭记忆 ⇒ 不写盘、不注入',
-    readMem() === null && !lastSystem.includes('关于主人'),
-    `文件=${readMem() === null ? '不存在' : '被写了'} · prompt 含记忆=${lastSystem.includes('关于主人')}`);
+  // 注意：记忆是**这一轮**从用户话里提取的，注入要到下一轮才看得到 —— 这里只断言"照常记"
+  check('B④ 记忆常开：旧档写 memoryEnabled=false 也照常记',
+    readMem() !== null,
+    `文件=${readMem() === null ? '不存在' : '有'} · 本轮 prompt 含记忆=${lastSystem.includes('关于主人')}`);
   await host.close();
   await model.close();
 }
@@ -830,6 +831,72 @@ const toBase64 = (bytes) => Buffer.from(bytes).toString('base64');
       && /style="angry"/.test(ssml('angry')) && /style="narration"/.test(ssml('calm'));
     check('F④ 风格随 emotion 变化（cheerful/gentle/angry/narration）', okMap && okSsml,
       `映射=${okMap} · SSML=${okSsml}`);
+  }
+}
+
+/* ── H 块：零配置主动搭话（固定策略 + 语音指令）────────────────────────── */
+{
+  const { canSpeak, buildProactiveLine, enterSilence, clearSilence, clearProactiveState, markSaid, PROACTIVE_RULES } = await import('../lib/pet-chat-proactive.js');
+  const noon = new Date(2026, 10, 10, 14, 0).getTime();
+  const night = new Date(2026, 10, 10, 23, 30).getTime();
+
+  /* H① 固定策略：夜间 / 非空闲 / 全屏 / 刚说完 ⇒ 都不说 */
+  {
+    clearProactiveState();
+    const base = { idleMinutes: 30, fullscreen: false, randomHit: true };
+    const nightHit = canSpeak({ ...base, now: night });
+    const idleMiss = canSpeak({ ...base, now: noon, idleMinutes: 0 });
+    const fullscreenHit = canSpeak({ ...base, now: noon, fullscreen: true });
+    markSaid(noon, 'x');
+    const soon = canSpeak({ ...base, now: noon + 10 * 60000 });
+    check('H① 固定策略：夜间/非空闲/全屏/刚说完 都不说',
+      nightHit.reason === 'quiet-hours' && idleMiss.reason === 'not-idle'
+        && fullscreenHit.reason === 'fullscreen' && soon.reason === 'too-soon',
+      `夜间=${nightHit.reason} · 空闲=${idleMiss.reason} · 全屏=${fullscreenHit.reason} · 刚说完=${soon.reason}`);
+    clearProactiveState();
+  }
+
+  /* H② 语音指令：说"别说了"⇒ 静默；说"可以说话了"⇒ 恢复 */
+  {
+    clearProactiveState();
+    const host = await startHost({ petChat: { enabled: true, provider: 'ollama', baseUrl: 'http://127.0.0.1:9', model: 'x' } });
+    const say = (text) => new Promise((resolve) => {
+      const chunks = [];
+      fetch(`${host.base}/chat`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }),
+      }).then(async (response) => {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        for (;;) {
+          const { value, done } = await reader.read(); // eslint-disable-line no-await-in-loop
+          if (done) break;
+          chunks.push(decoder.decode(value));
+        }
+        resolve(chunks.join(''));
+      }).catch(() => resolve(''));
+    });
+    const silenceStream = await say('别说了');
+    const silentState = canSpeak({ now: noon, idleMinutes: 30, fullscreen: false, randomHit: true });
+    // 路由有 1 次/秒限频：指令两条要隔开，否则第二条会吃 rate-limited
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const resumeStream = await say('可以说话了');
+    const resumed = canSpeak({ now: noon, idleMinutes: 30, fullscreen: false, randomHit: true });
+    await host.close();
+    check('H② 语音指令：别说了 ⇒ 静默；可以说话了 ⇒ 恢复',
+      /安静/.test(silenceStream) && silentState.reason === 'silent'
+        && /回来/.test(resumeStream) && resumed.ok === true,
+      `静默后=${silentState.reason} · 恢复后=${resumed.reason}`);
+    clearProactiveState();
+  }
+
+  /* H③ 内容 ≤30 字，且带上下文要素 */
+  {
+    const built = buildProactiveLine({ now: noon, wallpaperTitle: '星空', memory: { likes: ['原神'] }, usedLines: [] });
+    const built2 = buildProactiveLine({ now: noon, wallpaperTitle: '星空', memory: { likes: ['原神'] }, usedLines: [built.line] });
+    check('H③ 内容 ≤30 字且不重复',
+      built.line.length <= PROACTIVE_RULES.maxChars && built.line !== built2.line
+        && (built.line.includes('星空') || built.source !== 'time'),
+      `${built.line}（${built.line.length} 字）· 第二条=${built2.line}`);
   }
 }
 
