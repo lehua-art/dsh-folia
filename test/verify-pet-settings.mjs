@@ -46,14 +46,15 @@ const getJson = async (url, init) => {
 const postJson = (url, body) => getJson(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) });
 const settings = { petChat: { enabled: false } };
 
-/* ① 控件齐全（源码级：面板只剩四项 + 右键说明） */
+/* ① 控件齐全（源码级：面板只剩三项 + 右键说明） */
 {
   const source = readFileSync(join(ROOT, 'src', 'panel-tabs-pets.js'), 'utf8');
-  const required = ['API Key', '测试连接', '音色', '静音', '名字', '称呼', '保存', '右键'];
+  // v0.1 定稿：模型 Key / 名字 / 暂时不说话（音色归 v0.2）
+  const required = ['API Key', '测试连接', '名字', '称呼', '暂时不说话', '保存', '右键'];
   const missing = required.filter((label) => !source.includes(label));
-  // 旧的长设置区必须真的没了
-  const legacy = ['上下文轮数', '字数上限', '朗读引擎', '主动闲聊', '人设'].filter((label) => source.includes(label));
-  check('① 面板只剩四项 + 右键说明（长设置区已删）',
+  // 旧的长设置区 + v0.2 的音色控件都必须不在
+  const legacy = ['上下文轮数', '字数上限', '朗读引擎', '主动闲聊', '人设', '音色', '试听'].filter((label) => source.includes(label));
+  check('① 面板只剩三项（Key / 名字 / 暂时不说话）+ 右键说明',
     missing.length === 0 && legacy.length === 0,
     `缺=${missing.join('、') || '无'} · 残留=${legacy.join('、') || '无'}`);
 }

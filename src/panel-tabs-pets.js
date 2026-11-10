@@ -427,9 +427,6 @@ const CHAT_DEFAULTS = {
   hasApiKey: false,
   petName: '',
   ownerName: '',
-  voice: { name: 'zh-CN-XiaoxiaoNeural', muted: false },
-  wake: { click: true, name: false, keyword: '' },
-  memoryEnabled: true,
 };
 
 const PROVIDER_PRESETS = {
@@ -437,20 +434,13 @@ const PROVIDER_PRESETS = {
   ollama: { baseUrl: 'http://127.0.0.1:11434/v1', model: 'qwen2.5:7b' },
 };
 
-/** 四个中文音色（S4 的列表收敛到这几个；试听念固定样例）。 */
-const VOICE_CHOICES = [
-  ['zh-CN-XiaoxiaoNeural', '晓晓（默认）'],
-  ['zh-CN-XiaoyiNeural', '晓伊'],
-  ['zh-CN-YunxiNeural', '云希'],
-  ['zh-CN-YunjianNeural', '云健'],
-];
-
 /**
- * 桌宠语音助手 v0.1 设置区：**只有四项**（key / 音色 / 名字 / 静音）。
+ * 设置页（v0.1 定稿）：**只有三项** —— 模型 Key / 名字 / 暂时不说话。
  *
- * 为什么这么短：工单 §1 把旧的一长串设置判为"能跑但不是产品形态"，并规定所有设置
- * 只走一个入口（右键 → 设置）；面板只做首次配置的三步（下载桌宠 → 填 key + 选音色 → 起名字）。
- * 其余（provider/model/baseUrl/唤醒词细节）由默认值与右键菜单承担。
+ * 为什么这么短：工单「追加决定 1」明确"用户不需要做任何选择/开关"。
+ * 主动搭话是固定策略（40–90 分钟、夜间静默、空闲才说），记忆常开，
+ * 朗读相关的旋钮按工单归到 v0.2；这里每多一个旋钮，用户就多一次要做决定的机会。
+ * 「暂时不说话」是唯一的临时开关（等价于说"别说了"，次日 0 点自动恢复）。
  */
 function PetChatSettings() {
   const [draft, setDraft] = React.useState(CHAT_DEFAULTS);
@@ -458,6 +448,7 @@ function PetChatSettings() {
   const [note, setNote] = React.useState(null);
   const [showKey, setShowKey] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
+  const [silent, setSilent] = React.useState(false);
   const update = React.useCallback((patch) => setDraft((prev) => ({ ...prev, ...patch })), []);
 
   const load = React.useCallback(async () => {
@@ -470,6 +461,9 @@ function PetChatSettings() {
           ? { ok: true, text: weT('已保存的 Key：{mask}', { mask: doc.apiKeyMasked || '••••' }) }
           : { ok: null, text: weT('还没有填 API Key') });
       }
+      const usage = await apiJson('/pet-chat/proactive', { parse: 'always' });
+      const udoc = (usage && usage.data) || {};
+      if (udoc.silent === true) setSilent(true);
     } catch { /* 首次加载失败不打扰 */ }
   }, []);
   React.useEffect(() => { void load(); }, [load]);
@@ -506,14 +500,16 @@ function PetChatSettings() {
     } finally { setBusy(false); }
   };
 
-  const preview = () => {
+  const toggleSilence = async () => {
+    setBusy(true);
     try {
-      const synth = window.speechSynthesis;
-      if (!synth) { setNote({ ok: false, text: weT('这台机器没有系统语音') }); return; }
-      synth.cancel();
-      const utter = new window.SpeechSynthesisUtterance(weT('你好，我是你的桌宠。'));
-      synth.speak(utter);
-    } catch { setNote({ ok: false, text: weT('试听失败') }); }
+      const next = !silent;
+      await apiJson('/pet-chat/silence', { method: 'POST', body: { silent: next }, parse: 'always' });
+      setSilent(next);
+      setNote({ ok: true, text: next ? weT('好，那我安静一会儿（明天 0 点自动恢复）') : weT('好，我回来了') });
+    } catch {
+      setNote({ ok: false, text: weT('操作失败') });
+    } finally { setBusy(false); }
   };
 
   const row = (key, label, node) => React.createElement('label', {
@@ -523,9 +519,8 @@ function PetChatSettings() {
   const child = [];
   child.push(React.createElement('div', { key: 'title', style: { fontWeight: 600, margin: '14px 0 4px', fontSize: '13px' } }, weT('桌宠语音助手')));
   child.push(React.createElement('div', { key: 'hint', className: 'we-picker__hint', style: { margin: '0 0 6px' } },
-    weT('只有四项要配；其余（接口地址、模型、唤醒词）走默认值。更多设置见桌宠右键菜单。')));
+    weT('只有三项要配。主动搭话与记忆都是固定策略，不需要设置；更多操作见桌宠右键菜单。')));
 
-  // 四项：开启对话 / API Key / 音色 / 名字 / 静音（"开启"是总开关，不算配置项）
   child.push(row('on', '开启对话', React.createElement('input', {
     type: 'checkbox', checked: Boolean(draft.enabled), disabled: busy,
     onChange: (e) => update({ enabled: e.target.checked }),
@@ -544,7 +539,7 @@ function PetChatSettings() {
   ));
 
   child.push(row('name', '名字', React.createElement('input', {
-    type: 'text', value: draft.petName || '', placeholder: weT('桌宠叫什么'), disabled: busy,
+    type: 'text', value: draft.petName || '', placeholder: weT('桌宠叫什么（也叫它的唤醒词）'), disabled: busy,
     style: { flex: 1, minWidth: 0 }, onChange: (e) => update({ petName: e.target.value }),
   })));
   child.push(row('owner', '称呼', React.createElement('input', {
@@ -552,19 +547,12 @@ function PetChatSettings() {
     style: { flex: 1, minWidth: 0 }, onChange: (e) => update({ ownerName: e.target.value }),
   })));
 
-  child.push(React.createElement('div', { key: 'voice', style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', margin: '4px 0', flexWrap: 'wrap' } },
-    weT('音色'),
-    React.createElement('select', {
-      className: 'we-picker__playlist-select', value: (draft.voice && draft.voice.name) || VOICE_CHOICES[0][0], disabled: busy,
-      onChange: (e) => update({ voice: { ...draft.voice, name: e.target.value } }),
-    }, VOICE_CHOICES.map(([value, label]) => React.createElement('option', { key: value, value }, label))),
-    React.createElement('button', { type: 'button', className: 'we-picker__btn', disabled: busy, onClick: preview }, weT('试听')),
-    React.createElement('label', { style: { display: 'flex', gap: '4px', alignItems: 'center' } },
-      React.createElement('input', {
-        type: 'checkbox', checked: Boolean(draft.voice && draft.voice.muted), disabled: busy,
-        onChange: (e) => update({ voice: { ...draft.voice, muted: e.target.checked } }),
-      }),
-      weT('静音')),
+  child.push(React.createElement('div', { key: 'silence', style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', margin: '6px 0' } },
+    React.createElement('button', {
+      type: 'button', className: 'we-picker__btn', disabled: busy, onClick: toggleSilence,
+    }, silent ? weT('可以说话了') : weT('暂时不说话')),
+    React.createElement('span', { className: 'we-picker__hint' },
+      silent ? weT('静默中：明天 0 点自动恢复') : weT('它不会主动搭话（对话仍可用）')),
   ));
 
   child.push(React.createElement('div', { key: 'status', className: 'we-picker__hint', style: { margin: '2px 0 6px', color: status.ok === false ? '#f87171' : undefined } },
