@@ -454,6 +454,10 @@ const VERIFY_STEPS = [
   step('test/verify-pet-chat.mjs'),
   // 桌宠对话设置区（6 条）：控件齐全 / 保存生效 / 切 Ollama / 测试失败原因 / 记忆清空 / 关对话不弹气泡
   step('test/verify-pet-settings.mjs'),
+  // G1 入口加载冒烟：最小 fake ctx 真跑 apply（不抛错 / 基础路由在 / 语音未就绪不崩）
+  step('test/verify-entry-load.mjs'),
+  // G2 ctx 访问静态扫描：ctx.<服务> 必须先在 inject 里（负例自检保证"改回去会红"）
+  step('test/verify-ctx-access.mjs'),
 ];
 
 /** `npm run verify:docs` —— 软档（只出声）。全部经 warn-only 降级。 */
