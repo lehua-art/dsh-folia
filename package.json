@@ -45,7 +45,6 @@
     "lib/client.js",
     "lib/pet-chat-memory.js",
     "lib/pet-chat-proactive.js",
-    "lib/pet-chat-edge-tts.js",
     "lib/tts/tts-worker.cjs",
     "lib/routes/pet-chat.js",
     "lib/download-queue.js",

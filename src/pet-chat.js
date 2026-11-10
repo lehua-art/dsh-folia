@@ -74,8 +74,67 @@ const petBubble = petBubbleCreate({
   },
 });
 
-/**
- * 说一句：气泡显示 + 3 秒后淡出。
+/** 语音输入（v0.1 核心）：点桌宠即开始听，静音 1.2s 或满 15s 自动结束。 */
+const petVoiceIn = petVoiceInputCreate({
+  now: () => Date.now(),
+  getUserMedia: (constraints) => navigator.mediaDevices.getUserMedia(constraints),
+  createContext: (stream) => {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AudioCtx();
+    const source = ctx.createMediaStreamSource(stream);
+    // ScriptProcessor 是兜底路径（AudioWorklet 要额外加载模块文件，v0.1 先用它）
+    const node = ctx.createScriptProcessor(4096, 1, 1);
+    source.connect(node);
+    return { context: ctx, node, sampleRate: ctx.sampleRate };
+  },
+  postTranscribe: async (audio) => {
+    const res = await apiPostJson('/pet-chat/transcribe', { audio, language: 'zh' }, { parse: 'always' });
+    return (res && res.data) || {};
+  },
+  postChat: async (text, onState) => {
+    petBubble.setState('answer');
+    const res = await apiFetch('/pet-chat/chat', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }),
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read(); // eslint-disable-line no-await-in-loop
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      for (;;) {
+        const cut = buffer.indexOf('\n\n');
+        if (cut < 0) break;
+        const frame = buffer.slice(0, cut);
+        buffer = buffer.slice(cut + 2);
+        const line = frame.split('\n').find((item) => item.startsWith('data:'));
+        if (!line) continue;
+        let payload = null;
+        try { payload = JSON.parse(line.slice(5).trim()); } catch { payload = null; }
+        if (payload && typeof payload.t === 'string') petBubble.append(payload.t);
+      }
+    }
+    if (typeof onState === 'function') onState({ state: 'idle' });
+    petBubble.hide(3000);
+  },
+  onText: (text) => { petBubble.append(text); },
+  onError: (error) => {
+    // 失败一律回落打字：只给一行提示，不弹错误框（工单 S3）
+    const map = {
+      permission: '没拿到麦克风权限，先打字吧',
+      'no-mic': '打不开麦克风，先打字吧',
+      'asr-not-ready': '语音输入还没就绪：去 DSH 设置里开启（需下载模型）',
+      timeout: '这次没听清，再说一次或直接打字',
+      network: '网络不太顺，重试或直接打字',
+    };
+    const message = map[error && error.code] || '没听清，直接打字也行';
+    petBubble.show(message);
+    petBubble.hide(3000);
+  },
+});
+
+/** 说一句：气泡显示 + 3 秒后淡出。
  * v0.1 不朗读 —— 这里刻意不做音频（验收⑦：lib/ 里不允许出现 speechSynthesis）。
  */
 function petChatSay(text) {
@@ -85,11 +144,14 @@ function petChatSay(text) {
   petBubble.hide(3000);
 }
 
-/** 点桌宠：气泡可见 ⇒ 立刻收起；否则唤醒并说一句。 */
+/** 点桌宠：气泡可见 ⇒ 立刻收起（同时停止录音）；否则唤醒并开始听。 */
 function petChatWake() {
-  if (petBubble.isVisible()) { petBubble.hide(0); return; }
+  if (petBubble.isVisible()) { petBubble.hide(0); petVoiceIn.stop(); return; }
   petBubble.setState('listen');
-  petChatSay(petChatPresetLine());
+  void petVoiceIn.start().then((started) => {
+    if (!started) return; // 失败分支已经由 onError 提示（回落打字）
+    petBubble.show('我在听…');
+  });
 }
 
 /**

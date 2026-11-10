@@ -412,6 +412,12 @@ const INLINE_MODULES = [
     markers: ['const PANE_ANCHORS = ', 'function stampPanes()', 'function installSkinCompat()'],
   },
   {
+    // v0.1 核心：语音输入（录音 → 转录 → SSE → 气泡），排在 pet-chat.js 之前
+    file: 'src/pet-voice-input.js',
+    why: '语音输入：getUserMedia + PCM 采集 + 静音 1.2s / 15s 上限 + 16k WAV + 转录 + SSE 回填',
+    markers: ['function petVoiceInputCreate(', 'function encodeWav(', 'SILENCE_MS'],
+  },
+  {
     // S2：头顶气泡（只显示，不承载输入）。排在 pet-chat.js 之前 —— 后者在模块顶层创建实例。
     file: 'src/pet-bubble.js',
     why: '头顶气泡：锚定桌宠头顶、跟随位置/缩放、逐字显示、最多 6 行、朗读结束 +3s 淡出',

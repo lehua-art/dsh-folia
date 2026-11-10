@@ -90,9 +90,7 @@ const ZERO_COVERAGE_WHY = {
   // v0.2 本地 TTS 子进程入口：只有在启用离线音色时由宿主 spawn（普通 node.exe，不能在 Electron 里跑），
   // 行为由 test/verify-tts-local.mjs 以真实子进程覆盖；本工具只认字面量路径 ⇒ 按口径算零覆盖
   [M('lib', 'tts', 'tts-worker.cjs')]: '本地 TTS 子进程入口：由宿主按需 spawn，行为由 verify-tts-local 覆盖；本工具只认字面量路径 ⇒ 按口径算零覆盖',
-  // v0.1 不做朗读（验收 §1 ⑦），但 edge 合成器保留给 v0.2：/speak 端点仍在，客户端不调用。
-  // 判据随 v0.2 的朗读用例一起回来；在此之前按口径算零覆盖。
-  [M('lib', 'pet-chat-edge-tts.js')]: 'edge 在线情感音色合成器：v0.1 不含朗读（验收 ⑦），保留给 v0.2；端点 /pet-chat/speak 仍在，客户端暂不调用',
+
 
   // ── 组件行宿主入口（合并后从 packages/* 搬到 lib/components/*）──
   [M('lib', 'components', 'mascot-avatar', 'index.js')]: '组件行入口：实现归属由 verify-route-ownership 的「行→入口」对账覆盖（按目录集合派生，非直读本文件）',

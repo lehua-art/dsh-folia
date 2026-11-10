@@ -5,7 +5,7 @@
 > 口径：只统计守卫**代码**里真正碰到的模块（先剥注释），并区分"直接读源文件"与"隔着产物 `lib/client.js`"。
 > 写法：字面量路径 / `join(...)` 拼接 / 唯一 basename / 产物配方 / **前缀族读法** `scopeFiles|scopeText(<前缀>)` / **经共享族助手读**（`import { panelText } from './tools/src-scope.mjs'` + 真调用；族口径封在那个库里，见 DEV-GUIDE §4.6「同时是守卫的库」）/ **真源定位读**（`locate('符号')` / `locateFile('文件名')`，`test/tools/source-locator.mjs`：符号唯一声明在哪就是读了哪个模块）。
 
-模块面 211 个 · 守卫 151 个
+模块面 211 个 · 守卫 152 个
 
 ## 守卫 → 模块
 
@@ -109,6 +109,7 @@
 | `verify-pet-sidebar-rebound.mjs` | `src/client.js` `src/sidebar-right.js` |  |
 | `verify-pet-tuner-browser.mjs` | `lib/components/pet-link/src/pet-link-tuner.js` `lib/components/pet-link/src/pet-link.js` |  |
 | `verify-pet-tuner.mjs` | `lib/components/pet-link/src/pet-link-tuner.js` `lib/components/pet-link/src/pet-link.js` |  |
+| `verify-pet-voice.mjs` | `src/pet-voice-input.js` |  |
 | `verify-picker-model.mjs` | `src/picker-model.js` | ✅ |
 | `verify-picker-props.mjs` | — | ✅ |
 | `verify-picker-upload.mjs` | — | ✅ |
@@ -242,7 +243,6 @@
 | `lib/occlusion/index.js` | 1 | `verify-occlusion-hub` |
 | `lib/occlusion/rects.js` | 1 | `verify-occlusion-hub` |
 | `lib/occlusion/x11.js` | 1 | `verify-occlusion-hub` |
-| `lib/pet-chat-edge-tts.js` | 0 | **（无）** |
 | `lib/pet-chat-memory.js` | 1 | `verify-pet-chat` |
 | `lib/pet-chat-proactive.js` | 1 | `verify-pet-chat` |
 | `lib/pkg-read.js` | 4 | `verify-package-files` `verify-package-publish` `verify-scene-probe` `verify-scene` |
@@ -353,6 +353,7 @@
 | `src/pet-bubble.js` | 1 | `verify-pet-bubble` |
 | `src/pet-chat.js` | 2 | `verify-pet-chat` `verify-pet-settings` |
 | `src/pet-layer.js` | 1 | `verify-features` |
+| `src/pet-voice-input.js` | 1 | `verify-pet-voice` |
 | `src/picker-modal.js` | 5 | `verify-client` `verify-first-click-feedback` `verify-fontset` `verify-scene-live` `verify-wallpaper-progress` |
 | `src/picker-model.js` | 1 | `verify-picker-model` |
 | `src/picker-props-panel.js` | 2 | `verify-client` `verify-fontset` |

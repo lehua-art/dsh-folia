@@ -460,6 +460,8 @@ const VERIFY_STEPS = [
   step('test/verify-ctx-access.mjs'),
   // S2 头顶气泡（6 条：锚定 / 跟随 / 逐字 / 3s 淡出 / 点击重开 / 超长换行）
   step('test/verify-pet-bubble.mjs'),
+  // 语音输入（6 条：全链路 / 权限 / asr-not-ready / 15s 上限 / 静音结束 / 打字兜底）
+  step('test/verify-pet-voice.mjs'),
 ];
 
 /** `npm run verify:docs` —— 软档（只出声）。全部经 warn-only 降级。 */
