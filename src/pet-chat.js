@@ -97,23 +97,15 @@ function petChatBuild() {
   stopBtn.textContent = weT('停止朗读');
   stopBtn.style.cssText = 'background:none;border:1px solid rgba(255,255,255,.14);border-radius:7px;color:#c9c9d1;font-size:11px;padding:2px 6px;cursor:pointer';
   petChatOn(stopBtn, 'click', () => petChatTts.cancel());
-  const memoryBtn = document.createElement('button');
-  memoryBtn.type = 'button';
-  memoryBtn.textContent = weT('查看记忆');
-  memoryBtn.style.cssText = 'background:none;border:1px solid rgba(255,255,255,.14);border-radius:7px;color:#c9c9d1;font-size:11px;padding:2px 6px;cursor:pointer';
-  petChatOn(memoryBtn, 'click', () => petChatShowMemory());
-  const clear = document.createElement('button');
-  clear.type = 'button';
-  clear.textContent = weT('清空记忆');
-  clear.style.cssText = 'background:none;border:1px solid rgba(255,255,255,.14);border-radius:7px;color:#c9c9d1;font-size:11px;padding:2px 6px;cursor:pointer';
-  petChatOn(clear, 'click', () => petChatResetMemory());
   const close = document.createElement('button');
   close.type = 'button';
   close.textContent = '×';
   close.title = weT('关闭');
   close.style.cssText = 'background:none;border:0;color:#c9c9d1;font-size:18px;cursor:pointer;line-height:1';
   petChatOn(close, 'click', () => petChatHide());
-  petChatAppend(tools, voiceBtn, stopBtn, memoryBtn, clear, close);
+  // v0.1 删除「气泡里的查看/清空记忆」两个入口（重复入口）：
+  // 记忆只保留一处 —— 面板/右键「记忆」。气泡只显示当轮，不再承担管理职责。
+  petChatAppend(tools, voiceBtn, stopBtn, close);
   petChatAppend(head, title, tools);
 
   const log = document.createElement('div');
@@ -222,17 +214,6 @@ function petChatPresetLine() {
   petChatPresetCursor += 1;
   const lines = PET_CHAT_PRESET_LINES[group] || [];
   return lines[Math.floor(Math.random() * lines.length)] || '……';
-}
-
-/** A2：清空记忆（宿主那边清会话记忆 + 长期偏好）。 */
-async function petChatResetMemory() {
-  try {
-    const res = await apiPostJson('/pet-chat/reset', {}, { parse: 'always' });
-    if (res && res.ok) petChatStatus(weT('已清空'));
-    else petChatStatus(weT('清空失败'));
-  } catch {
-    petChatStatus(weT('清空失败'));
-  }
 }
 
 /** 问宿主"配好没"（失败就当作没配，不弹错误框）。 */
@@ -368,27 +349,6 @@ async function petChatSend() {
  * 常驻挂载（`WE_FEATURE_MOUNTS` 的一项）：绑定点宠物 / 快捷键。
  * 返回 cleanup —— 卸载时要摘掉监听、删掉 DOM。
  */
-/** B4「查看记忆」：拉偏好摘要显示在气泡里（只显示结论，不含原文）。 */
-async function petChatShowMemory() {
-  try {
-    const res = await apiJson('/pet-chat/memory', { parse: 'always' });
-    const doc = (res && res.data) || {};
-    if (!doc.ok) { petChatStatus(weT('读取记忆失败')); return; }
-    if (doc.enabled === false) { petChatStatus(weT('记忆已关闭（设置 → 桌宠对话）')); return; }
-    const m = doc.memory || {};
-    const parts = [];
-    if (m.nickname) parts.push('称呼：' + m.nickname);
-    if (Array.isArray(m.likes) && m.likes.length) parts.push('喜欢：' + m.likes.join('、'));
-    if (Array.isArray(m.dislikes) && m.dislikes.length) parts.push('不喜欢：' + m.dislikes.join('、'));
-    if (m.style) parts.push('说话风格：' + m.style);
-    if (Array.isArray(m.notes) && m.notes.length) parts.push('备注：' + m.notes.join('、'));
-    petChatPush('assistant', parts.length ? parts.join('\n') : weT('还没有记住任何偏好'));
-    petChatStatus(parts.length ? weT('点「清空记忆」可以全部忘掉') : '');
-  } catch {
-    petChatStatus(weT('读取记忆失败'));
-  }
-}
-
 /** C2「今天别说了」：当天不再主动。 */
 async function petChatSkipToday() {
   try {
