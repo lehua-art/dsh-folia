@@ -5,7 +5,7 @@
 > 口径：只统计守卫**代码**里真正碰到的模块（先剥注释），并区分"直接读源文件"与"隔着产物 `lib/client.js`"。
 > 写法：字面量路径 / `join(...)` 拼接 / 唯一 basename / 产物配方 / **前缀族读法** `scopeFiles|scopeText(<前缀>)` / **经共享族助手读**（`import { panelText } from './tools/src-scope.mjs'` + 真调用；族口径封在那个库里，见 DEV-GUIDE §4.6「同时是守卫的库」）/ **真源定位读**（`locate('符号')` / `locateFile('文件名')`，`test/tools/source-locator.mjs`：符号唯一声明在哪就是读了哪个模块）。
 
-模块面 211 个 · 守卫 152 个
+模块面 212 个 · 守卫 152 个
 
 ## 守卫 → 模块
 
@@ -109,7 +109,7 @@
 | `verify-pet-sidebar-rebound.mjs` | `src/client.js` `src/sidebar-right.js` |  |
 | `verify-pet-tuner-browser.mjs` | `lib/components/pet-link/src/pet-link-tuner.js` `lib/components/pet-link/src/pet-link.js` |  |
 | `verify-pet-tuner.mjs` | `lib/components/pet-link/src/pet-link-tuner.js` `lib/components/pet-link/src/pet-link.js` |  |
-| `verify-pet-voice.mjs` | `src/pet-voice-input.js` |  |
+| `verify-pet-voice.mjs` | `lib/voice/record.js` `src/pet-chat.js` `src/pet-voice-input.js` |  |
 | `verify-picker-model.mjs` | `src/picker-model.js` | ✅ |
 | `verify-picker-props.mjs` | — | ✅ |
 | `verify-picker-upload.mjs` | — | ✅ |
@@ -287,6 +287,7 @@
 | `lib/upload-dir.js` | 5 | `verify-asset-paths` `verify-avatar-interval-and-rotation` `verify-cache-dir` `verify-scene-live` `verify-upload-store` |
 | `lib/upload-store.js` | 3 | `verify-avatar-interval-and-rotation` `verify-scene-live` `verify-upload-store` |
 | `lib/variant-pick.js` | 10 | `verify-download-chain` `verify-hash-source` `verify-install-flow` `verify-media-selfheal` `verify-queue-priority` `verify-site-v1-sync` `verify-variant-hash` `verify-variants` `verify-wallpaper-chain` `verify-wallpaper-core` |
+| `lib/voice/record.js` | 1 | `verify-pet-voice` |
 | `lib/wallpaper-scan.js` | 1 | `verify-wallpaper-scan` |
 | `lib/we-assets.js` | 2 | `verify-asset-paths` `verify-scene-live` |
 | `lib/we-focus-guard.js` | 1 | `verify-scene-live` |
@@ -351,7 +352,7 @@
 | `src/panel-tabs.js` | 14 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-api-client` `verify-client` `verify-component-visibility` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-subpackage-toggle-roundtrip` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/persistence.js` | 4 | `verify-adapter` `verify-client` `verify-presets` `verify-settings-namespaces` |
 | `src/pet-bubble.js` | 1 | `verify-pet-bubble` |
-| `src/pet-chat.js` | 2 | `verify-pet-chat` `verify-pet-settings` |
+| `src/pet-chat.js` | 3 | `verify-pet-chat` `verify-pet-settings` `verify-pet-voice` |
 | `src/pet-layer.js` | 1 | `verify-features` |
 | `src/pet-voice-input.js` | 1 | `verify-pet-voice` |
 | `src/picker-modal.js` | 5 | `verify-client` `verify-first-click-feedback` `verify-fontset` `verify-scene-live` `verify-wallpaper-progress` |

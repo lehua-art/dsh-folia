@@ -74,21 +74,10 @@ const petBubble = petBubbleCreate({
   },
 });
 
-/** 语音输入（v0.1 核心）：点桌宠即开始听，静音 1.2s 或满 15s 自动结束。 */
+/** 语音输入（v0.1）：前端不碰麦克风 —— 宿主用 ffmpeg 录，这里只发请求、收文本。 */
 const petVoiceIn = petVoiceInputCreate({
-  now: () => Date.now(),
-  getUserMedia: (constraints) => navigator.mediaDevices.getUserMedia(constraints),
-  createContext: (stream) => {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    const ctx = new AudioCtx();
-    const source = ctx.createMediaStreamSource(stream);
-    // ScriptProcessor 是兜底路径（AudioWorklet 要额外加载模块文件，v0.1 先用它）
-    const node = ctx.createScriptProcessor(4096, 1, 1);
-    source.connect(node);
-    return { context: ctx, node, sampleRate: ctx.sampleRate };
-  },
-  postTranscribe: async (audio) => {
-    const res = await apiPostJson('/pet-chat/transcribe', { audio, language: 'zh' }, { parse: 'always' });
+  postRecord: async () => {
+    const res = await apiPostJson('/pet-chat/record', { language: 'zh' }, { parse: 'always' });
     return (res && res.data) || {};
   },
   postChat: async (text, onState) => {
@@ -120,19 +109,53 @@ const petVoiceIn = petVoiceInputCreate({
   },
   onText: (text) => { petBubble.append(text); },
   onError: (error) => {
-    // 失败一律回落打字：只给一行提示，不弹错误框（工单 S3）
+    // 失败一律回落打字：只给一行提示，不弹错误框
     const map = {
-      permission: '没拿到麦克风权限，先打字吧',
-      'no-mic': '打不开麦克风，先打字吧',
+      'no-device': '没找到麦克风，先打字吧',
+      'ffmpeg-missing': '缺少 ffmpeg，先打字吧',
       'asr-not-ready': '语音输入还没就绪：去 DSH 设置里开启（需下载模型）',
       timeout: '这次没听清，再说一次或直接打字',
+      'no-speech': '没听到声音，再说一次或直接打字',
       network: '网络不太顺，重试或直接打字',
     };
     const message = map[error && error.code] || '没听清，直接打字也行';
     petBubble.show(message);
     petBubble.hide(3000);
+    petChatOpenTyping({ hint: message });
   },
 });
+
+/**
+ * 打字兜底（右键 → 打字说…）：一个小输入条挂在桌宠上方，回车发 /chat。
+ * 为什么不用 window.prompt：Electron 里 prompt 返回 null，用户会以为坏了。
+ */
+function petChatOpenTyping(extra = {}) {
+  if (typeof document === 'undefined' || !document.createElement) return;
+  const existed = document.querySelector('#we-pet-typing');
+  if (existed) { existed.focus(); return; }
+  const box = document.createElement('div');
+  box.id = 'we-pet-typing';
+  box.style.cssText = 'position:fixed;z-index:10000;left:50%;bottom:120px;transform:translateX(-50%);'
+    + 'display:flex;gap:6px;background:rgba(24,24,28,.95);padding:8px;border-radius:10px;';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = (extra && extra.hint) || '打字说…（回车发送）';
+  input.style.cssText = 'width:240px;padding:6px 8px;border-radius:8px;border:1px solid #444;background:#111;color:#eee;';
+  const send = () => {
+    const text = String(input.value || '').trim();
+    if (!text) return;
+    box.remove();
+    petBubble.show(text);
+    void petVoiceIn.postChat(text);
+  };
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') send();
+    if (event.key === 'Escape') box.remove();
+  });
+  box.appendChild(input);
+  document.body.appendChild(box);
+  input.focus();
+}
 
 /** 说一句：气泡显示 + 3 秒后淡出。
  * v0.1 不朗读 —— 这里刻意不做音频（验收⑦：lib/ 里不允许出现 speechSynthesis）。
@@ -171,9 +194,18 @@ function mountPetChat() {
       petChatWake();
     }
   };
+  const onContextMenu = (event) => {
+    const target = event.target;
+    if (!target || typeof target.closest !== 'function') return;
+    if (!target.closest('#we-pet-layer')) return;
+    event.preventDefault();
+    petChatOpenTyping();
+  };
+  document.addEventListener('contextmenu', onContextMenu, true);
   document.addEventListener('click', onDocumentClick, true);
   document.addEventListener('keydown', onKeyDown, true);
   return () => {
+    document.removeEventListener('contextmenu', onContextMenu, true);
     document.removeEventListener('click', onDocumentClick, true);
     document.removeEventListener('keydown', onKeyDown, true);
     petBubble.dispose();

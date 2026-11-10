@@ -135,8 +135,9 @@ const settings = { petChat: { enabled: false } };
   const source = readFileSync(join(ROOT, 'src', 'pet-chat.js'), 'utf8');
   const markers = [];
   if (source.includes('els.log')) markers.push('历史列表');
-  if (source.includes("createElement('input')")) markers.push('输入框');
-  if (source.includes('petChatSend')) markers.push('发送按钮');
+  if (source.includes('petChatSend')) markers.push('旧发送按钮');
+  // 打字兜底是合法的新入口：只要输入框不在旧面板里（有 petChatOpenTyping 就行）
+  if (source.includes("createElement('input')") && !source.includes('function petChatOpenTyping(')) markers.push('输入框');
   const wakes = /function petChatWake\(\)/.test(source) && /petBubble\.show\(/.test(source);
   check('⑥ 旧面板已删（无历史列表/输入框/发送按钮），点桌宠只唤醒气泡',
     markers.length === 0 && wakes,

@@ -1,121 +1,109 @@
 /**
- * verify-pet-voice.mjs — 语音输入（v0.1 核心）6 条判据。
+ * verify-pet-voice.mjs — 语音输入 6 条判据（L1–L6）。
  *
- * 用假 getUserMedia / 假 AudioContext / 假 HTTP：链路本身（静音判定、15s 上限、
- * WAV 头、失败分支）都是真代码，只有浏览器 API 被替换。
+ * 录音在宿主侧（ffmpeg dshow），所以判据不碰麦克风：注入假的 runFfmpeg，
+ * 用它吐出来的 silencedetect stderr 驱动"静音自动结束/15s 上限"。
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const source = readFileSync(join(ROOT, 'src', 'pet-voice-input.js'), 'utf8');
-const create = new Function(`${source}; return { petVoiceInputCreate };`)().petVoiceInputCreate;
+const load = (rel, names) => {
+  const source = readFileSync(join(ROOT, rel), 'utf8');
+  return new Function(`${source}; return { ${names.join(', ')} };`)();
+};
+const recordMod = await import('../lib/voice/record.js');
 
 const results = [];
 function check(name, ok, detail) { results.push({ name, ok: Boolean(ok), detail }); }
 
-/** 假时钟 + 假录音环境；feed 用固定音量模拟"说话/静音"。 */
-function harness({ transcribe, chat, permission = true } = {}) {
-  let clock = 1000;
-  const sent = { transcribe: [], chat: [] };
-  const events = { text: [], error: [], state: [] };
-  const node = { onaudioprocess: null, connect() {}, disconnect() {} };
-  const ctx = { destination: {}, close() {} };
-  const api = create({
-    now: () => clock,
-    getUserMedia: async () => {
-      if (!permission) throw new Error('NotAllowedError');
-      return { getTracks: () => [{ stop() {} }] };
+const DEVICES_STDERR = `DirectShow audio devices (some may be none)
+[dshow @ 0000] "Microphone (Realtek(R) Audio)" (audio)
+[dshow @ 0000]   Alternative name "@device_cm_{33D9A762}\\wave_{...}"
+DirectShow video devices (some may be none)
+[dshow @ 0000] "HD WebCam" (video)`;
+
+const SPEECH_STDERR = `[silencedetect @ 0000] silence_start: 0
+[silencedetect @ 0000] silence_end: 0.8 | silence_duration: 0.8
+[silencedetect @ 0000] silence_start: 3.4 | silence_duration: 1.2`;
+
+/** 造一个录音器：devices 决定有没有麦克风，speech 决定 stderr。 */
+function recorder({ devices = DEVICES_STDERR, speech = SPEECH_STDERR, throws = false } = {}) {
+  const calls = [];
+  const api = recordMod.createVoiceRecorder({
+    resolveFfmpeg: async () => 'ffmpeg.exe',
+    probeSize: () => 4096,
+    runFfmpeg: async (ff, args, timeout) => {
+      calls.push({ ff, args, timeout });
+      if (throws) throw new Error('boom');
+      if (args.includes('-list_devices')) return { code: 0, stderr: devices };
+      return { code: 0, stderr: speech };
     },
-    createContext: () => ({ context: ctx, node, sampleRate: 48000 }),
-    postTranscribe: async (b64) => { sent.transcribe.push(b64); return transcribe ? transcribe(b64) : { ok: true, text: '你好' }; },
-    postChat: async (text, onState) => { sent.chat.push(text); if (chat) chat(text, onState); },
+  });
+  return { api, calls };
+}
+
+/* L1 无设备 ⇒ no-device，不崩 */
+{
+  const { api } = recorder({ devices: 'DirectShow audio devices (some may be none)\n' });
+  const result = await api.record();
+  check('L1 无麦克风 ⇒ no-device（不崩）', result.ok === false && result.code === 'no-device', `code=${result.code}`);
+}
+
+/* L2 静音自动结束：silence_end 后紧跟 silence_start ⇒ 判定说完 */
+{
+  const parsed = recordMod.detectSpeechEnd(SPEECH_STDERR);
+  const { api } = recorder();
+  const result = await api.record();
+  check('L2 静音 1.2s 自动结束（解析 silencedetect）',
+    parsed && parsed.speechEnd === 0.8 && result.ok === true && result.speech.silenceStart === 3.4,
+    `speechEnd=${parsed && parsed.speechEnd} · silenceStart=${parsed && parsed.silenceStart}`);
+}
+
+/* L3 15 秒上限：参数里带 -t，且 maxMs 透传 */
+{
+  const { api, calls } = recorder();
+  await api.record({ maxMs: 15000 });
+  const recordCall = calls.find((item) => item.args.includes('-af'));
+  const tIndex = recordCall.args.indexOf('-t');
+  check('L3 15s 上限（-t 与 maxMs 一致）',
+    Boolean(recordCall) && Number(recordCall.args[tIndex + 1]) >= 15 && recordCall.timeout > 15000,
+    `-t=${recordCall && recordCall.args[tIndex + 1]} · timeout=${recordCall && recordCall.timeout}`);
+}
+
+/* L4 没听到人声 ⇒ no-speech（不是 500） */
+{
+  const { api } = recorder({ speech: '[silencedetect @ 0000] silence_start: 0' });
+  const result = await api.record();
+  check('L4 全程静音 ⇒ no-speech', result.ok === false && result.code === 'no-speech', `code=${result.code}`);
+}
+
+/* L5 录音→转录→回答 全链路（前端用假 postRecord/postChat） */
+{
+  const voice = load('src/pet-voice-input.js', ['petVoiceInputCreate']).petVoiceInputCreate;
+  const events = { text: [], error: [], state: [] };
+  const api = voice({
+    postRecord: async () => ({ ok: true, text: '帮我换张壁纸', ms: 3200 }),
+    postChat: async (text, onState) => { events.text.push(text); if (onState) onState({ state: 'idle' }); },
     onText: (text) => events.text.push(text),
     onError: (error) => events.error.push(error),
     onState: (state) => events.state.push(state),
   });
-  const tick = (ms) => { clock += ms; };
-  const say = (loud = true) => {
-    const samples = new Float32Array(480);
-    samples.fill(loud ? 0.2 : 0);
-    node.onaudioprocess({ inputBuffer: { getChannelData: () => samples } });
-  };
-  return { api, sent, events, tick, say };
+  const ok = await api.start();
+  check('L5 录音→转录→回答 全链路',
+    ok === true && events.text[0] === '帮我换张壁纸' && events.error.length === 0,
+    `ok=${ok} · text=${events.text[0]} · errors=${events.error.length}`);
 }
 
-/* ① 全链路：说话 → 静音 1.2s 自动停 → 转录 → SSE 回复 */
+/* L6 打字兜底仍在：前端有右键入口 + 输入条，没有 media API */
 {
-  const h = harness();
-  const started = await h.api.start();
-  for (let i = 0; i < 5; i += 1) { h.say(true); h.tick(100); }
-  for (let i = 0; i < 13; i += 1) { h.say(false); h.tick(100); }
-  await new Promise((resolve) => setTimeout(resolve, 30));
-  const wav = h.sent.transcribe[0] ? Buffer.from(h.sent.transcribe[0], 'base64') : null;
-  const header = wav ? wav.subarray(0, 12).toString('latin1') : '';
-  check('① 说话→静音→转录→回答 全链路',
-    started && h.sent.transcribe.length === 1 && header.startsWith('RIFF') && wav.readUInt32LE(24) === 16000
-      && h.events.text[0] === '你好' && h.sent.chat[0] === '你好',
-    `transcribe=${h.sent.transcribe.length} · 头=${header.slice(0, 4)} · 采样率=${wav ? wav.readUInt32LE(24) : '-'} · text=${h.events.text[0]}`);
-}
-
-/* ② 权限拒绝 → onError('permission')，并标记需要打字兜底 */
-{
-  const h = harness({ permission: false });
-  const started = await h.api.start();
-  check('② 无麦克风权限 ⇒ permission 错误（触发打字兜底）',
-    started === false && h.events.error[0] && h.events.error[0].code === 'permission',
-    `started=${started} · code=${h.events.error[0] && h.events.error[0].code}`);
-}
-
-/* ③ transcribe 返回 asr-not-ready ⇒ 原样透出 */
-{
-  const h = harness({ transcribe: () => ({ ok: false, code: 'asr-not-ready', hint: '请在 DSH 设置启用语音输入' }) });
-  await h.api.start();
-  h.say(true); h.tick(100);
-  for (let i = 0; i < 13; i += 1) { h.say(false); h.tick(100); }
-  await new Promise((resolve) => setTimeout(resolve, 30));
-  check('③ asr-not-ready ⇒ 提示去 DSH 开启（不误报网络错）',
-    h.events.error[0] && h.events.error[0].code === 'asr-not-ready' && h.sent.chat.length === 0,
-    `code=${h.events.error[0] && h.events.error[0].code}`);
-}
-
-/* ④ 15 秒上限：一直说话也会被强制结束 */
-{
-  const h = harness();
-  await h.api.start();
-  for (let i = 0; i < 160; i += 1) { h.say(true); h.tick(100); }
-  await new Promise((resolve) => setTimeout(resolve, 30));
-  const states = h.events.state.filter((item) => item.state === 'transcribing');
-  check('④ 说话不停 ⇒ 15 秒强制停止',
-    states.length === 1 && states[0].reason === 'max' && h.sent.transcribe.length === 1,
-    `reason=${states[0] && states[0].reason} · transcribe=${h.sent.transcribe.length}`);
-}
-
-/* ⑤ 静音自动结束（不到 15 秒） */
-{
-  const h = harness();
-  await h.api.start();
-  for (let i = 0; i < 3; i += 1) { h.say(true); h.tick(100); }
-  for (let i = 0; i < 13; i += 1) { h.say(false); h.tick(100); }
-  await new Promise((resolve) => setTimeout(resolve, 30));
-  const states = h.events.state.filter((item) => item.state === 'transcribing');
-  check('⑤ 连续静音 1.2 秒 ⇒ 自动结束',
-    states.length === 1 && states[0].reason === 'silence',
-    `reason=${states[0] && states[0].reason}`);
-}
-
-/* ⑥ 打字兜底：错误回调显式带出"可以打字"的信号（面板据此提示） */
-{
-  const h = harness({ transcribe: () => ({ ok: false, code: 'timeout', hint: '重试一次' }) });
-  await h.api.start();
-  h.say(true); h.tick(100);
-  for (let i = 0; i < 13; i += 1) { h.say(false); h.tick(100); }
-  await new Promise((resolve) => setTimeout(resolve, 30));
-  const err = h.events.error[0] || {};
-  check('⑥ 超时/网络失败 ⇒ 提示重试（可打字兜底）',
-    err.code === 'timeout' && h.sent.chat.length === 0,
-    `code=${err.code}`);
+  const chat = readFileSync(join(ROOT, 'src', 'pet-chat.js'), 'utf8');
+  const voice = readFileSync(join(ROOT, 'src', 'pet-voice-input.js'), 'utf8');
+  const both = chat + voice;
+  const hasTyping = /function petChatOpenTyping\(/.test(chat) && /contextmenu/.test(chat);
+  const media = /getUserMedia|AudioWorklet|ScriptProcessor/.test(both);
+  check('L6 打字入口可用，且前端无 media API', hasTyping && !media, `打字入口=${hasTyping} · media=${media}`);
 }
 
 let failed = 0;
