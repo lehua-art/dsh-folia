@@ -1,6 +1,6 @@
 # 桌宠 v0.2 工单：多引擎情感朗读 + 会话内执行
 
-> 决策（2026-11-10）：音色按"可插拔引擎"做三档（Azure / 火山 / 声音克隆，用户自选）；
+> 决策（2026-11-10，修订）：**只接火山引擎**（含声音克隆）+ 系统音色兜底；**不做 Azure / MiniMax**；
 > 额外只做一个扩展能力：**在 DSH 会话里替用户发指令/执行任务**（不做生图、不做 QQ/微信）。
 > 前置：v0.1（头顶气泡 + 语音主链路 + 名字/记忆）已验收。
 > 铁律：不发 npm（主机器发）、不改公开字段、每步 commit + 门禁全绿。
@@ -12,10 +12,10 @@
 ### A1 统一抽象（先做这一层，后面接谁都快）
 
 ```ts
-export const TTS_ENGINES = ['system', 'azure', 'volcano'] as const;
+export const TTS_ENGINES = ['system', 'volcano'] as const;
 
 interface TtsEngine {
-  id: 'system' | 'azure' | 'volcano';
+  id: 'system' | 'volcano';
   needsKey: boolean;
   listVoices(cfg): Promise<{ id, name, lang, gender, styles?: string[] }[]>;
   synth(cfg, { text, voiceId, emotion, speed, pitch }): Promise<{ audio: Uint8Array, mime, style }>;
@@ -36,11 +36,11 @@ interface TtsEngine {
 ### A2 回落链（必须实现）
 
 ```
-用户选的引擎 → 其它已配置引擎（azure→volcano→…）→ 系统音色 → 只显示文字
+火山（用户配置了 key）→ 系统音色 → 只显示文字
 每一跳记一次日志（当日去重），UI 状态行提示，不弹窗
 ```
 
-### A3 各引擎实现
+### A3 引擎实现（只有两个：system / volcano）
 
 | 引擎 | 要点 | 判据 |
 |---|---|---|
