@@ -221,3 +221,59 @@ v0.2（后续单独验收）：
 · 静默只影响"主动搭话"；用户主动唤醒的对话**始终正常回答**
 · 记忆的"查看/清空"放在右键菜单（这是工具入口，不是配置项）
 ```
+---
+
+## 追加决定 3（2026-11-10）：语音输入改「宿主侧 ffmpeg 录音」，与打字一起交付
+
+### 为什么改（已查证，不要再走前端 getUserMedia）
+```
+DSH 的 Electron 权限处理器只放行 clipboard / notifications，
+`media`（麦克风）一律拒绝，且 Electron 没有"允许/拒绝"弹窗
+⇒ src/pet-voice-input.js 里的 getUserMedia + AudioWorklet 必然失败
+⇒ 改成宿主进程直接调 ffmpeg 采集（绕开 Chromium 权限，只依赖 Windows 系统麦克风权限）
+```
+
+### 已有可复用资产（不要重复下载 ffmpeg）
+```
+lib/media/transcode.js 里已有：
+  · resolveFfmpeg(job)          → 返回可用 ffmpeg 路径（PATH / 内置 / 自动下载）
+  · spawnFfmpeg(ff, args, ...)  → 带超时/取消/日志文件的 spawn 封装
+本地实测：C:\Users\<user>\.dsh-folia\ffmpeg\ffmpeg.exe（77MB，支持 dshow，能列出麦克风）
+```
+
+### 实现清单
+```
+① 新增 lib/voice/record.js
+   · listDevices(ff)：ffmpeg -list_devices true -f dshow -i dummy（解析 stderr 里的设备名）
+   · pickDevice()：优先含 Microphone/麦克风/USB 的；否则第一个 audio 设备
+   · record({ maxMs=15000, silenceDb=-35, silenceMs=1200 })：
+       ffmpeg -f dshow -i audio=<device> -ar 16000 -ac 1 -t 20
+              -af silencedetect=noise=-35dB:d=1.2 <tmp>.wav
+     解析 stderr：
+       · 已出现 silence_end（说过话）且随后 silence_start ⇒ 结束（说完自动停）
+       · 到 maxMs 强制结束
+     返回 { wavPath, ms, device }
+② 新增路由 lib/routes/pet-chat.js
+   · POST /pet-chat/record  → 录音（最长 15s，静音自动结束）→ 直接调 speechToText 转写
+                              → 返回 { ok:true, text, ms, audioSeconds }
+   · 失败码：no-device / ffmpeg-missing / asr-not-ready / timeout / no-speech
+③ 前端 src/pet-voice-input.js
+   · 删除 getUserMedia / AudioWorklet / ScriptProcessor / WAV 编码（全部不需要）
+   · 保留：点桌宠 → 气泡「我在听…」→ POST /pet-chat/record → 拿 text → /chat(SSE) → 气泡逐字
+   · 失败：提示 + 自动切「右键 → 打字说」
+④ 判据（新增 6 条）
+   L1 无设备 ⇒ no-device + 提示（不崩）
+   L2 静音自动结束：mock ffmpeg stderr 序列 ⇒ 在 silence_start 后结束
+   L3 15s 上限：无静音 ⇒ 到点强制结束
+   L4 转写不可用 ⇒ asr-not-ready（不是 500）
+   L5 录音→转录→回答 全链路（mock ffmpeg + mock transcribe）
+   L6 打字入口不受影响（右键→打字说 仍可用）
+⑤ 门禁：build-client 0 / run-audit 0 失败 / verify-pet-voice 全绿 / entry-load 通过
+```
+
+### 交付要求
+```
+· 打字 + 录音**同一版交付**，不要拆两次
+· 前端不允许出现 getUserMedia / AudioWorklet（静态判据）
+· 录音不新增下载（复用现有 ffmpeg）
+```
