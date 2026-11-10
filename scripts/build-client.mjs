@@ -417,6 +417,12 @@ const INLINE_MODULES = [
     markers: ['function petChatTtsCreate(', 'function petChatTtsSplit(', 'const PET_CHAT_TTS_SENTENCE_END = '],
   },
   {
+    // S2：头顶气泡（只显示，不承载输入）。排在 pet-chat.js 之前 —— 后者在模块顶层创建实例。
+    file: 'src/pet-bubble.js',
+    why: '头顶气泡：锚定桌宠头顶、跟随位置/缩放、逐字显示、最多 6 行、朗读结束 +3s 淡出',
+    markers: ['function petBubbleCreate(', 'function place()', 'MAX_LINES'],
+  },
+  {
     file: 'src/pet-chat.js',
     why: '桌宠对话气泡：点宠物出输入框，走宿主 /folia/pet-chat/* 的 SSE；没配模型时给预设台词',
     markers: ['function mountPetChat()', 'const PET_CHAT_PRESET_LINES = ', 'function petChatParseFrame('],

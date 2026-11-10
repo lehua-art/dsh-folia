@@ -161,7 +161,25 @@ function petChatPush(role, text) {
   petChatLines.push({ role, text });
   if (petChatLines.length > PET_CHAT_KEEP_LINES) petChatLines = petChatLines.slice(-PET_CHAT_KEEP_LINES);
   petChatRender();
+  // S2：助手的话同时走**头顶气泡**（只显示）。旧面板等 S3 的打字入口落地后整块删除。
+  if (role === 'assistant') petBubble.show(text);
 }
+
+/**
+ * 头顶气泡实例（S2）。锚点从桌宠层取；取不到就不显示（不抛错）。
+ */
+const petBubble = petBubbleCreate({
+  document: typeof document !== 'undefined' ? document : undefined,
+  getAnchor: () => {
+    try {
+      const layer = document && document.querySelector ? document.querySelector('#we-pet-layer') : null;
+      if (!layer || typeof layer.getBoundingClientRect !== 'function') return null;
+      const rect = layer.getBoundingClientRect();
+      const scale = Number(window.getComputedStyle(layer).getPropertyValue('--we-pet-scale')) || 1;
+      return { left: rect.left, top: rect.top, width: rect.width, height: rect.height, scale };
+    } catch { return null; }
+  },
+});
 
 function petChatStatus(text) {
   const els = petChatBuild();

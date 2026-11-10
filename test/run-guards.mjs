@@ -458,6 +458,8 @@ const VERIFY_STEPS = [
   step('test/verify-entry-load.mjs'),
   // G2 ctx 访问静态扫描：ctx.<服务> 必须先在 inject 里（负例自检保证"改回去会红"）
   step('test/verify-ctx-access.mjs'),
+  // S2 头顶气泡（6 条：锚定 / 跟随 / 逐字 / 3s 淡出 / 点击重开 / 超长换行）
+  step('test/verify-pet-bubble.mjs'),
 ];
 
 /** `npm run verify:docs` —— 软档（只出声）。全部经 warn-only 降级。 */

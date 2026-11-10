@@ -1097,6 +1097,14 @@
           "args": [],
           "tier": "hard",
           "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-pet-bubble.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
         }
       ]
     },
@@ -2307,6 +2315,14 @@
           "kind": "guard",
           "npm": null,
           "file": "test/verify-ctx-access.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-pet-bubble.mjs",
           "args": [],
           "tier": "hard",
           "probe": false
