@@ -1,13 +1,11 @@
 /**
  * pet-chat.js — 桌宠语音助手（v0.1 客户端）。
  *
- * 交互（工单「追加决定」）：**点桌宠 = 唤醒**，它说的话显示在头顶气泡里，
- * 同时用 edge 音色朗读（失败自动回落系统音色）。**没有聊天窗口**：
- * 没有输入框、没有历史列表、没有开关按钮 —— 旧的"面板式 UI"在 v0.1 里被删除。
+ * v0.1 范围（docs/PET-V01-ACCEPTANCE.md）：**语音输入 + 头顶文字气泡 + 名字/记忆 + 主动搭话**，
+ * **不含任何朗读/TTS**（v0.2 再做）。所以这里没有 speechSynthesis、没有 /pet-chat/speak 调用。
  *
- * 依赖（都由 build-client 的 INLINE_MODULES 排在前面注入）：
- *   · petBubbleCreate —— 头顶气泡（只显示，3 秒淡出）
- *   · petChatTtsCreate —— 系统音色朗读（edge 失败时的回落）
+ * 交互：点桌宠 = 唤醒 → 气泡显示它的话（3 秒后淡出，点一下立刻收起）。
+ * 没有聊天窗口：无输入框、无历史列表、无开关按钮。
  */
 const PET_CHAT_PRESET_LINES = {
   greeting: [
@@ -60,9 +58,6 @@ function petChatPresetLine() {
   petChatPresetCursor += 1;
   return group[Math.floor(Math.random() * group.length)];
 }
-let petChatAudioPlayer = null;
-let petChatVoiceCfg = { name: 'zh-CN-XiaoxiaoNeural', muted: false };
-let petChatBusy = false;
 
 /** 头顶气泡实例：锚点取桌宠层矩形，跟随位置与缩放。 */
 const petBubble = petBubbleCreate({
@@ -79,61 +74,22 @@ const petBubble = petBubbleCreate({
   },
 });
 
-const petChatTts = petChatTtsCreate({
-  getSpeech: () => (typeof window !== 'undefined' ? window.speechSynthesis : null),
-  getVoices: () => {
-    const speech = typeof window !== 'undefined' ? window.speechSynthesis : null;
-    return speech && typeof speech.getVoices === 'function' ? speech.getVoices() : [];
-  },
-  // 新结构 {name, muted} → TTS 引擎要的 {enabled, voiceURI}（单一真源仍在设置里）
-  getConfig: () => ({
-    enabled: !petChatVoiceCfg || petChatVoiceCfg.muted !== true,
-    rate: 1, pitch: 1, volume: 1,
-    voiceURI: (petChatVoiceCfg && petChatVoiceCfg.name) || '',
-  }),
-  Utterance: typeof window !== 'undefined' ? window.SpeechSynthesisUtterance : undefined,
-  onHint: () => {},
-});
-
 /**
- * 朗读 + 显示一句话。
- * 先请宿主合成 edge 音频；失败/未启用则回落到系统音色。朗读结束 +3s 气泡淡出。
+ * 说一句：气泡显示 + 3 秒后淡出。
+ * v0.1 不朗读 —— 这里刻意不做音频（验收⑦：lib/ 里不允许出现 speechSynthesis）。
  */
-async function petChatSay(text, emotion) {
+function petChatSay(text) {
   const line = String(text || '').trim();
   if (!line) return;
   petBubble.show(line);
-  if (petChatVoiceCfg && petChatVoiceCfg.muted === true) { petBubble.hide(3000); return; }
-  try {
-    const res = await apiPostJson('/pet-chat/speak', { text: line, emotion: emotion || 'calm' }, { parse: 'always' });
-    const doc = (res && res.data) || {};
-    if (doc.ok && doc.engine === 'edge' && doc.audio) {
-      const player = new Audio('data:' + (doc.mime || 'audio/mpeg') + ';base64,' + doc.audio);
-      petChatAudioPlayer = player;
-      player.onended = () => petBubble.hide(3000);
-      void player.play();
-      return;
-    }
-  } catch { /* 网络问题一律回落系统音色 */ }
-  petChatTts.finish(line);
   petBubble.hide(3000);
 }
 
-/** 点桌宠：气泡可见 ⇒ 立刻收起；否则打招呼（唤醒）。 */
+/** 点桌宠：气泡可见 ⇒ 立刻收起；否则唤醒并说一句。 */
 function petChatWake() {
   if (petBubble.isVisible()) { petBubble.hide(0); return; }
   petBubble.setState('listen');
-  void petChatSay(petChatNextPreset(), 'happy');
-}
-
-/** 拉一次设置（静音/音色），失败就按默认。 */
-async function petChatRefreshConfig() {
-  try {
-    const res = await apiJson('/pet-chat/state', { parse: 'always' });
-    const doc = (res && res.data) || {};
-    if (doc.voice && typeof doc.voice === 'object') petChatVoiceCfg = doc.voice;
-    petChatBusy = false;
-  } catch { /* 忽略 */ }
+  petChatSay(petChatPresetLine());
 }
 
 /**
@@ -155,11 +111,9 @@ function mountPetChat() {
   };
   document.addEventListener('click', onDocumentClick, true);
   document.addEventListener('keydown', onKeyDown, true);
-  void petChatRefreshConfig();
   return () => {
     document.removeEventListener('click', onDocumentClick, true);
     document.removeEventListener('keydown', onKeyDown, true);
     petBubble.dispose();
-    if (petChatAudioPlayer) { try { petChatAudioPlayer.pause(); } catch { /* ignore */ } petChatAudioPlayer = null; }
   };
 }

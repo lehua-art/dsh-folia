@@ -412,11 +412,6 @@ const INLINE_MODULES = [
     markers: ['const PANE_ANCHORS = ', 'function stampPanes()', 'function installSkinCompat()'],
   },
   {
-    file: 'src/pet-chat-tts.js',
-    why: '朗读回答：speechSynthesis 薄封装（整段读 / 流式按句读 / 取消），不碰 DOM、不改文字',
-    markers: ['function petChatTtsCreate(', 'function petChatTtsSplit(', 'const PET_CHAT_TTS_SENTENCE_END = '],
-  },
-  {
     // S2：头顶气泡（只显示，不承载输入）。排在 pet-chat.js 之前 —— 后者在模块顶层创建实例。
     file: 'src/pet-bubble.js',
     why: '头顶气泡：锚定桌宠头顶、跟随位置/缩放、逐字显示、最多 6 行、朗读结束 +3s 淡出',
