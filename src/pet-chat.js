@@ -156,6 +156,9 @@ const petVoiceIn = petVoiceInputCreate({
       if (typeof onState === 'function') onState({ state: 'idle' });
       return;
     }
+    let rawReply = '';
+    let replyStarted = false;
+    let replyDone = false;
     const reader = stream.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -172,7 +175,26 @@ const petVoiceIn = petVoiceInputCreate({
         if (!line) continue;
         let payload = null;
         try { payload = JSON.parse(line.slice(5).trim()); } catch { payload = null; }
-        if (payload && typeof payload.t === 'string') petBubble.append(payload.t);
+        // 防兜底：模型偶尔仍会输出 {"reply":"…","emotion":"…"} 信封，
+        // 这里只把 reply 的正文喂给气泡（不显示大括号/字段名/emotion）。
+        if (payload && typeof payload.t === 'string') {
+          rawReply += payload.t;
+          let piece = payload.t;
+          if (!replyStarted) {
+            const at = rawReply.indexOf('"reply":"');
+            if (at >= 0) {
+              replyStarted = true;
+              piece = rawReply.slice(at + 9);
+            } else if (rawReply.trimStart().startsWith('{')) {
+              piece = '';
+            }
+          }
+          if (piece && !replyDone) {
+            const cut = piece.indexOf('","emotion"');
+            if (cut >= 0) { piece = piece.slice(0, cut); replyDone = true; }
+            if (piece) petBubble.append(piece);
+          }
+        }
       }
     }
     if (typeof onState === 'function') onState({ state: 'idle' });
