@@ -74,6 +74,44 @@ const petBubble = petBubbleCreate({
   },
 });
 
+/**
+ * 语音模型（SenseVoice）自举：调宿主 /pet-chat/asr（它会 speechToText.prepare），
+ * 然后轮询 /pet-chat/asr 把下载进度显示在气泡里。
+ * 这样用户装完插件直接说话就行，不需要去 DSH 设置里找「语音输入」开关。
+ */
+async function ensureAsrReady() {
+  petBubble.setState('think');
+  try {
+    await apiPostJson('/pet-chat/asr', {}, { parse: 'always' });
+  } catch { /* 触发失败也要继续轮询看状态 */ }
+  for (let i = 0; i < 240; i += 1) {
+    await new Promise((resolve) => { setTimeout(resolve, 1500); });
+    const resp = await apiJson('/pet-chat/asr', { parse: 'always' }).catch(() => null);
+    const doc = (resp && resp.data) || {};
+    if (doc.ready) {
+      petBubble.show('语音准备好了，点我再说一次');
+      petBubble.hide(3000);
+      return;
+    }
+    if (doc.available === false) {
+      petBubble.show('这个 DSH 版本没有语音转写服务，先打字吧');
+      petBubble.hide(3000);
+      return;
+    }
+    if (doc.phase === 'failed') {
+      petBubble.show('语音模型下载失败，稍后再点我试试');
+      petBubble.hide(3000);
+      return;
+    }
+    const pct = doc.totalBytes > 0 && doc.completedBytes >= 0
+      ? Math.max(0, Math.min(100, Math.round((doc.completedBytes / doc.totalBytes) * 100)))
+      : null;
+    petBubble.show(pct === null ? '语音模型准备中…' : `语音模型下载中 ${pct}%`);
+  }
+  petBubble.show('语音模型还没下完，过一会儿再点我');
+  petBubble.hide(3000);
+}
+
 /** 语音输入（v0.1）：前端不碰麦克风 —— 宿主用 ffmpeg 录，这里只发请求、收文本。 */
 const petVoiceIn = petVoiceInputCreate({
   postRecord: async () => {
@@ -136,13 +174,18 @@ const petVoiceIn = petVoiceInputCreate({
     const map = {
       'no-device': '没找到麦克风，先打字吧',
       'ffmpeg-missing': '缺少 ffmpeg，先打字吧',
-      'asr-not-ready': '语音输入还没就绪：去 DSH 设置里开启（需下载模型）',
+      'asr-not-ready': '语音模型还没下载，我来准备一下…',
       timeout: '这次没听清，再说一次或直接打字',
       'no-speech': '没听到声音，再说一次或直接打字',
       network: '网络不太顺，重试或直接打字',
     };
     const message = map[error && error.code] || '没听清，直接打字也行';
     petBubble.show(message);
+    // asr-not-ready：自动触发模型下载并在气泡里显示进度，用户不用去 DSH 设置里找开关
+    if (error && error.code === 'asr-not-ready') {
+      void ensureAsrReady();
+      return;
+    }
     petBubble.hide(3000);
     petChatOpenTyping({ hint: message });
   },
