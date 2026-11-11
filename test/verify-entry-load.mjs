@@ -11,6 +11,7 @@
  *
  * 两条都在 run-audit 里跑，红绿可见。
  */
+process.env.FOLIA_ASR_ROOT = process.env.FOLIA_ASR_ROOT || (process.platform === 'win32' ? 'C:/Windows/Temp/folia-asr-none' : '/tmp/folia-asr-none');
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 

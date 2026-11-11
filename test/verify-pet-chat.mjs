@@ -16,6 +16,7 @@
  *   ⑧ emotion 解析失败 ⇒ 关键词兜底
  *   ⑨ key 不出现在任何响应/日志里
  */
+process.env.FOLIA_ASR_ROOT = process.env.FOLIA_ASR_ROOT || (process.platform === 'win32' ? 'C:/Windows/Temp/folia-asr-none' : '/tmp/folia-asr-none');
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
