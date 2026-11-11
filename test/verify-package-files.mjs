@@ -406,7 +406,7 @@ async function main() {
     // 4.25.0 抬到 **132/145**：核心 6 条行为 + 3 条质量判据（`test/verify-wallpaper-core.mjs`）
     // + 残留恢复 / 未点击不自下 / 死代码黑名单三条专项守卫。
     //（按本文件既有纪律：地板 = 实测步数，抬本身即证据；下面的负对照保证"删一步即红"）。
-    const CHAIN_FLOOR = { verify: 138, docs: 6, smoke: 6, all: 151 };
+    const CHAIN_FLOOR = { verify: 139, docs: 6, smoke: 6, all: 152 };
     /** 地板表与 GROUPS 的对齐体检：键名必须与**组名**逐一对齐（纯函数 ⇒ 负对照可直接喂）。 */
     const floorGaps = (groups, floors) => groups.map(([, g]) => g).filter((g) => !Number.isInteger(floors[g]));
     const problems = floorGaps(GROUPS, CHAIN_FLOOR).map((g) => '地板表缺组 ' + g

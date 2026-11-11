@@ -92,6 +92,7 @@ const ZERO_COVERAGE_WHY = {
   [M('lib', 'tts', 'tts-worker.cjs')]: '本地 TTS 子进程入口：由宿主按需 spawn，行为由 verify-tts-local 覆盖；本工具只认字面量路径 ⇒ 按口径算零覆盖',
 
 
+
   // ── 组件行宿主入口（合并后从 packages/* 搬到 lib/components/*）──
   [M('lib', 'components', 'mascot-avatar', 'index.js')]: '组件行入口：实现归属由 verify-route-ownership 的「行→入口」对账覆盖（按目录集合派生，非直读本文件）',
   [M('lib', 'components', 'fx', 'index.js')]: '子包宿主入口：只做 subpackageKeys 校验 + handOffTeardown，实现归属与逐行装载由 verify-subpackage-boot 与 verify-subpackage-toggle-roundtrip 覆盖（按目录与 patch 行派生）',
