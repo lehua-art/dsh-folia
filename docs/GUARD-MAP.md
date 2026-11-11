@@ -109,7 +109,7 @@
 | `verify-pet-sidebar-rebound.mjs` | `src/client.js` `src/sidebar-right.js` |  |
 | `verify-pet-tuner-browser.mjs` | `lib/components/pet-link/src/pet-link-tuner.js` `lib/components/pet-link/src/pet-link.js` |  |
 | `verify-pet-tuner.mjs` | `lib/components/pet-link/src/pet-link-tuner.js` `lib/components/pet-link/src/pet-link.js` |  |
-| `verify-pet-voice.mjs` | `lib/voice/record.js` `src/pet-chat.js` `src/pet-voice-input.js` |  |
+| `verify-pet-voice.mjs` | `lib/routes/pet-chat.js` `lib/voice/record.js` `src/pet-chat.js` `src/pet-voice-input.js` |  |
 | `verify-picker-model.mjs` | `src/picker-model.js` | ✅ |
 | `verify-picker-props.mjs` | — | ✅ |
 | `verify-picker-upload.mjs` | — | ✅ |
@@ -259,7 +259,7 @@
 | `lib/routes/media-derived.js` | 1 | `verify-transcode-state` |
 | `lib/routes/modules.js` | 0 | **（无）** |
 | `lib/routes/occlusion.js` | 1 | `verify-occlusion-hub` |
-| `lib/routes/pet-chat.js` | 2 | `verify-pet-chat` `verify-pet-settings` |
+| `lib/routes/pet-chat.js` | 3 | `verify-pet-chat` `verify-pet-settings` `verify-pet-voice` |
 | `lib/routes/pets.js` | 5 | `verify-download-first` `verify-downloads` `verify-features` `verify-hash-source` `verify-site-v1-sync` |
 | `lib/routes/presets.js` | 1 | `verify-presets` |
 | `lib/routes/props.js` | 1 | `verify-scene` |

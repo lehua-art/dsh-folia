@@ -167,6 +167,19 @@ const settings = { petChat: { enabled: false } };
   await host.close();
 }
 
+/* ⑨ P2：只改名字不能把模型配置冲掉 */
+{
+  rmSync(join(HOME, 'pet-chat', 'settings.json'), { force: true });
+  const host = await startHost({ petChat: { enabled: true, provider: 'openai', baseUrl: 'https://api.example.com', model: 'm-1', apiKey: 'sk-keep' } });
+  await postJson(host.base + '/config', { petName: '老朱' });
+  const after = await getJson(host.base + '/config');
+  const ok = after.body.data.provider === 'openai' && after.body.data.baseUrl === 'https://api.example.com'
+    && after.body.data.model === 'm-1' && after.body.data.hasApiKey === true && after.body.data.petName === '老朱';
+  check('⑨ P2 只改名字 ⇒ provider/baseUrl/model/key 全保持', ok,
+    `provider=${after.body.data.provider} baseUrl=${after.body.data.baseUrl} model=${after.body.data.model} hasKey=${after.body.data.hasApiKey}`);
+  await host.close();
+}
+
 /* ⑧ 写回只写新结构（覆盖层里不出现旧键） */
 {
   const host = await startHost(settings);
