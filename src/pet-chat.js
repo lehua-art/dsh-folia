@@ -107,7 +107,8 @@ const petVoiceIn = petVoiceInputCreate({
     if (typeof onState === 'function') onState({ state: 'idle' });
     petBubble.hide(3000);
   },
-  onText: (text) => { petBubble.append(text); },
+  // P4：用户自己的话**不进**气泡（那是回声）；只显示 assistant 的 SSE delta
+  onText: () => {},
   onError: (error) => {
     // 失败一律回落打字：只给一行提示，不弹错误框
     const map = {

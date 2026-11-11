@@ -23,6 +23,26 @@ function petBubbleCreate(deps) {
   /** 最多显示几行（超出用 CSS 行钳制，见 lineClamp 样式）。 */
   const MAX_LINES = 6;
 
+  const raf = typeof options.requestAnimationFrame === 'function' ? options.requestAnimationFrame : null;
+  const cancelRaf = typeof options.cancelAnimationFrame === 'function' ? options.cancelAnimationFrame : null;
+  let rafId = null;
+  const onClose = typeof options.onClose === 'function' ? options.onClose : () => {};
+
+  /** P3：打开期间每帧跟一次（拖动/缩放/窗口变化都能跟上），关闭时停。 */
+  function startFollow() {
+    if (!raf || rafId != null) return;
+    const step = () => {
+      place();
+      rafId = raf(step);
+    };
+    rafId = raf(step);
+  }
+
+  function stopFollow() {
+    if (rafId != null && cancelRaf) { try { cancelRaf(rafId); } catch { /* ignore */ } }
+    rafId = null;
+  }
+
   let el = null;
   let text = '';
   let visible = false;
@@ -65,6 +85,16 @@ function petBubbleCreate(deps) {
     el.style.webkitBoxOrient = 'vertical';
     el.style.overflow = 'hidden';
     el.style.whiteSpace = 'pre-wrap';
+    if (doc && typeof doc.createElement === 'function') {
+      const close = doc.createElement('button');
+      close.className = 'pet-bubble-close';
+      close.setAttribute('aria-label', '关闭');
+      close.textContent = '×';
+      close.style.cssText = 'position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:none;background:#333;color:#ddd;font-size:12px;line-height:1;cursor:pointer;pointer-events:auto;';
+      close.addEventListener('click', () => { hide(0); onClose(); });
+      if (typeof el.appendChild === 'function') el.appendChild(close);
+    }
+    el.style.position = 'fixed';
     if (doc.body && typeof doc.body.appendChild === 'function') doc.body.appendChild(el);
     return el;
   }
@@ -82,6 +112,7 @@ function petBubbleCreate(deps) {
     el.style.opacity = '1';
     visible = true;
     place();
+    startFollow();
   }
 
   /** 逐字/逐段追加（SSE 每个 chunk 调一次）。 */
@@ -92,7 +123,7 @@ function petBubbleCreate(deps) {
     el.textContent = text;
     el.style.opacity = '1';
     visible = true;
-    place();
+    startFollow();
   }
 
   /** 隐藏；带 delay 时先挂着，到点淡出（朗读结束后 +3s 用这个）。 */
@@ -102,6 +133,7 @@ function petBubbleCreate(deps) {
     const delay = Number(delayMs) || 0;
     const doHide = () => {
       fadeTimer = null;
+      stopFollow();
       el.style.opacity = '0';
       visible = false;
     };
@@ -120,6 +152,7 @@ function petBubbleCreate(deps) {
 
   function dispose() {
     cancelFade();
+    stopFollow();
     if (el && typeof el.remove === 'function') el.remove();
     el = null;
     text = '';
@@ -128,6 +161,7 @@ function petBubbleCreate(deps) {
 
   return {
     show, append, hide, setState, place, isVisible, dispose,
+    get following() { return rafId != null; },
     // 判据要读的内部状态
     get text() { return text; },
     get element() { return el; },

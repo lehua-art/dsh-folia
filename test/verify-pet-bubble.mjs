@@ -23,8 +23,10 @@ function makeDoc() {
     body,
     createElement() {
       return {
-        style: {}, dataset: {}, textContent: '', className: '',
+        style: {}, dataset: {}, textContent: '', className: '', children: [], handlers: {},
         removed: false,
+        setAttribute() {}, addEventListener(type, fn) { this.handlers[type] = fn; },
+        appendChild(node) { this.children.push(node); },
         remove() { this.removed = true; },
       };
     },
@@ -43,6 +45,7 @@ function makeTimers() {
 }
 
 const makeBubble = (anchorRef) => {
+  const rafQueue = [];
   const doc = makeDoc();
   const timers = makeTimers();
   const bubble = factory({
@@ -50,8 +53,10 @@ const makeBubble = (anchorRef) => {
     setTimeout: timers.setTimeout,
     clearTimeout: timers.clearTimeout,
     getAnchor: () => anchorRef.value,
+    requestAnimationFrame: (fn) => { rafQueue.push(fn); return rafQueue.length; },
+    cancelAnimationFrame: (id) => { rafQueue[id - 1] = null; },
   });
-  return { bubble, doc, timers };
+  return { bubble, doc, timers, rafQueue };
 };
 
 /* ① 锚定：气泡贴在桌宠头顶（水平居中、垂直向上） */
@@ -127,6 +132,46 @@ const makeBubble = (anchorRef) => {
     String(style.webkitLineClamp) === '6' && style.display === '-webkit-box'
       && style.maxWidth === '260px' && String(style.overflow) === 'hidden',
     `lineClamp=${style.webkitLineClamp} · maxWidth=${style.maxWidth}`);
+}
+
+
+/* ⑦ P3：rAF 跟随 —— 锚点变化后下一帧位置就跟上 */
+{
+  const anchorRef = { value: { left: 100, top: 200, width: 80, height: 80, scale: 1 } };
+  const { bubble, rafQueue } = makeBubble(anchorRef);
+  bubble.show('跟');
+  anchorRef.value = { left: 300, top: 400, width: 80, height: 80, scale: 1 };
+  const frame = rafQueue.find(Boolean);
+  if (frame) frame();
+  const style = bubble.element.style;
+  check('⑦ P3 跟随：锚点变化后下一帧位置更新（±1px）',
+    Math.abs(Number(style.left.replace('px','')) - 340) <= 1 && Math.abs(Number(style.top.replace('px','')) - 392) <= 1,
+    `left=${style.left} top=${style.top}`);
+}
+
+/* ⑧ P3：hide 后 rAF 停止 */
+{
+  const anchorRef = { value: { left: 0, top: 0, width: 10, height: 10, scale: 1 } };
+  const { bubble, rafQueue } = makeBubble(anchorRef);
+  bubble.show('停');
+  const before = rafQueue.filter(Boolean).length;
+  bubble.hide(0);
+  const after = rafQueue.filter(Boolean).length;
+  const frame = rafQueue.find(Boolean);
+  if (frame) frame();
+  check('⑧ P3 hide 后 rAF 停止', bubble.following === false && after === 0, `following=${bubble.following} 队列 ${before}→${after}`);
+}
+
+/* ⑨ P5：关闭按钮存在，点击隐藏，再点能重开 */
+{
+  const anchorRef = { value: { left: 0, top: 0, width: 10, height: 10, scale: 1 } };
+  const { bubble } = makeBubble(anchorRef);
+  bubble.show('关');
+  const close = (bubble.element.children || []).find((node) => node.className === 'pet-bubble-close');
+  const ok = Boolean(close);
+  if (close) close.handlers ? close.handlers.click() : null;
+  bubble.show('再开');
+  check('⑨ P5 关闭按钮存在 + 重开', ok && bubble.isVisible() === true, `按钮=${ok} · 重开=${bubble.isVisible()}`);
 }
 
 let failed = 0;
