@@ -96,6 +96,14 @@ function recorder({ devices = DEVICES_STDERR, speech = SPEECH_STDERR, throws = f
     `ok=${ok} · text=${events.text[0]} · errors=${events.error.length}`);
 }
 
+/* L7 P6：路由闭包里必须实例化 voiceRecorder（只 import 不 new ⇒ ReferenceError） */
+{
+  const route = readFileSync(join(ROOT, 'lib', 'routes', 'pet-chat.js'), 'utf8');
+  const instantiated = /const voiceRecorder = createVoiceRecorder\(/.test(route);
+  const registered = /registerPetChatRoutes/.test(route);
+  check('L7 P6 voiceRecorder 在闭包里实例化', instantiated && registered, `实例化=${instantiated}`);
+}
+
 /* L6 打字兜底仍在：前端有右键入口 + 输入条，没有 media API */
 {
   const chat = readFileSync(join(ROOT, 'src', 'pet-chat.js'), 'utf8');
