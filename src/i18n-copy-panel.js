@@ -429,6 +429,7 @@ const WE_I18N_EN_PANEL = {
   "再小一点": "Smaller",
   "回右下角": "Back to corner",
   "不显示它": "Hide it",
+  "对话": "Chat",
   "站点上还没有桌宠。": "No pets on the site yet.",
   "站点不可达": "Site unreachable",
   "预览尺寸": "Preview-size",

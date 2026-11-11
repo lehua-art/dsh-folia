@@ -458,6 +458,11 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
     const hr = document.createElement("div");
     hr.style.cssText = "height:1px;margin:6px 0;background:rgba(255,255,255,0.14)";
     menu.appendChild(hr);
+    // 「对话」：打开桌宠对话的输入条（由 pet-chat 特性监听该事件；没装该特性时点了无副作用）
+    menu.appendChild(buildMenuItem(weT("对话"), () => {
+      try { window.dispatchEvent(new CustomEvent("we-pet-talk")); } catch { /* ignore */ }
+      closeMenu();
+    }));
     menu.appendChild(buildMenuItem(weT("再大一点"), () => { applyScale(scale + 0.2); closeMenu(); }));
     menu.appendChild(buildMenuItem(weT("再小一点"), () => { applyScale(Math.max(0.5, scale - 0.2)); closeMenu(); }));
     menu.appendChild(buildMenuItem(weT("回右下角"), () => {

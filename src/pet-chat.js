@@ -62,6 +62,13 @@ function petChatPresetLine() {
 /** 头顶气泡实例：锚点取桌宠层矩形，跟随位置与缩放。 */
 const petBubble = petBubbleCreate({
   document: typeof document !== 'undefined' ? document : undefined,
+  // 跟随桌宠：把宿主环境的 rAF 交给气泡，打开期间每帧按 getAnchor() 重定位
+  requestAnimationFrame: typeof requestAnimationFrame === 'function'
+    ? (cb) => requestAnimationFrame(cb)
+    : undefined,
+  cancelAnimationFrame: typeof cancelAnimationFrame === 'function'
+    ? (id) => cancelAnimationFrame(id)
+    : undefined,
   getAnchor: () => {
     try {
       const layer = document && document.querySelector ? document.querySelector('#we-pet-layer') : null;
@@ -190,8 +197,10 @@ const petVoiceIn = petVoiceInputCreate({
       void ensureAsrReady();
       return;
     }
-    petBubble.hide(3000);
-    petChatOpenTyping({ hint: message });
+    // ⚠️ 失败**不要自动弹输入框**（用户会以为"点一下就变对话框"）。
+    // 打字入口只从右键菜单「对话」进；这里只给一行提示 + 引导。
+    petBubble.show(`${message}（右键 → 对话）`);
+    petBubble.hide(4000);
   },
 });
 
@@ -275,18 +284,14 @@ function mountPetChat() {
       petChatWake();
     }
   };
-  const onContextMenu = (event) => {
-    const target = event.target;
-    if (!target || typeof target.closest !== 'function') return;
-    if (!target.closest('#we-pet-layer')) return;
-    event.preventDefault();
-    petChatOpenTyping();
-  };
-  document.addEventListener('contextmenu', onContextMenu, true);
+  // 打字入口只从**右键菜单「对话」**进：pet-layer 的菜单项派发 `we-pet-talk`。
+  // 不再劫持 contextmenu —— 那会让右键弹不出桌宠原生菜单（试演动作/缩放…）。
+  const onTalkEvent = () => { petChatOpenTyping(); };
+  window.addEventListener('we-pet-talk', onTalkEvent);
   document.addEventListener('click', onDocumentClick, true);
   document.addEventListener('keydown', onKeyDown, true);
   return () => {
-    document.removeEventListener('contextmenu', onContextMenu, true);
+    window.removeEventListener('we-pet-talk', onTalkEvent);
     document.removeEventListener('click', onDocumentClick, true);
     document.removeEventListener('keydown', onKeyDown, true);
     petBubble.dispose();
