@@ -185,6 +185,7 @@ const petVoiceIn = petVoiceInputCreate({
     const map = {
       'no-device': '没找到麦克风，先打字吧',
       'ffmpeg-missing': '缺少 ffmpeg，先打字吧',
+      'unsupported-platform': '这个系统不支持桌面录音，用浏览器打开 DSH 才能语音',
       'asr-not-ready': '语音模型还没下载，我来准备一下…',
       timeout: '这次没听清，再说一次或直接打字',
       'no-speech': '没听到声音，再说一次或直接打字',
