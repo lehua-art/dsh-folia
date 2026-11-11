@@ -1,6 +1,6 @@
 {
   "name": "dsh-folia",
-  "version": "4.26.0-pre.14",
+  "version": "4.26.0-pre.15",
   "description": "DSH 壁纸引擎：本机 WE 壁纸实时渲染，视频/网页/开机动画/桌宠皮肤，一键拉取在线素材。",
   "type": "module",
   "engines": {
