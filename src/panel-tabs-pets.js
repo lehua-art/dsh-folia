@@ -465,7 +465,9 @@ function PetChatSettings() {
     try {
       // 填了 Key 就启用：面板不放任何开关，语义由 Key 的有无决定
       const body = { ...draft, apiKey: draft.apiKey || '', enabled: Boolean(draft.apiKey) || Boolean(draft.hasApiKey) };
-      const resp = await apiJson('/pet-chat/config', { method: 'POST', body, parse: 'always' });
+      // ⚠️ 必须用 apiPostJson：apiJson 只拼 URL，不做 JSON.stringify，
+      //    传对象会被浏览器发成 "[object Object]" ⇒ 宿主回 400 bad-json ⇒ 界面永远"保存失败"。
+      const resp = await apiPostJson('/pet-chat/config', body, { parse: 'always' });
       const doc = unwrapPetChat(resp);
       if (doc.saved) {
         setNote({ ok: true, text: weT('已保存') });

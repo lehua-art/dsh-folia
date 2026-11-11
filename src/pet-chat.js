@@ -146,7 +146,9 @@ function petChatOpenTyping(extra = {}) {
     const text = String(input.value || '').trim();
     if (!text) return;
     box.remove();
-    petBubble.show(text);
+    // 打字说的文本**不上气泡**（P4 同理：气泡只显示助手的回答）。
+    // 这里只把状态切成"思考中"，等 SSE 的 delta 逐字填进来。
+    petBubble.setState('think');
     void petVoiceIn.postChat(text);
   };
   input.addEventListener('keydown', (event) => {
