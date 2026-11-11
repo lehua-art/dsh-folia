@@ -82,10 +82,32 @@ const petVoiceIn = petVoiceInputCreate({
   },
   postChat: async (text, onState) => {
     petBubble.setState('answer');
-    const res = await apiFetch('/pet-chat/chat', {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }),
-    });
-    const reader = res.body.getReader();
+    // ⚠️ apiFetch 的返回值里**已经带上了原始 Response**（字段 `response`）。
+    //    上一版误写成 `res.body.getReader()`：res 是 { ok, status, data, response }，
+    //    res.body 恒为 undefined ⇒ 抛 TypeError ⇒ 读流代码一行都跑不到
+    //    （真机症状：输入后气泡停在 answer 状态、一个字都不出）。
+    //    也不要用裸 fetch —— 守卫 verify-api-client 要求客户端零裸 fetch。
+    let res;
+    try {
+      res = await apiFetch('/pet-chat/chat', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+    } catch {
+      petBubble.show('连不上宿主，稍后再试');
+      petBubble.hide(3000);
+      if (typeof onState === 'function') onState({ state: 'idle' });
+      return;
+    }
+    const stream = res && res.response;
+    if (!res || !res.ok || !stream || !stream.body) {
+      petBubble.show(res && res.status === 401 ? '模型 Key 无效，去设置里换一把' : '这次没答上来，再试一次');
+      petBubble.hide(3000);
+      if (typeof onState === 'function') onState({ state: 'idle' });
+      return;
+    }
+    const reader = stream.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
     for (;;) {
