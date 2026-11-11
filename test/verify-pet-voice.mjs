@@ -111,6 +111,13 @@ function recorder({ devices = DEVICES_STDERR, speech = SPEECH_STDERR, throws = f
   const both = chat + voice;
   const hasTyping = /function petChatOpenTyping\(/.test(chat) && /contextmenu/.test(chat);
   const media = /getUserMedia|AudioWorklet|ScriptProcessor/.test(both);
+  // L0：刻意回归 —— typing 走 petVoiceIn.postChat，模块必须把它暴露出来
+  //    （上一版只返回 start/stop，导致"输入文字后气泡毫无反应"）
+  check(
+    'L0 pet-voice-input 暴露 postChat（打字入口依赖）',
+    /return \{ start, stop, isActive: \(\) => active, postChat \}/.test(voice),
+    '模块 return 必须带 postChat（上一版漏了 ⇒ 打字后气泡毫无反应）',
+  );
   check('L6 打字入口可用，且前端无 media API', hasTyping && !media, `打字入口=${hasTyping} · media=${media}`);
 }
 
