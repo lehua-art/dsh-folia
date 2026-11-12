@@ -464,6 +464,7 @@ const VERIFY_STEPS = [
   step('test/verify-pet-voice.mjs'),
   step('test/verify-asr-local.mjs'),
   step('test/verify-capabilities.mjs'),
+  step('test/verify-boot-pool.mjs'),
 ];
 
 /** `npm run verify:docs` —— 软档（只出声）。全部经 warn-only 降级。 */

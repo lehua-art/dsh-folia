@@ -59,7 +59,7 @@ function check(name, cond, detail) { results.push({ name, ok: Boolean(cond), det
 
 /* ③ busy 只锁结构操作 */
 {
-  check('boot: structural 只含 download/select/remove', /const structural = kind === "download" \|\| kind === "select" \|\| kind === "remove";/.test(boot));
+  check('boot: structural 只含 download/select/remove/import', /const structural = kind === "download" \|\| kind === "select" \|\| kind === "remove" \|\| kind === "import";/.test(boot));
   check('pets: structural 只含 install/remove/import', /const structural = kind === "install" \|\| kind === "remove" \|\| kind === "import";/.test(pets));
 }
 

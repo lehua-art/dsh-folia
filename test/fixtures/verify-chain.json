@@ -1129,6 +1129,14 @@
           "args": [],
           "tier": "hard",
           "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-boot-pool.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
         }
       ]
     },
@@ -2371,6 +2379,14 @@
           "kind": "guard",
           "npm": null,
           "file": "test/verify-capabilities.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-boot-pool.mjs",
           "args": [],
           "tier": "hard",
           "probe": false

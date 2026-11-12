@@ -5,7 +5,7 @@
 > 口径：只统计守卫**代码**里真正碰到的模块（先剥注释），并区分"直接读源文件"与"隔着产物 `lib/client.js`"。
 > 写法：字面量路径 / `join(...)` 拼接 / 唯一 basename / 产物配方 / **前缀族读法** `scopeFiles|scopeText(<前缀>)` / **经共享族助手读**（`import { panelText } from './tools/src-scope.mjs'` + 真调用；族口径封在那个库里，见 DEV-GUIDE §4.6「同时是守卫的库」）/ **真源定位读**（`locate('符号')` / `locateFile('文件名')`，`test/tools/source-locator.mjs`：符号唯一声明在哪就是读了哪个模块）。
 
-模块面 215 个 · 守卫 154 个
+模块面 215 个 · 守卫 155 个
 
 ## 守卫 → 模块
 
@@ -28,6 +28,7 @@
 | `verify-asset-paths.mjs` | `lib/media/media-dirs.js` `lib/upload-dir.js` `lib/we-assets.js` |  |
 | `verify-avatar-interval-and-rotation.mjs` | `lib/fs-paths.js` `lib/inventory.js` `lib/media/image-preview.js` `lib/routes/inventory.js` `lib/routes/media-bytes.js` `lib/serve.js` `lib/settings-schema.js` `lib/upload-dir.js` `lib/upload-store.js` `src/avatar-layer.js` `src/client.js` `src/ext-avatar.js` `src/panel-tabs-wallpaper.js` `src/video-layer.js` |  |
 | `verify-body-caps.mjs` | `lib/http-body.js` `lib/routes/upload.js` | ✅ |
+| `verify-boot-pool.mjs` | `lib/boot/index.js` |  |
 | `verify-bridge-ci.mjs` | — |  |
 | `verify-bundle-rows.mjs` | `lib/components/about-notice/index.js` `lib/host-boot.js` `lib/index.js` `lib/kernel/component-session.js` `lib/kernel/host-kernel.js` `lib/subpackage-boot.js` |  |
 | `verify-cache-dir.mjs` | `lib/components/media-bridge/backend.js` `lib/components/media-bridge/legacy.js` `lib/faststart.js` `lib/index.js` `lib/kernel/data-dir.js` `lib/media/frame-store.js` `lib/media/media-dirs.js` `lib/media/transcode.js` `lib/media/video-preview.js` `lib/routes/cache-dir.js` `lib/upload-dir.js` |  |
@@ -172,7 +173,7 @@
 |---|---:|---|
 | `lib/asr/asr-local.js` | 1 | `verify-asr-local` |
 | `lib/asr/asr-worker.cjs` | 1 | `verify-asr-local` |
-| `lib/boot/index.js` | 0 | **（无）** |
+| `lib/boot/index.js` | 1 | `verify-boot-pool` |
 | `lib/cache-dir.js` | 1 | `verify-scene-live` |
 | `lib/client.js` | 52 | `fontset-load-smoke` `live-frame-async-identity-smoke` `live-frame-backfill-smoke` `rotation-live-smoke` `rotation-prepared-leak-smoke` `rotation-smoke` `verify-about` `verify-api-client` `verify-body-caps` `verify-cache-manager` `verify-child-kill` `verify-client-sync` `verify-client` `verify-component-fonts` `verify-ctx-access` `verify-extra-glass` `verify-features` `verify-fontset` `verify-glass-compositing` `verify-glass-runtime-browser` `verify-glass-runtime` `verify-glass-surfaces` `verify-host-paint-scope` `verify-i18n` `verify-json-response` `verify-local-media-heal` `verify-media-selfheal` `verify-media-state` `verify-module-layout` `verify-occlusion-client` `verify-package-files` `verify-package-publish` `verify-picker-model` `verify-picker-props` `verify-picker-upload` `verify-playback-controls` `verify-presets` `verify-reachability` `verify-readability` `verify-scene-live` `verify-scene` `verify-settings-schema-exports` `verify-softrender` `verify-subpackage-client-half` `verify-subpackage-toggle-roundtrip` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` `verify-transcode-state` `verify-types` `verify-wallpaper-core` `verify-windows-caption` |
 | `lib/component-visibility.js` | 1 | `verify-component-visibility` |

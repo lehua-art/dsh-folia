@@ -84,7 +84,6 @@ const ZERO_COVERAGE_WHY = {
   //    由目录集合或产物动态派生的守卫按口径算零覆盖，故在这里登记。
 
   // ── 我们自己的新模块：覆盖来自功能级测试与守卫（按口径算零覆盖）──
-  [M('lib', 'boot', 'index.js')]: '开机注入与本地片段目录：行为由 test/boot-http.mjs 以真 http.Server 覆盖（list/download/select/Range/remove/legacy 迁移共 37 条），注入脚本由 test/feature-manifest 侧的入口对账覆盖；本工具只认字面量路径 ⇒ 按口径算零覆盖',
   [M('lib', 'routes', 'modules.js')]: '站点模块索引（开机动画候选的兜底来源）：由 test/boot-http.mjs 的真实下载链路间接驱动（候选解析走它），本工具只认字面量路径 ⇒ 按口径算零覆盖',
   [M('lib', 'routes', 'site-thumb.js')]: '站点图片缩略图代理：行为由 verify-media-bytes 族与手工端到端验证（首拉 524KB、次拉 4ms 命中缓存）覆盖，路径穿越由 /media 白名单判据覆盖；本工具只认字面量路径 ⇒ 按口径算零覆盖',
   // v0.2 本地 TTS 子进程入口：只有在启用离线音色时由宿主 spawn（普通 node.exe，不能在 Electron 里跑），
@@ -192,7 +191,7 @@ console.log('\n① 每个模块都要有守卫碰过它（例外表只许缩小�
   //    正/负对照一起变成假红，见 D/F 两次收口）。
   // 合成用「已登记」例子必须是**表里当前确实存在的一条**：合并后那些 packages/* 条目已搬到
 // lib/components/*，取一条搬过去之后的真实键（取旧路径会让正/负对照一起假红）。
-const registeredExample = M('lib', 'boot', 'index.js');
+const registeredExample = M('lib', 'routes', 'modules.js');
   check('negative control: 新模块没守卫时会被同一条判据判出（合成输入）',
     uncoveredUnregistered(['src/zzz-new-module.js'], allowed).length === 1
     && uncoveredUnregistered([registeredExample], allowed).length === 0,

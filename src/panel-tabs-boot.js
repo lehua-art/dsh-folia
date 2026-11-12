@@ -132,7 +132,7 @@ function BootTabPanel() {
   async function act(kind, payload, label, ev, jobUrl) {
     if (busy) return;
     // 只有结构性操作（下载 / 选择 / 删除）才锁 UI；开关与参数是幂等的，锁了反而闪。
-    const structural = kind === "download" || kind === "select" || kind === "remove";
+    const structural = kind === "download" || kind === "select" || kind === "remove" || kind === "import";
     const cardId = String((payload && payload.id) || "");
     const isDownload = kind === "download";
     // 4.23.3：**下载走队列后不再锁整页** —— 进度落在卡片上（dlBusyLabel），锁住反而让人
@@ -195,6 +195,7 @@ function BootTabPanel() {
         }
         if (kind === "select") setNote({ ok: true, text: weT("已选中「{name}」，下次启动生效", { name: label }) });
         if (kind === "remove") setNote({ ok: true, text: weT("已删除：{name}", { name: label }) });
+    if (kind === "import") setNote({ ok: true, text: weT("已导入：{name}", { name: label }) });
         if (kind === "toggle") setNote({ ok: true, text: payload.enabled ? weT("开机动画已开启") : weT("开机动画已关闭") });
         if (kind === "settings") setNote({ ok: true, text: weT("已保存") });
         // 开关/参数类：宿主把整份 boot 配置回给我们（{ ok, ...boot }），直接并进 state，
@@ -314,11 +315,58 @@ function BootTabPanel() {
         }),
         weT("带声音"),
       ),
+      // 素材池取片方式：装了多条时才有意义
+      React.createElement("label", { style: { display: "flex", gap: "4px", alignItems: "center", fontSize: "12px" } },
+        weT("多条时"),
+        React.createElement("select", {
+          className: "we-picker__playlist-select",
+          value: String(state.poolMode || "first"),
+          disabled: Boolean(busy),
+          onChange: (e) => act("settings", { poolMode: e.target.value }, ""),
+        },
+          React.createElement("option", { value: "first" }, weT("固定第一条")),
+          React.createElement("option", { value: "random" }, weT("随机")),
+          React.createElement("option", { value: "rotate" }, weT("轮换")),
+        ),
+      ),
       opt(weT("最短显示"), "minShowMs", [[0, weT("不限制")], [600, weT("0.6 秒")], [1200, weT("1.2 秒")], [2000, weT("2 秒")]]),
       opt(weT("最长停留"), "maxHoldMs", [[10000, weT("10 秒")], [20000, weT("20 秒（默认）")], [30000, weT("30 秒")], [60000, weT("60 秒")]]),
     ));
   }
 
+    children.push(React.createElement("div", {
+      key: "import",
+      style: { display: "flex", alignItems: "center", gap: "8px", margin: "2px 0 6px", flexWrap: "wrap" },
+    },
+      React.createElement("button", {
+        type: "button",
+        className: "we-picker__btn",
+        disabled: Boolean(busy),
+        onClick: () => {
+          const input = document.createElement("input");
+          input.type = "file";
+          input.accept = "video/mp4,video/webm,.mp4,.webm";
+          input.style.display = "none";
+          input.addEventListener("change", () => {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            if (file.size > 64 * 1024 * 1024) { setNote({ ok: false, text: weT("文件太大（上限 64MB）") }); return; }
+            const reader = new FileReader();
+            reader.onload = () => {
+              const raw = String(reader.result || "");
+              const comma = raw.indexOf(",");
+              const data = comma >= 0 ? raw.slice(comma + 1) : raw;
+              void act("import", { data, filename: file.name }, file.name);
+            };
+            reader.onerror = () => setNote({ ok: false, text: weT("读取文件失败") });
+            reader.readAsDataURL(file);
+          });
+          input.click();
+        },
+      }, weT("导入本地动画")),
+      React.createElement("span", { className: "we-picker__hint" },
+        weT("支持 mp4 / webm，≤64MB；导入后只在本地，不上传站点")),
+    ));
   children.push(React.createElement("div", { key: "count", className: "we-picker__hint", style: { margin: "2px 0 4px" } },
     weT("已下载 {done} / {total}", { done: installedCount, total: clips.length })));
 
@@ -362,7 +410,11 @@ function BootTabPanel() {
                 onError: (e) => { e.target.style.display = "none"; },
               })
             : null,
-          React.createElement("div", { style: BOOT_STYLE.title }, c.title || c.id),
+          React.createElement("div", { style: BOOT_STYLE.title },
+            (c.title || c.id),
+            c.source === "local"
+              ? React.createElement("span", { className: "we-picker__hint", style: { marginLeft: "6px" } }, weT("本地"))
+              : null),
           React.createElement("div", { style: BOOT_STYLE.meta },
             [c.durationSec ? Number(c.durationSec).toFixed(1) + "s" : null,
              bootFmtBytes(c.localBytes || c.bytes)].filter(Boolean).join(" · ")),
