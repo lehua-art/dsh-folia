@@ -463,6 +463,7 @@ const VERIFY_STEPS = [
   // 语音输入（6 条：全链路 / 权限 / asr-not-ready / 15s 上限 / 静音结束 / 打字兜底）
   step('test/verify-pet-voice.mjs'),
   step('test/verify-asr-local.mjs'),
+  step('test/verify-capabilities.mjs'),
 ];
 
 /** `npm run verify:docs` —— 软档（只出声）。全部经 warn-only 降级。 */

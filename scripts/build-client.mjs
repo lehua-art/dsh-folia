@@ -397,6 +397,11 @@ const INLINE_MODULES = [
     markers: ['function PetsTabPanel()', 'function renderPetsTab()', 'const PET_STYLE = '],
   },
   {
+    file: 'src/panel-tabs-work.js',
+    why: '「能力」一级设置项：工作能力/娱乐 两区卡片 + 详情 + 复制安装命令（只读展示，不做一键安装）',
+    markers: ['function CapabilitiesSection()', 'function CapabilityCard(', 'const CAP_STATUS_TEXT = '],
+  },
+  {
     file: 'src/pet-layer.js',
     why: '桌宠渲染层：canvas 逐帧绘 sprite2d 雪碧图 + 拖动 + 状态机（自渲染，不依赖第三方宠物插件）',
     markers: ['function mountPetLayer()', 'function createPetLayer(', 'const PET_ROW = '],

@@ -7182,6 +7182,15 @@ function apply(ctx) {
       ),
     );
   }
+  // 2a. 第二个一级设置项：「能力」（工作能力 / 娱乐；只做展示与安装指引，不做一键安装）
+  if (ctx.slots) {
+    ctx.slots.inject("settings.section", () =>
+      ctx.slots.register(
+        { name: "settings.section", id: "folia-capabilities", order: 501, label: () => weT("能力") },
+        () => React.createElement(CapabilitiesSection),
+      ),
+    );
+  }
 
   // 2b. 设置导航图标：官方 nav 的图标是 shell 里 navIcon(id) 的硬编码映射，第三方
   //     section 一律拿兜底齿轮 —— 用 DOM 补丁把「壁纸引擎」那格换成自绘 SVG
