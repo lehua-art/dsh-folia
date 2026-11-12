@@ -889,6 +889,33 @@ function hostFailureReason(res) {
   const data = res.data;
   return (data && data.error) || weT("宿主返回 {status}", { status: res.status });
 }
+/* 已缓存角标的本地记忆：清单一到手先按上次的结论渲染，等服务端对账回来再校正。
+ * 为什么需要：重启后第一次进面板，服务端清单里的 localReady 还没算完，角标会集体消失；
+ * 用户点一下才恢复。记一份 id 集合就能"看起来一直是对的"。 */
+const FOLIA_LOCAL_READY_KEY = 'folia.localReady.v1';
+function foliaLocalReadyRead() {
+  try {
+    const raw = window.localStorage.getItem(FOLIA_LOCAL_READY_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr.map(String) : []);
+  } catch { return new Set(); }
+}
+function foliaLocalReadyWrite(set) {
+  try { window.localStorage.setItem(FOLIA_LOCAL_READY_KEY, JSON.stringify([...set].slice(-500))); } catch { /* 只读环境 */ }
+}
+function foliaHydrateLocalReady(list) {
+  const known = foliaLocalReadyRead();
+  if (!known.size) return;
+  for (const w of list || []) {
+    if (w && !w.localReady && known.has(String(w.id))) w.localReady = true;
+  }
+}
+function foliaPersistLocalReady(list) {
+  const next = foliaLocalReadyRead();
+  for (const w of list || []) if (w && w.localReady === true) next.add(String(w.id));
+  foliaLocalReadyWrite(next);
+}
+
 let inventorySeq = 0;
 async function loadInventory(opts) {
   const o = opts || {};
@@ -920,6 +947,7 @@ async function loadInventory(opts) {
       // 场景载荷的源（独立壁纸媒体源的 origin；空串 = 回落应用源，见 live-layer 的 liveRenderUrl）。
       sceneMediaBase: typeof data.sceneMediaBase === "string" ? data.sceneMediaBase : "",
       wallpapers: data.wallpapers || [],
+      // 先按本地记忆补齐"已缓存"，服务端这份才是权威（下面再写回记忆）
       total: data.total || 0,
       portableCount: data.portableCount || 0,
       playlists: Array.isArray(data.playlists) ? data.playlists : [],

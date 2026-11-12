@@ -67,8 +67,11 @@ async function skinInstalledNow(rawId) {
   } catch { return false; }
 }
 
+/** 页签级缓存：切回来先渲染上一份清单，再后台刷新。 */
+let SKINS_TAB_CACHE = null;
+
 function SkinsTabPanel() {
-  const [state, setState] = React.useState(null);
+  const [state, setState] = React.useState(SKINS_TAB_CACHE);
   const [busy, setBusy] = React.useState("");
   // 给"静默对账"用的只读镜像：定时器/可见性回调里不能读闭包里的旧 `busy`（会一直看到 ""），
   // 用一个 ref 跟住最新值，操作进行中就不打扰用户。

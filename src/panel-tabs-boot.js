@@ -63,8 +63,11 @@ const BOOT_STYLE = {
   row: { display: "flex", gap: "6px", alignItems: "center" },
 };
 
+/** 页签级缓存：切走再切回来直接用上一份清单渲染，网络在后台刷新（"首次点击要等一会"的解药）。 */
+let BOOT_TAB_CACHE = null;
+
 function BootTabPanel() {
-  const [state, setState] = React.useState(null);
+  const [state, setState] = React.useState(BOOT_TAB_CACHE);
   const [busy, setBusy] = React.useState("");
   const [note, setNote] = React.useState(null);
   // C1：面板内预览（不用重启就能看到素材本身）
@@ -88,6 +91,7 @@ function BootTabPanel() {
       const resp = await apiJson("/boot/list" + (force ? "?refresh=1" : ""), { parse: "always" });
       const r = (resp && resp.data) || null;
       setState(r || { ok: false, clips: [], error: "network" });
+      if (r) BOOT_TAB_CACHE = r;
       // 过期失败提示自愈：提示说"未落地"，但列表里该条已经 installed ⇒ 清掉提示
       try {
         setNote((prev) => {
