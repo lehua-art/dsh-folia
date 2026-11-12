@@ -73,6 +73,15 @@ function BootTabPanel() {
       const resp = await apiJson("/boot/list" + (force ? "?refresh=1" : ""), { parse: "always" });
       const r = (resp && resp.data) || null;
       setState(r || { ok: false, clips: [], error: "network" });
+      // 过期失败提示自愈：提示说"未落地"，但列表里该条已经 installed ⇒ 清掉提示
+      try {
+        setNote((prev) => {
+          if (!prev || prev.ok !== false) return prev;
+          if (!/未落地/.test(String(prev.text || ""))) return prev;
+          const target = (r && Array.isArray(r.clips)) ? r.clips.find((c) => c && c.installed) : null;
+          return target ? null : prev;
+        });
+      } catch { /* ignore */ }
     } catch (e) {
       setState({ ok: false, clips: [], error: "network" });
     }
@@ -180,6 +189,15 @@ function BootTabPanel() {
                 const code = done.status === "lost" ? "job-lost" : "download-timeout";
                 cards.fail(cardId, code);
                 setNote({ ok: false, text: dlFailReason(code) });
+    // 失败提示 12 秒后自动消失：真实事故里"下完但没落地"的提示会一直挂着，误导用户
+    try {
+      if (typeof window !== "undefined" && window.setTimeout) {
+        const tone = String(dlFailReason(code) || "");
+        window.setTimeout(() => {
+          setNote((prev) => (prev && prev.ok === false && prev.text === tone ? null : prev));
+        }, 12000);
+      }
+    } catch { /* ignore */ }
               }
             } else if (done) {
               cards.fail(cardId, done.error || done.status);
