@@ -213,15 +213,18 @@ function BootTabPanel() {
         }
         if (kind === "select") setNote({ ok: true, text: weT("已选中「{name}」，下次启动生效", { name: label }) });
         if (kind === "remove") setNote({ ok: true, text: weT("已删除：{name}", { name: label }) });
-    if (kind === "import") setNote({ ok: true, text: weT("已导入：{name}", { name: label }) });
+        if (kind === "import") setNote({ ok: true, text: weT("已导入：{name}", { name: label }) });
         if (kind === "toggle") setNote({ ok: true, text: payload.enabled ? weT("开机动画已开启") : weT("开机动画已关闭") });
         if (kind === "settings") setNote({ ok: true, text: weT("已保存") });
         // 开关/参数类：宿主把整份 boot 配置回给我们（{ ok, ...boot }），直接并进 state，
         // **不再 load(true) 重拉整表** —— 那次重拉会让所有控件先禁用再恢复，视觉上就是闪一下。
-        if (kind === "toggle" || kind === "settings") {
+        if (kind === "toggle" || kind === "settings" || kind === "select") {
+          // 宿主把整份 boot 配置回给我们（含 clipId/items/poolMode/transition/act1）⇒ 直接并进 state。
+          // select 以前走 load(true)：会重拉站点候选（两跳网络），"切换慢"就是这个原因。
           setState((prev) => (prev ? { ...prev, ...r } : prev));
         } else {
-          await load(true);
+          // 删除/导入只刷新本地清单，不重拉站点候选（load(false) 走 30s 缓存）
+          await load(false);
         }
       } else {
         const code = (r && r.error) || "failed";
