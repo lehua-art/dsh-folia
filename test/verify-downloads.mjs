@@ -1267,7 +1267,7 @@ try { rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
     check('㉕ 皮肤页签：连续计数在**查到 job** 时清零（抖一下就判丢是错的）',
       /if \(job\) jobMisses = 0;/.test(skinsTab));
     check('㉕ 开机动画 / 桌宠：lost 与 timeout 都先核列表再判失败',
-      /done\.status === "lost"/.test(bootTab) && /bootInstalledNow\(cardId\)/.test(bootTab)
+      /done\.status === "lost"/.test(bootTab) && /boot(?:InstalledNow|WaitInstalled)\(cardId\)/.test(bootTab)
       && /done\.status === "lost"/.test(petsTab) && /petsInstalledNow\(cardId\)/.test(petsTab));
     check('㉕ 三个页签都在挂载时清理"无 job 的残留卡片"（回落 idle、可点安装）',
       [skinsTab, bootTab, petsTab].every((t) => /dlStaleCards\(/.test(t) && /cards\.settle\(/.test(t)));
