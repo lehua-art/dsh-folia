@@ -67,6 +67,8 @@ function BootTabPanel() {
   const [state, setState] = React.useState(null);
   const [busy, setBusy] = React.useState("");
   const [note, setNote] = React.useState(null);
+  // C1：面板内预览（不用重启就能看到素材本身）
+  const [preview, setPreview] = React.useState(false);
   // 4.23.3：卡片状态以 /folia/downloads/list 为唯一真源 —— 切页签重新挂载后，
   // 这里拉回来的 job 会让「下载中… x%」直接出现，而不是回到「下载」。
   const dl = useDownloadJobs();
@@ -411,6 +413,55 @@ function BootTabPanel() {
         onBlur: (e) => act("settings", { act1: { enabled: true, text: e.target.value, durationMs: (state.act1 && state.act1.durationMs) || 1200 } }, ""),
         style: { width: "220px", fontSize: "12px" },
       }) : null,
+      (state.act1 && state.act1.enabled) ? React.createElement("label", { style: { display: "flex", gap: "4px", alignItems: "center", fontSize: "12px" } },
+        weT("第一幕时长"),
+        React.createElement("select", {
+          className: "we-picker__playlist-select",
+          value: String((state.act1 && state.act1.durationMs) || 1200),
+          disabled: Boolean(busy),
+          onChange: (e) => act("settings", { act1: { enabled: true, text: (state.act1 && state.act1.text) || "", durationMs: Number(e.target.value), image: Boolean(state.act1 && state.act1.image) } }, ""),
+        },
+          React.createElement("option", { value: "600" }, "0.6s"),
+          React.createElement("option", { value: "1200" }, "1.2s"),
+          React.createElement("option", { value: "2000" }, "2.0s"),
+          React.createElement("option", { value: "3000" }, "3.0s"),
+        ),
+      ) : null,
+      (state.act1 && state.act1.enabled) ? React.createElement("label", { style: { display: "flex", gap: "6px", alignItems: "center", fontSize: "12px" } },
+        React.createElement("input", {
+          type: "checkbox",
+          checked: Boolean(state.act1 && state.act1.image),
+          disabled: Boolean(busy),
+          onChange: (e) => act("settings", { act1: { enabled: true, text: (state.act1 && state.act1.text) || "", durationMs: (state.act1 && state.act1.durationMs) || 1200, image: e.target.checked } }, ""),
+        }),
+        weT("第一幕用图片"),
+      ) : null,
+      (state.act1 && state.act1.enabled && state.act1.image) ? React.createElement("button", {
+        type: "button", className: "we-picker__btn", disabled: Boolean(busy),
+        onClick: () => {
+          const input = document.createElement("input");
+          input.type = "file";
+          input.accept = "image/png";
+          input.style.display = "none";
+          input.addEventListener("change", () => {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            if (file.size > 4 * 1024 * 1024) { setNote({ ok: false, text: weT("图片太大（上限 4MB）") }); return; }
+            const reader = new FileReader();
+            reader.onload = () => {
+              const raw = String(reader.result || "");
+              const comma = raw.indexOf(",");
+              const data = comma >= 0 ? raw.slice(comma + 1) : raw;
+              void apiPostJson("/boot/act1-image", { data }, { parse: "always" }).then((resp) => {
+                const doc = (resp && resp.data) || null;
+                setNote(doc && doc.ok ? { ok: true, text: weT("已上传第一幕图片") } : { ok: false, text: weT("上传失败") });
+              }).catch(() => setNote({ ok: false, text: weT("上传失败") }));
+            };
+            reader.readAsDataURL(file);
+          });
+          input.click();
+        },
+      }, weT("上传第一幕图片（PNG）")) : null,
       opt(weT("最短显示"), "minShowMs", [[0, weT("不限制")], [600, weT("0.6 秒")], [1200, weT("1.2 秒")], [2000, weT("2 秒")]]),
       opt(weT("最长停留"), "maxHoldMs", [[10000, weT("10 秒")], [20000, weT("20 秒（默认）")], [30000, weT("30 秒")], [60000, weT("60 秒")]]),
     ));
@@ -448,6 +499,10 @@ function BootTabPanel() {
       }, weT("导入本地动画")),
       React.createElement("span", { className: "we-picker__hint" },
         weT("支持 mp4 / webm，≤64MB；导入后只在本地，不上传站点")),
+      React.createElement("button", {
+        type: "button", className: "we-picker__btn", disabled: Boolean(busy) || !activeId,
+        onClick: () => setPreview((v) => !v),
+      }, weT("预览效果")),
     ));
   children.push(React.createElement("div", { key: "count", className: "we-picker__hint", style: { margin: "2px 0 4px" } },
     weT("已下载 {done} / {total}", { done: installedCount, total: clips.length })));
@@ -517,6 +572,20 @@ function BootTabPanel() {
     children.push(React.createElement("div", { key: "empty", className: "we-picker__empty" },
       React.createElement("span", { className: "we-picker__empty-title" }, weT("没有可用的开机动画")),
       React.createElement("span", { className: "we-picker__hint" }, weT("素材来自站点；站点不可达时这里为空，但不影响启动"))));
+  }
+
+  if (preview && activeId) {
+    children.push(React.createElement("div", {
+      key: "preview",
+      style: { position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,.72)", display: "flex", alignItems: "center", justifyContent: "center" },
+      onClick: () => setPreview(false),
+    },
+      React.createElement("video", {
+        src: "/folia/boot/clip?v=" + encodeURIComponent(activeId),
+        autoPlay: true, muted: true, playsInline: true,
+        style: { width: "min(720px, 88vw)", aspectRatio: "16 / 9", borderRadius: "10px", background: "#000" },
+      }),
+    ));
   }
 
   return React.createElement(React.Fragment, null, children);
