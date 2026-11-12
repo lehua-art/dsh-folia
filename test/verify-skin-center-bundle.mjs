@@ -73,7 +73,10 @@ function rowNames(src) {
 /* ② patch 两条 row：我们自己的 + 皮肤中心（且 name 精确指向该包） */
 {
   const names = rowNames(patch);
-  check('cordis.patch.yml 恰好三条 row（folia + skin-center + market）', names.length === 3, names.join(','));
+  // 基础三条（folia + skin-center + market）必须有；工作能力聚合行（work-*）允许追加
+  const baseRows = [PKG, SKIN_CENTER, '@linxin666/dsh-client-ui-market'];
+  check('cordis.patch.yml 含基础三条 row（folia + skin-center + market）',
+    baseRows.every((n) => names.includes(n)), names.join(','));
   check('包含我们自己的 dsh-folia', names.includes(PKG), names.join(','));
   check('包含皮肤中心这一条（随身携带的意义就在这里）', names.includes(SKIN_CENTER), names.join(','));
   const noSkinRow = patch.split('\n').filter((l) => !l.includes(SKIN_CENTER)).join('\n');
@@ -98,8 +101,8 @@ function rowNames(src) {
 /* ④ 正对照：真实文件确实通过上面三条（不是"因为空所以过"） */
 {
   const idsNow = rowIds(patch);
-  check('正对照: 真实 patch 的 id 列表就是 [folia, skin-center, market]',
-    idsNow.length === 3 && idsNow[0] === 'folia' && idsNow[1] === 'skin-center' && idsNow[2] === 'market',
+  check('正对照: 真实 patch 的 id 列表以 [folia, skin-center, market] 开头（工作能力行 work-* 追加在后面）',
+    idsNow.length >= 3 && idsNow[0] === 'folia' && idsNow[1] === 'skin-center' && idsNow[2] === 'market',
     'ids=' + idsNow.join(','));
   check('正对照: 负对照用的注入确实能被 rowNames 解析出来',
     rowNames("    - id: x\n      name: 'probe-pkg'\n").includes('probe-pkg'));

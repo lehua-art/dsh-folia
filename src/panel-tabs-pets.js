@@ -444,6 +444,8 @@ function PetChatSettings() {
   const [status, setStatus] = React.useState({ ok: null, text: '' });
   const [note, setNote] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
+  // 工作能力插件（聚合携带）的安装状态；只读展示，不加开关
+  const [workPlugins, setWorkPlugins] = React.useState(null);
   const update = React.useCallback((patch) => setDraft((prev) => ({ ...prev, ...patch })), []);
 
   const load = React.useCallback(async () => {
@@ -459,6 +461,12 @@ function PetChatSettings() {
     } catch { /* 首次加载失败不打扰 */ }
   }, []);
   React.useEffect(() => { void load(); }, [load]);
+  React.useEffect(() => {
+    void (async () => {
+      const resp = await apiJson('/pet-chat/work-plugins', { parse: 'always' }).catch(() => null);
+      setWorkPlugins(unwrapPetChat(resp));
+    })();
+  }, []);
 
   const save = async () => {
     setBusy(true);
@@ -527,6 +535,33 @@ function PetChatSettings() {
     React.createElement('button', { type: 'button', className: 'we-picker__btn', disabled: busy, onClick: save }, weT('保存')),
   ));
 
+
+  // ── 工作能力（随插件携带，只读状态）─────────────────────────────────
+  const workItems = (workPlugins && Array.isArray(workPlugins.items)) ? workPlugins.items : [];
+  child.push(React.createElement('div', {
+    key: 'work-head',
+    style: { marginTop: '14px', fontSize: '12px', fontWeight: 600 },
+  }, weT('工作能力（随插件携带）')));
+  if (!workItems.length) {
+    child.push(React.createElement('div', { key: 'work-empty', className: 'we-picker__hint' }, weT('正在读取…')));
+  } else {
+    workItems.forEach((item) => {
+      child.push(React.createElement('div', {
+        key: 'work-' + item.id,
+        className: 'we-picker__hint',
+        style: { margin: '2px 0' },
+      }, (item.installed ? '✓ ' : '· ') + item.label
+        + (item.version ? ' ' + item.version : '')
+        + (item.needs ? '（' + item.needs + '）' : '')));
+    });
+  }
+  if (workPlugins && workPlugins.conflict) {
+    child.push(React.createElement('div', {
+      key: 'work-conflict',
+      className: 'we-picker__hint',
+      style: { marginTop: '4px', color: '#d9a13b' },
+    }, weT('冲突提醒：') + workPlugins.conflict.note));
+  }
   return React.createElement('div', { style: { ...PET_STYLE.card, marginTop: '10px' } }, child);
 }
 
