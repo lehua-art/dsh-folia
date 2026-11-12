@@ -517,6 +517,9 @@ function SkinsTabPanel() {
           });
         }
         if (kind === "remove") setNote({ ok: true, text: weT("已卸载：{name}", { name: label || "" }) });
+    // 卸载成功后必须把这张卡片的失败/安装中状态清掉：
+    // 真实事故 —— 卸完了，卡片还挂着上一轮「下载已完成但安装未落地 · 重试」，看着像没删掉。
+    if (kind === "remove" && cardId) cards.end(cardId);
         if (kind === "repair") {
           setNote({
             ok: true,

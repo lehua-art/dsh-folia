@@ -1160,7 +1160,7 @@ async function dlInstallClick(o) {
  */
 
 /** 每条壁纸最多自愈几次。超过就只提示 —— 防"每次 error 都重下"的死循环。 */
-const LF_HEAL_MAX_TRIES = 2;
+const LF_HEAL_MAX_TRIES = 4;
 /** 轮询救援产物/重下的间隔与上限（转码是几十秒级的，给 3 分钟）。 */
 const LF_HEAL_POLL_MS = 1500;
 const LF_HEAL_POLL_MAX_MS = 3 * 60 * 1000;
