@@ -541,7 +541,7 @@ function PetChatSettings() {
   child.push(React.createElement('div', {
     key: 'work-head',
     style: { marginTop: '14px', fontSize: '12px', fontWeight: 600 },
-  }, weT('工作能力（随插件携带）')));
+  }, weT('可选工作能力（已安装才可用）')));
   if (!workItems.length) {
     child.push(React.createElement('div', { key: 'work-empty', className: 'we-picker__hint' }, weT('正在读取…')));
   } else {

@@ -430,7 +430,7 @@ const WE_I18N_EN_PANEL = {
   "回右下角": "Back to corner",
   "不显示它": "Hide it",
   "对话": "Chat",
-  "工作能力（随插件携带）": "Work capabilities (bundled)",
+  "可选工作能力（已安装才可用）": "Optional work capabilities (installed only)",
   "正在读取…": "Loading…",
   "冲突提醒：": "Conflict: ",
   "站点上还没有桌宠。": "No pets on the site yet.",

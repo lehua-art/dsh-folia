@@ -30,17 +30,3 @@
       name: '@linxin666/dsh-client-ui-skin-center'
     - id: market
       name: '@linxin666/dsh-client-ui-market'
-
-# ── 工作能力（聚合携带）；row id 用 work-* 前缀（**不能以 folia- 开头**：subpackage-boot 会把 folia-* 当我们的子包去仓库解析） ──
-# 纪律与 skin-center 相同：版本钉死、失败只影响本条、不满足 engines 由市场 keep off。
-- insert:
-    - id: work-office-reader
-      name: '@civilization/dsh-office-reader'
-    - id: work-cron
-      name: '@aiwayds/dsh-cron'
-    - id: work-websearch
-      name: '@240xu/dsh-websearch'
-    - id: work-maildesk
-      name: '@aryacode/dsh-arya-maildesk'
-    - id: work-notify-hub
-      name: '@alotop/dsh-notify-hub'
