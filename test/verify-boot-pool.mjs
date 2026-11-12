@@ -59,6 +59,18 @@ writeFileSync(join(home, 'config.json'), JSON.stringify({ boot: { enabled: true,
   check('B3b rotate 连续两次会换一条', rotate1 !== rotate2, `${rotate1} → ${rotate2}`);
 }
 
+// B8-B10 转场 / 两幕 / 注入脚本
+{
+  writeFileSync(join(home, "config.json"), JSON.stringify({ boot: { enabled: true, clipId, transition: "scale", act1: { enabled: true, text: "品牌", durationMs: 1500 } } }, null, 2));
+  const b = boot.readBoot();
+  check("B8 transition 读到 scale", b.transition === "scale", b.transition);
+  check("B9 act1 读到 enabled/text/duration", b.act1.enabled === true && b.act1.text === "品牌" && b.act1.durationMs === 1500, JSON.stringify(b.act1));
+  writeFileSync(join(home, "config.json"), JSON.stringify({ boot: { enabled: true, clipId } }, null, 2));
+  const d = boot.readBoot();
+  check("B10 缺省 transition=fade、act1 关闭", d.transition === "fade" && d.act1.enabled === false, `${d.transition}/${d.act1.enabled}`);
+  check("B11 注入脚本包含三种退场与第一幕", /scale\(1\.06\)/.test(boot.BOOT_SCREEN_SOURCE) && /translateY\(-8%\)/.test(boot.BOOT_SCREEN_SOURCE) && /act1/.test(boot.BOOT_SCREEN_SOURCE));
+}
+
 // B5-B7 导入校验
 {
   const ok = boot.importLocalClip(mp4, { title: '本地测试' });
