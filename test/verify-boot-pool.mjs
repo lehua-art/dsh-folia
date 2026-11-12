@@ -44,6 +44,13 @@ writeFileSync(join(home, 'config.json'), JSON.stringify({ boot: { enabled: true,
   check('B2 写 items 同步 clipId=第一条', b.clipId === 'clip-a' && b.items.length === 2, `${b.clipId} / ${b.items.length}`);
 }
 
+// B2b 显式 clipId + items：clipId 必须保留（select 切站点条目曾经被覆盖）
+{
+  boot.writeBoot({ clipId: 'clip-a', items: ['clip-c', 'clip-a'] });
+  const b = boot.readBoot();
+  check("B2b 显式 clipId 不被 items[0] 覆盖", b.clipId === "clip-a", b.clipId);
+}
+
 // B3/B4 pick
 {
   const first = boot.pickClipForBoot({ items: [clipId], poolMode: 'first' });
