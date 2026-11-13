@@ -409,6 +409,11 @@ const WE_I18N_EN_PANEL = {
   // pre.49：桌宠页控制行最右侧的语音助手开关（点开才挂载设置块）。
   "智能大肥鱼": "Smart Chubby Fish",
   "桌宠语音助手": "Pet voice assistant",
+  // pre.51：语音助手搬到独立设置页；桌宠页只留一行指路。
+  "语音助手（Key、名字、称呼、音色）在左侧「智能大肥鱼」里配置。":
+    "Voice assistant settings (key, name, how it addresses you, voice) live under “Smart Chubby Fish” on the left.",
+  "这里是桌宠语音助手的完整设置：Key、名字、称呼、音色都在这一页。填好保存，桌宠就会用这个模型和你说话。":
+    "This is the full pet voice-assistant setup: key, name, how it addresses you, and voice all live here. Save and the pet will talk to you with this model.",
   "卸载": "Uninstall",
   "{cols} 列 · {size}": "{cols} cols · {size}",
   "还没有安装任何桌宠 —— 从下面的站点清单里挑一只。": "No pets installed yet — pick one from the site list below.",

@@ -92,6 +92,13 @@ const WE_I18N_EN_PICKER = {
   "没有匹配「{query}」的壁纸": "No wallpapers matching \"{query}\"",
   "「{name}」类型下没有可播放的壁纸": "No playable wallpapers of type \"{name}\"",
   "「{name}」分级下没有可播放的壁纸": "No playable wallpapers under the \"{name}\" rating",
+  // pre.51：侧栏筛选条改成 缓存 / 子标签 / 来源 三档（分级、类型两档已删）。
+  "按缓存状态筛选：已缓存 = 本机已有文件，未缓存 = 需要下载":
+    "Filter by cache state: cached = already on this machine, not cached = needs downloading",
+  "按站点子标签筛选（站点新增子标签后，重开面板即同步）":
+    "Filter by site subtag (new site subtags appear after reopening the panel)",
+  "「{name}」下没有可播放的壁纸": "No playable wallpapers under \"{name}\"",
+  "子标签「{name}」下没有可播放的壁纸": "No playable wallpapers with subtag \"{name}\"",
   "打开设置对话框的「壁纸引擎」分区（外观 / 播放 / 系统与全部配置）": "Open the Wallpaper Engine section of the settings dialog (Appearance / Playback / System and all configuration)",
   "壁纸引擎设置 ›": "Wallpaper Engine settings ›",
   "壁纸面板分区": "Wallpaper panel sections",

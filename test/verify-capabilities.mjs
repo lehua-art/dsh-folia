@@ -52,6 +52,20 @@ const missing = unique.filter((w) => !i18n.includes(`"${w}":`));
 check('C5 组件里所有 weT 词都在 i18n 表里', missing.length === 0,
   missing.length ? '缺：' + missing.join(', ') : `${unique.length} 个词全在册`);
 
+// ── C6 usage 文案（pre.51：从一句话模板扩成 2–4 步 + 例句 + 注意）──────────────
+const { CAPABILITIES } = await import('../lib/capabilities-catalog.js');
+const usageOk = (u) => typeof u === 'string' && u.length >= 40
+  && u.includes('①') && u.includes('②') && u.includes('③')
+  && u.includes('「') && u.includes('注意：');
+const badUsage = CAPABILITIES.filter((it) => !usageOk(it.usage));
+check('C6 每条 usage 都有 2–4 步 + 例句 + 注意（≥40 字）',
+  CAPABILITIES.length >= 250 && badUsage.length === 0,
+  badUsage.length ? '不合格：' + badUsage.slice(0, 5).map((it) => it.name).join(', ') : `${CAPABILITIES.length} 条全合格`);
+const uniqueUsage = new Set(CAPABILITIES.map((it) => it.usage)).size;
+check('C6b usage 不再是少数几条关键词模板（按类别生成）', uniqueUsage > 50, `去重后 ${uniqueUsage} 条`);
+check('C6c negative control：空串 / 一句话短模板会被同一条判据判红',
+  !usageOk('') && !usageOk('装好后在对话里说「放首歌」。') && usageOk(CAPABILITIES[0].usage));
+
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length} 通过 / ${failed.length} 失败`);
 if (failed.length) process.exitCode = 1;

@@ -126,42 +126,8 @@
     }, [ref, count, itemH, gap, cards, tag]);
     return win;
   }
-  // 面板的类型筛选档（全部 / 场景 / 网页 / 视频 / 图片）：**与设置页同一个键**
-  // `typeFilter`（用户口径：类型变动两处同步，不做单独的档；持久化 ⇒ 同时管设置页列表与轮播候选）。
-  function qpTypes() {
-    return [
-      { id: "all", label: weT("全部") },
-      { id: "scene", label: weT("场景") },
-      { id: "web", label: weT("网页") },
-      { id: "video", label: weT("视频") },
-      { id: "image", label: weT("图片") },
-    ];
-  }
-  /** 类型档 id → 面板文案（上游提示用；值域与设置页的 typeFilter 是同一套 id）。 */
-  function qpTypeLabelOf(id) {
-    const hit = qpTypes().find((t) => t.id === id);
-    return hit ? hit.label : String(id || "");
-  }
-  // 面板的内容分级筛选档（**紧凑纯文字**，与类型档同一风格；值域与设置页
-  // contentRatingFilter 是同一套 id）。**与设置页同一个键** —— 分级闸门本就长在
-  // playableInventory 上（两级过滤的第一级），所以这里必须有控件：否则设置页切了档，
-  // 面板列表会跟着缩、却没有任何地方能解释或改回来。
-  function qpRatings() {
-    return [
-      { id: "all", label: weT("全部") },
-      { id: "everyone", label: weT("全年龄") },
-      // PG13 是纯 ASCII：i18n 的调用点扫描器只认含 CJK 的字符串字面量，包 weT 会让
-      // 词表键变成"看不见调用点"的孤儿 —— 本就无需翻译，裸字面量是正解。
-      { id: "pg13", label: "PG13" },
-      { id: "mature", label: weT("成人") },
-      { id: "unrated", label: weT("未分级") },
-    ];
-  }
-  /** 分级档 id → 面板文案（空态提示用；值域与设置页的 contentRatingFilter 同一套 id）。 */
-  function qpRatingLabelOf(id) {
-    const hit = qpRatings().find((r) => r.id === id);
-    return hit ? hit.label : String(id || "");
-  }
+  // pre.51：侧栏列表不再有「内容分级 / 类型」两档（用户口径：只留缓存 / 子标签 / 来源）。
+  // 那两档的持久化键仍归设置页壁纸库使用；侧栏只读自己的三个筛选键，不在这里定义档位表。
   // ── 三档页签（壁纸 / 外观 / 播放）──────────────────────────────────────────
   // 位置在「轮播」之下：当前壁纸与轮播在三档页签下都显示（调外观 / 播放参数时想换一张
   // 对照很常见）。与设置页的页签表（PICKER_TABS）是两件事 —— 这里只镜像用户点名要的
@@ -751,82 +717,113 @@
     ];
   }
 
-  function qpRenderViewBar(sel, view, typeFilter, ratingFilter, switchView, sourceFilter) {
+  // 缓存状态档（pre.51）：与设置页壁纸库共用同一个持久化键（readPickerCacheFilter）。
+  // 「已缓存」只认清单条目的 `localReady`（与卡片「已缓存」角标同一份判据）；
+  // 「未缓存」就是它的补集（不叠加分级/类型 —— 那两档已按用户口径删掉）。
+  function qpCacheOptions() {
+    return [
+      { id: "all", label: weT("全部") },
+      { id: "cached", label: weT("已缓存") },
+      { id: "uncached", label: weT("未缓存") },
+    ];
+  }
+
+  // 筛选条（pre.51）：只有 [缓存][子标签][来源] 三个下拉 + 搜索 + 视图切换。
+  // 分级 / 类型两档已按用户口径删除（「侧栏快捷键壁纸筛选条改成三个下拉」）。
+  // 取值与处理器全部经 `filters` 入参进来 —— 本函数是纯渲染器，不读外层 state，
+  // 否则改签名时会同时命中"定义"与"调用"，运行期就是 cacheFilter is not defined。
+  function qpRenderViewBar(sel, view, filters, switchView) {
+    const {
+      cacheFilter, subtagFilter, subtagOptions, sourceFilter,
+      onCacheFilterChange, onSubtagFilterChange,
+    } = filters || {};
     return React.createElement("div", { className: "we-qp__viewbar" },
-      React.createElement("input", {
-        className: "we-picker__text we-qp__search", type: "text",
-        value: sel.qpSearch || "",
-        placeholder: weT("搜索壁纸标题…"),
-        "aria-label": weT("搜索壁纸标题"),
-        onInput: (e) => { setTransient("qpSearch", e.target.value); emit(); },
-      }),
-      // 内容分级筛选：与设置页**同一个键**（contentRatingFilter，typeFilter
-      // 同款治理）—— 这里改，设置页列表与轮播候选同步生效；设置页改，
-      // 这边同步显示。分级是**内容闸门**（拦播放，不只筛列表），改档立刻
-      // 决定哪些壁纸能点。
-      React.createElement("select", {
-        className: "we-picker__select we-qp__rating",
-        value: ratingFilter,
-        onChange: (e) => { setSetting("contentRatingFilter", e.target.value); emit(); },
-        "aria-label": weT("内容分级"),
-        title: weT("对应 Wallpaper Engine 的内容分级（project.json contentrating）"),
-      },
-      ...qpRatings().map((r) => React.createElement("option", { key: r.id, value: r.id }, r.label)),
+      // 第一行：搜索 + 列表/卡片切换。搜索不再 basis:100% 独占整行 —— 窄侧栏里
+      // 三个下拉 + 视图按钮同排必然挤碎，故把视图按钮收进这一行，筛选独占下一行。
+      React.createElement("div", { className: "we-qp__viewbar-top" },
+        React.createElement("input", {
+          className: "we-picker__text we-qp__search", type: "text",
+          value: sel.qpSearch || "",
+          placeholder: weT("搜索壁纸标题…"),
+          "aria-label": weT("搜索壁纸标题"),
+          onInput: (e) => { setTransient("qpSearch", e.target.value); emit(); },
+        }),
+        // 列表 / 卡片：标签式切换（滑动胶囊做激活指示、无分段底 —— 样式见
+        // .we-qp__viewtabs），偏好记 localStorage（QP_VIEW_KEY），两个壳共用一份。
+        // 语义仍是开关（role=group + aria-pressed），只是外观走标签形态。
+        React.createElement("div", { className: "we-tabs we-qp__viewtabs", role: "group", "aria-label": weT("视图") },
+          React.createElement("span", {
+            className: "we-tabs__pill",
+            "aria-hidden": "true",
+            style: {
+              width: "calc((100% - 6px) / 2)",
+              transform: "translateX(" + (view === "cards" ? 100 : 0) + "%)",
+            },
+          }),
+          React.createElement("button", {
+            type: "button",
+            // 自带挂钩类 we-qp__viewtab：把这两枚从 verify-scene-live 的
+            // 「三档页签栏」页签计数里摘出去（那条判据按 we-tabs__tab 的
+            // 精确类名数 3 枚，视图切换不是页签栏的一员）。
+            className: "we-tabs__tab we-qp__viewtab" + (view !== "cards" ? " we-tabs__tab--active" : ""),
+            "aria-pressed": view !== "cards" ? "true" : "false",
+            onClick: () => switchView("list"),
+          }, weT("列表")),
+          React.createElement("button", {
+            type: "button",
+            className: "we-tabs__tab we-qp__viewtab" + (view === "cards" ? " we-tabs__tab--active" : ""),
+            "aria-pressed": view === "cards" ? "true" : "false",
+            onClick: () => switchView("cards"),
+          }, weT("卡片")),
+        ),
       ),
-      // 类型筛选：与设置页「类型」**同一个键**（typeFilter；不再单独存 qpType）——
-      // 这里改，设置页列表与轮播候选同步生效；
-      // 设置页改，这边同步显示。两处都只筛「列表」，不拦正在应用的壁纸。
+      // ① 缓存状态：全部 / 已缓存 / 未缓存（pre.51 新）。
       React.createElement("select", {
-        className: "we-picker__select we-qp__type",
-        value: typeFilter,
-        onChange: (e) => { setSetting("typeFilter", e.target.value); emit(); },
-        "aria-label": weT("类型筛选"),
-        title: weT("按类型筛选壁纸列表（与设置页同一档）"),
+        className: "we-picker__select we-qp__filter we-qp__cache",
+        value: cacheFilter || "all",
+        onChange: onCacheFilterChange,
+        "aria-label": weT("缓存状态"),
+        title: weT("按缓存状态筛选：已缓存 = 本机已有文件，未缓存 = 需要下载"),
       },
-      ...qpTypes().map((t) => React.createElement("option", { key: t.id, value: t.id }, t.label)),
+      ...qpCacheOptions().map((c) => React.createElement("option", { key: c.id, value: c.id }, c.label)),
       ),
-      // 来源筛选：本机 Wallpaper Engine 库 vs 我们站点（与设置页同一个键）。
+      // ② 子标签：全部 + 站点 facets 里的全部子标签（站点新增/改名不用改插件，重开面板即同步）。
       React.createElement("select", {
-        className: "we-picker__select we-qp__source",
-        value: sourceFilter,
+        className: "we-picker__select we-qp__filter we-qp__subtag",
+        value: subtagFilter || "",
+        onChange: onSubtagFilterChange,
+        "aria-label": weT("子标签"),
+        title: weT("按站点子标签筛选（站点新增子标签后，重开面板即同步）"),
+      },
+      React.createElement("option", { value: "" }, weT("全部")),
+      ...(Array.isArray(subtagOptions) ? subtagOptions : []).map((it) =>
+        React.createElement("option", { key: it.value, value: it.value }, it.label + " (" + it.count + ")")),
+      ),
+      // ③ 来源筛选：本机 Wallpaper Engine 库 vs 我们站点（与设置页同一个键）。
+      React.createElement("select", {
+        className: "we-picker__select we-qp__filter we-qp__source",
+        value: sourceFilter || "all",
         onChange: (e) => { setSetting("sourceFilter", e.target.value); emit(); },
         "aria-label": weT("来源筛选"),
         title: weT("按来源筛选：本机 Wallpaper Engine 库，还是从我们站点拉下来的壁纸"),
       },
       ...qpSources().map((s) => React.createElement("option", { key: s.id, value: s.id }, s.label)),
       ),
-      // 列表 / 卡片：标签式切换（滑动胶囊做激活指示、无分段底 —— 样式见
-      // .we-qp__viewtabs），偏好记 localStorage（QP_VIEW_KEY），两个壳共用一份。
-      // 语义仍是开关（role=group + aria-pressed），只是外观走标签形态。
-      React.createElement("div", { className: "we-tabs we-qp__viewtabs", role: "group", "aria-label": weT("视图") },
-        React.createElement("span", {
-          className: "we-tabs__pill",
-          "aria-hidden": "true",
-          style: {
-            width: "calc((100% - 6px) / 2)",
-            transform: "translateX(" + (view === "cards" ? 100 : 0) + "%)",
-          },
-        }),
-        React.createElement("button", {
-          type: "button",
-          // 自带挂钩类 we-qp__viewtab：把这两枚从 verify-scene-live 的
-          // 「三档页签栏」页签计数里摘出去（那条判据按 we-tabs__tab 的
-          // 精确类名数 3 枚，视图切换不是页签栏的一员）。
-          className: "we-tabs__tab we-qp__viewtab" + (view !== "cards" ? " we-tabs__tab--active" : ""),
-          "aria-pressed": view !== "cards" ? "true" : "false",
-          onClick: () => switchView("list"),
-        }, weT("列表")),
-        React.createElement("button", {
-          type: "button",
-          className: "we-tabs__tab we-qp__viewtab" + (view === "cards" ? " we-tabs__tab--active" : ""),
-          "aria-pressed": view === "cards" ? "true" : "false",
-          onClick: () => switchView("cards"),
-        }, weT("卡片")),
-      ),
     );
   }
 
-  function qpRenderList(listRef, rows, view, cardsView, vTopH, vBtmH, q, ratingFilter, typeFilter, sel) {
+  function qpRenderList(listRef, rows, view, cardsView, vTopH, vBtmH, q, cacheFilter, subtagFilter, subtagLabel, sel) {
+    // 空态文案按"当前生效的那一档"解释（分级/类型两档已删，pre.51 只剩缓存与子标签）。
+    let emptyText = weT("没有可播放的壁纸");
+    if (q) {
+      emptyText = weT("没有匹配「{query}」的壁纸", { query: sel.qpSearch });
+    } else if (cacheFilter !== "all") {
+      emptyText = weT("「{name}」下没有可播放的壁纸", {
+        name: cacheFilter === "cached" ? weT("已缓存") : weT("未缓存"),
+      });
+    } else if (subtagFilter) {
+      emptyText = weT("子标签「{name}」下没有可播放的壁纸", { name: subtagLabel || subtagFilter });
+    }
     return React.createElement("div", {
       ref: listRef,
       className: "we-qp__list" + (view === "cards" ? " we-qp__list--cards" : ""),
@@ -841,13 +838,7 @@
             rows.map((w) => qpRenderCardGuarded(w, sel, cardsView)),
             vBtmH > 0 ? qpRenderSpacer("we-qp-vbtm", vBtmH) : null,
           )
-        : React.createElement(React.Fragment, null,
-            React.createElement("span", { className: "we-picker__hint" },
-              q ? weT("没有匹配「{query}」的壁纸", { query: sel.qpSearch })
-                  : weT(ratingFilter !== "all" ? "「{name}」分级下没有可播放的壁纸"
-                      : typeFilter !== "all" ? "「{name}」类型下没有可播放的壁纸" : "没有可播放的壁纸",
-                      { name: qpRatingLabelOf(ratingFilter) })),
-          ),
+        : React.createElement("span", { className: "we-picker__hint" }, emptyText),
     );
   }
 
@@ -863,7 +854,10 @@
     );
   }
 
-  function qpRenderLibrarySection(sel, view, typeFilter, ratingFilter, listRef, rows, cardsView, vTopH, vBtmH, q, switchView, sourceFilter) {
+  // pre.51：筛选档全部经 `filters` 对象入参（cacheFilter / subtagFilter / subtagOptions /
+  // sourceFilter + 两个 handler）。**不要在函数体里直接读外层 state** —— 那是
+  // "cacheFilter is not defined" 的来源，也是上次改签名时定义/调用一起被替换的原因。
+  function qpRenderLibrarySection(sel, view, filters, listRef, rows, cardsView, vTopH, vBtmH, q, switchView) {
     return React.createElement("div", { className: "we-qp__section we-qp__library" },
       !sel.loaded
         ? React.createElement("span", { className: "we-picker__hint" }, weT("扫描 Wallpaper Engine…"))
@@ -877,8 +871,9 @@
               }, weT(sel.loading ? "刷新中…" : "重试")),
             )
           : React.createElement(React.Fragment, null,
-      qpRenderViewBar(sel, view, typeFilter, ratingFilter, switchView, sourceFilter),
-      qpRenderList(listRef, rows, view, cardsView, vTopH, vBtmH, q, ratingFilter, typeFilter, sel),
+      qpRenderViewBar(sel, view, filters, switchView),
+      qpRenderList(listRef, rows, view, cardsView, vTopH, vBtmH, q,
+        filters.cacheFilter, filters.subtagFilter, filters.subtagLabel, sel),
     ),
   );
   }
@@ -989,20 +984,31 @@
     // 这里只决定"什么时候画它"（见下面内容区那三个分支：打开时列表/搜索栏让位）。
     // 本档有没有属性可调：与设置页入口同一条判据（仅场景/网页 + 有 propsUrl）。
     const propsAvailable = Boolean(current && (current.type === "scene" || current.type === "web") && sel.propsUrl);
-    // 快切列表：与库视图同一过滤口径（分级 / 类型 / 隐藏），再叠面板自己的搜索词。
-    // 类型档（全部 / 场景 / 网页 / 视频 / 图片）**与设置页是同一个键** `typeFilter`
-    //（用户口径：类型变动两处同步、不做单独的档）。持久化 ⇒ 同时管设置页列表与轮播候选；
-    // 两处同值，设置页切档这边立刻跟着变，反之亦然。
+    // 快切列表（pre.51）：缓存状态 / 子标签 / 来源 / 搜索 —— 与用户口径的三个下拉一一对应。
+    // 分级与类型两档已删，不再读 `sel.typeFilter` / `sel.contentRatingFilter`；
+    // 侧栏只筛「列表」，不拦正在播的壁纸（播放闸门仍在 playableInventory 那一层）。
     const q = String(sel.qpSearch || "").trim().toLowerCase();
-    const typeFilter = qpTypes().some((t) => t.id === sel.typeFilter) ? sel.typeFilter : "all";
-    // 分级档与 typeFilter 同一套钳制（旧档/坏值回落「全部」）；闸门在 playableInventory
-    // 里已经生效，这里钳出来的值只喂空态文案与下拉的受控 value。
-    const ratingFilter = qpRatings().some((r) => r.id === sel.contentRatingFilter)
-      ? sel.contentRatingFilter : "all";
     const playable = playableInventory();
     const sourceFilter = qpSources().some((s) => s.id === sel.sourceFilter) ? sel.sourceFilter : "all";
+    // 缓存档：持久化键与设置页壁纸库共用；坏值回落「全部」。
+    const cacheRaw = readPickerCacheFilter();
+    const cacheFilter = (cacheRaw === "cached" || cacheRaw === "uncached") ? cacheRaw : "all";
+    // 子标签：facets 现算（站点新增子标签后，重开面板即同步）；空串 = 全部。
+    const subtagFilter = String(readPickerSubtagFilter() || "").trim();
+    const subtagOptions = (() => {
+      const groups = tagOptionsFromFacets(sel.inventory && sel.inventory.facets);
+      const g = groups.find((x) => x && x.group === "subtags");
+      return g && Array.isArray(g.items) ? g.items : [];
+    })();
+    const subtagLabel = (subtagOptions.find((it) => it.value === subtagFilter) || {}).label || subtagFilter;
     const filtered = playable.filter((w) => {
-      if (typeFilter !== "all" && w.type !== typeFilter) return false;
+      // 「已缓存」只认清单条目的 localReady（与卡片「已缓存」角标同一份判据）；
+      // 「未缓存」= localReady !== true 的全部，不叠加其它档。
+      const ready = Boolean(w && w.localReady === true);
+      if (cacheFilter === "cached" && !ready) return false;
+      if (cacheFilter === "uncached" && ready) return false;
+      // 子标签精确匹配站点 facets 的 value（与 picker-model 的 matchesSubtagFilter 同口径）。
+      if (subtagFilter && String((w && w.subtag) || "").trim() !== subtagFilter) return false;
       // 站点条目带 `source: "folia"`；其余（本机工坊 + 上传）一律算本机。
       if (sourceFilter !== "all" && ((w.source === "folia") ? "site" : "local") !== sourceFilter) return false;
       if (q && String(w.title || "").toLowerCase().indexOf(q) === -1) return false;
@@ -1101,7 +1107,12 @@
                 // ── 壁纸列表（搜索 + 视图切换 + 快切）──
                 // 库还没回来 / 扫描失败：**只有这一页**给一句话 —— 外观 / 播放两页不依赖库，
                 // 照常可用（不能整块替换掉，那样连外观都进不去）。
-                qpRenderLibrarySection(sel, view, typeFilter, ratingFilter, listRef, rows, cardsView, vTopH, vBtmH, q, switchView, sourceFilter),
+                qpRenderLibrarySection(sel, view, {
+                  cacheFilter, subtagFilter, subtagOptions, subtagLabel, sourceFilter,
+                  // 两个 handler 直接从同一 bundle 作用域取（client.js 里的
+                  // onCacheFilterChange / onSubtagFilterChange：写持久化键 + emit）。
+                  onCacheFilterChange, onSubtagFilterChange,
+                }, listRef, rows, cardsView, vTopH, vBtmH, q, switchView),
                 // 声音（与播放页那份同源：同一份渲染器、同一状态）。包一层 .we-qp__section
                 // 只为保留这一节的分隔线与间距（渲染器自己那份 section 是给设置页排版的）。
                 React.createElement("div", { className: "we-qp__section" },
@@ -1113,8 +1124,7 @@
     );
   }
 
-  // `qpTypes` / `QP_TAB_KEY` / `qpTypeLabel` 是文件内自用（PR #202 的底座落后于本地线
-  // 的导出面清理，顺手把它们留在了导出里）⇒ 按本仓口径收回，声明本体不动。
+  // `QP_TAB_KEY` 等是文件内自用，按本仓口径收回导出面；声明本体不动。
   export {
     QP_TABS,
     QP_CTX_SETTINGS_ONLY,

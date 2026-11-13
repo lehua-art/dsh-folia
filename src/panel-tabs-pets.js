@@ -47,9 +47,8 @@ function PetsTabPanel() {
   const [busy, setBusy] = React.useState("");
   const [note, setNote] = React.useState(null);
   const [importable, setImportable] = React.useState([]);
-  // pre.49：控制行最右侧的「🐟 智能大肥鱼」开关。默认**收起** —— 语音助手设置块只在
-  // 用户真的点开时才挂载（避免常驻请求 /pet-chat/config 与 /work-plugins，也不占页面高度）。
-  const [assistantOpen, setAssistantOpen] = React.useState(false);
+  // pre.51：语音助手整块搬到「设置 → 智能大肥鱼」独立页（见 panel-tabs-assistant.js）。
+  // 桌宠页不再持有展开态、也不再挂载 /pet-chat/config 与 /work-plugins 请求。
   // 4.23.3：安装进度以 /folia/downloads/list 为真源（kind=pet），切页签回来仍在。
   const dl = useDownloadJobs();
   // 4.23.4：**卡片级**状态机（四页签共用，见 src/local-first.js 的 `dlCardState`）——
@@ -291,16 +290,15 @@ function PetsTabPanel() {
         React.createElement("option", { key: String(v), value: String(v) }, t)),
       ),
     ),
-    // pre.49：语音助手设置块的展开/收起。纯本地 state，不发网络；与「复位位置」同一档 .we-picker__btn。
-    React.createElement("button", {
-      type: "button",
-      className: "we-picker__btn",
-      "aria-expanded": assistantOpen ? "true" : "false",
-      "aria-controls": "we-pet-chat-settings",
-      title: weT("桌宠语音助手"),
-      onClick: () => setAssistantOpen((v) => !v),
-    }, "🐟 " + weT("智能大肥鱼")),
   ));
+
+  // pre.51：语音助手（Key / 名字 / 称呼 / 音色）整体搬到左侧「智能大肥鱼」一级分区。
+  // 桌宠页只留一行指路，不再内联表单 —— 两个界面彻底分开。
+  children.push(React.createElement("div", {
+    key: "assistantHint",
+    className: "we-picker__hint",
+    style: { margin: "0 0 10px" },
+  }, weT("语音助手（Key、名字、称呼、音色）在左侧「智能大肥鱼」里配置。")));
 
   // 与开机动画页签同理：提示行常驻占位，避免开关时整块高度跳动。
   children.push(React.createElement("div", {
@@ -420,163 +418,7 @@ function PetsTabPanel() {
       weT("站点上还没有桌宠。")));
   }
 
-  // ── 桌宠对话（/folia/pet-chat/*）────────────────────────────────────────
-  // pre.49：**默认收起**，点控制行最右侧的「🐟 智能大肥鱼」才挂载（条件渲染，不用 CSS 隐藏）。
-  if (assistantOpen) {
-    children.push(React.createElement(PetChatSettings, { key: "petChat" }));
-  }
-
   return React.createElement("div", { className: "we-picker__section" }, children);
-}
-
-/* ── 桌宠对话设置区 ─────────────────────────────────────────────────────── */
-
-const CHAT_DEFAULTS = {
-  provider: 'openai',
-  baseUrl: 'https://api.deepseek.com',
-  model: 'deepseek-chat',
-  apiKey: '',
-  apiKeyMasked: '',
-  hasApiKey: false,
-  petName: '',
-  ownerName: '',
-};
-
-/**
- * 设置页（v0.1 验收口径）：**三项，无开关**。
- *   1) 模型 Key   2) 名字（桌宠名 = 唤醒词 + 你的称呼）   3) 音色（v0.2 占位，灰色只读）
- *
- * 为什么连"开启对话"都没有：工单要求用户不做选择 —— 填了 Key 就等于启用，
- * 主动搭话/记忆都是固定策略。删除任何开关，就少一次"用户要不要打开"的决策。
- */
-/** apiJson 的返回是 { ok, status, data }，而 /pet-chat/* 的 data 里还套一层 { ok, data }。
- * 各调用点各写一遍「多解一层」就是 P1 那个"保存成功却显示保存失败"的来源 —— 统一到这里解。 */
-const unwrapPetChat = (resp) => (resp && resp.data && resp.data.data) || (resp && resp.data) || {};
-
-function PetChatSettings() {
-  const [draft, setDraft] = React.useState(CHAT_DEFAULTS);
-  const [status, setStatus] = React.useState({ ok: null, text: '' });
-  const [note, setNote] = React.useState(null);
-  const [busy, setBusy] = React.useState(false);
-  // 工作能力插件（聚合携带）的安装状态；只读展示，不加开关
-  const [workPlugins, setWorkPlugins] = React.useState(null);
-  const update = React.useCallback((patch) => setDraft((prev) => ({ ...prev, ...patch })), []);
-
-  const load = React.useCallback(async () => {
-    try {
-      const resp = await apiJson('/pet-chat/config', { parse: 'always' });
-      const doc = unwrapPetChat(resp);
-      if (doc && doc.ok !== false) {
-        setDraft({ ...CHAT_DEFAULTS, ...doc, apiKey: '' });
-        setStatus(doc.hasApiKey
-          ? { ok: true, text: weT('已保存的 Key：{mask}', { mask: doc.apiKeyMasked || '••••' }) }
-          : { ok: null, text: weT('还没有填 API Key') });
-      }
-    } catch { /* 首次加载失败不打扰 */ }
-  }, []);
-  React.useEffect(() => { void load(); }, [load]);
-  React.useEffect(() => {
-    void (async () => {
-      const resp = await apiJson('/pet-chat/work-plugins', { parse: 'always' }).catch(() => null);
-      setWorkPlugins(unwrapPetChat(resp));
-    })();
-  }, []);
-
-  const save = async () => {
-    setBusy(true);
-    try {
-      // 填了 Key 就启用：面板不放任何开关，语义由 Key 的有无决定
-      const body = { ...draft, apiKey: draft.apiKey || '', enabled: Boolean(draft.apiKey) || Boolean(draft.hasApiKey) };
-      // ⚠️ 必须用 apiPostJson：apiJson 只拼 URL，不做 JSON.stringify，
-      //    传对象会被浏览器发成 "[object Object]" ⇒ 宿主回 400 bad-json ⇒ 界面永远"保存失败"。
-      const resp = await apiPostJson('/pet-chat/config', body, { parse: 'always' });
-      const doc = unwrapPetChat(resp);
-      if (doc.saved) {
-        setNote({ ok: true, text: weT('已保存') });
-        await load();
-        const state = await apiJson('/pet-chat/state', { parse: 'always' });
-        const sdoc = unwrapPetChat(state);
-        setStatus(sdoc.reachable
-          ? { ok: true, text: weT('已连接 · {m}', { m: sdoc.model || draft.model }) }
-          : { ok: false, text: sdoc.lastError ? weT('未连接：{e}', { e: sdoc.lastError }) : weT('已保存，但还没连上') });
-      } else setNote({ ok: false, text: weT('保存失败') });
-    } catch (e) {
-      setNote({ ok: false, text: weT('保存失败：{msg}', { msg: (e && e.message) || '' }) });
-    } finally { setBusy(false); }
-  };
-
-  const row = (key, label, node) => React.createElement('label', {
-    key, style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', margin: '4px 0' },
-  }, weT(label), node);
-
-  const child = [];
-  child.push(React.createElement('div', { key: 'title', style: { fontWeight: 600, margin: '14px 0 4px', fontSize: '13px' } }, weT('桌宠语音助手')));
-  child.push(React.createElement('div', { key: 'hint', className: 'we-picker__hint', style: { margin: '0 0 6px' } },
-    weT('三项就够：填 Key、起名字、选音色。主动搭话与记忆是固定策略；停止/恢复对它说一声就行。')));
-
-  child.push(React.createElement('div', { key: 'key', style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', margin: '4px 0' } },
-    weT('模型 Key'),
-    React.createElement('input', {
-      type: 'password', value: draft.apiKey || '',
-      placeholder: draft.hasApiKey ? (draft.apiKeyMasked || '••••••••') : weT('填 DeepSeek API Key'),
-      disabled: busy, style: { flex: 1, minWidth: 0 },
-      onChange: (e) => update({ apiKey: e.target.value }),
-    }),
-  ));
-
-  child.push(row('name', '名字', React.createElement('input', {
-    type: 'text', value: draft.petName || '', placeholder: weT('桌宠叫什么（也是唤醒词）'), disabled: busy,
-    style: { flex: 1, minWidth: 0 }, onChange: (e) => update({ petName: e.target.value }),
-  })));
-  child.push(row('owner', '称呼', React.createElement('input', {
-    type: 'text', value: draft.ownerName || '', placeholder: weT('它该怎么称呼你'), disabled: busy,
-    style: { flex: 1, minWidth: 0 }, onChange: (e) => update({ ownerName: e.target.value }),
-  })));
-
-  // 音色：v0.2 占位（灰色、不可改），避免用户以为现在能选
-  child.push(row('voice', '音色', React.createElement('select', {
-    className: 'we-picker__playlist-select', disabled: true, value: 'zh-CN-XiaoxiaoNeural',
-  },
-  React.createElement('option', { value: 'zh-CN-XiaoxiaoNeural' }, weT('晓晓（v0.2 可选）')),
-  )));
-
-  child.push(React.createElement('div', { key: 'status', className: 'we-picker__hint', style: { margin: '6px 0', color: status.ok === false ? '#f87171' : undefined } },
-    status.text || weT('未连接')));
-  if (note && note.text) {
-    child.push(React.createElement('div', { key: 'note', className: 'we-picker__hint', style: { color: note.ok ? undefined : '#f87171' } }, note.text));
-  }
-  child.push(React.createElement('div', { key: 'save', style: { display: 'flex', gap: '6px', marginTop: '4px' } },
-    React.createElement('button', { type: 'button', className: 'we-picker__btn', disabled: busy, onClick: save }, weT('保存')),
-  ));
-
-
-  // ── 工作能力（随插件携带，只读状态）─────────────────────────────────
-  const workItems = (workPlugins && Array.isArray(workPlugins.items)) ? workPlugins.items : [];
-  child.push(React.createElement('div', {
-    key: 'work-head',
-    style: { marginTop: '14px', fontSize: '12px', fontWeight: 600 },
-  }, weT('可选工作能力（已安装才可用）')));
-  if (!workItems.length) {
-    child.push(React.createElement('div', { key: 'work-empty', className: 'we-picker__hint' }, weT('正在读取…')));
-  } else {
-    workItems.forEach((item) => {
-      child.push(React.createElement('div', {
-        key: 'work-' + item.id,
-        className: 'we-picker__hint',
-        style: { margin: '2px 0' },
-      }, (item.installed ? '✓ ' : '· ') + item.label
-        + (item.version ? ' ' + item.version : '')
-        + (item.needs ? '（' + item.needs + '）' : '')));
-    });
-  }
-  if (workPlugins && workPlugins.conflict) {
-    child.push(React.createElement('div', {
-      key: 'work-conflict',
-      className: 'we-picker__hint',
-      style: { marginTop: '4px', color: '#d9a13b' },
-    }, weT('冲突提醒：') + workPlugins.conflict.note));
-  }
-  return React.createElement('div', { id: 'we-pet-chat-settings', style: { ...PET_STYLE.card, marginTop: '10px' } }, child);
 }
 
 /** 页签组装点调用它。 */

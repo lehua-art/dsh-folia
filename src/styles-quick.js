@@ -334,16 +334,15 @@ body[data-we-glass-floaters] .we-repo-panel__body {
   .we-qp__group { flex: 1; min-width: 0; }
   .we-qp__search { width: 100%; box-sizing: border-box; }
   .we-qp__list { display: flex; flex-direction: column; gap: 2px; }
-  /* 视图切换：搜索 + 分级筛选 + 类型筛选 + 列表/卡片，**确定性两行**。一行排下不可行 ——
-     最窄官方右栏里第四个控件在结构上放不下（分级最短也要 ~70px，搜索框会被挤到不可用），
-     而依赖 flex-wrap 假想尺寸的折行在中间宽度会碎出"只有页签折下去"的行。故搜索框独占
-     首行（**封顶 300px**：用户口径，太长的搜索框没用还占地方；basis 钉 100% 强制换行），
-     分级/类型/视图三个控件右对齐成第二行（分级 select 的 margin-left:auto 恰是第二行首项，
-     把整组推到右侧）。 */
+  /* 视图切换：**确定性两行**（pre.51：三个下拉）。官方右栏最窄 300px（内容 276）：
+     三个筛选下拉 + 视图按钮同排必然挤碎（下拉最短也要 ~70px），而依赖 flex-wrap
+     的假想折行会在中间宽度碎出"只有视图按钮折下去"的行。故搜索与视图按钮包进
+     .we-qp__viewbar-top（第一行），缓存/子标签/来源各 flex:1 平分第二行。 */
   .we-qp__viewbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .we-qp__viewbar .we-qp__search { flex: 1 1 100%; min-width: 0; max-width: 300px; width: auto; }
-  .we-qp__viewbar .we-qp__rating { flex: none; max-width: 110px; margin-left: auto; }
-  .we-qp__viewbar .we-qp__type { flex: none; max-width: 84px; }
+  .we-qp__viewbar-top { display: flex; align-items: center; gap: 8px; flex: 1 1 100%; min-width: 0; }
+  .we-qp__viewbar .we-qp__search { flex: 1 1 auto; min-width: 0; max-width: 300px; width: auto; }
+  .we-qp__viewbar .we-qp__viewtabs { flex: none; margin-left: auto; }
+  .we-qp__viewbar .we-qp__filter { flex: 1 1 0; min-width: 0; max-width: 160px; }
   /* 列表 / 卡片：标签式切换 —— 复用 .we-tabs 的滑动胶囊做激活指示，但去掉分段底与
      描边（用户口径：不要默认背景）；页签收成内容宽（两枚都是两字，等宽成立，
      胶囊 (100%-6px)/2 的等分算式与 3px 内衬原样沿用）。 */

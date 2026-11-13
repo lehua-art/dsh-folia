@@ -71,35 +71,59 @@ function check(name, cond, detail) { results.push({ name, ok: Boolean(cond), det
   check('pets: 提示行常驻', !/^\s{2}if \(note\) \{/m.test(pets));
 }
 
-/* ⑤ pre.49：桌宠页「🐟 智能大肥鱼」开关（控制行最右，默认收起，点开才挂载语音助手设置） */
+/* ⑤ pre.51：桌宠页与「智能大肥鱼」拆成两个界面（不再同页内联展开） */
 {
-  const sizeAt = pets.indexOf('weT("大小")');
-  const fishAt = pets.indexOf('weT("智能大肥鱼")');
-  check('pre.49 控制行「大小」之后有「智能大肥鱼」按钮（同一 flex-wrap 控制行）',
-    sizeAt >= 0 && fishAt > sizeAt
-      && /row: \{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" \}/.test(pets),
-    `size@${sizeAt} · fish@${fishAt}`);
-  check('pre.49 按钮沿用 .we-picker__btn，带 aria-expanded / aria-controls，点击切换本地 state',
-    /className: "we-picker__btn"[\s\S]{0,320}?["']aria-expanded["']?: assistantOpen/.test(pets)
-      && /"aria-controls": "we-pet-chat-settings"/.test(pets)
-      && /onClick: \(\) => setAssistantOpen\(\(v\) => !v\)/.test(pets));
-  check('pre.49 语音助手默认收起，且只在展开时条件渲染（不是 CSS 隐藏）',
-    /const \[assistantOpen, setAssistantOpen\] = React\.useState\(false\)/.test(pets)
-      && /if \(assistantOpen\) \{[\s\S]{0,180}React\.createElement\(PetChatSettings/.test(pets)
-      && !/^\s{2}children\.push\(React\.createElement\(PetChatSettings/m.test(pets));
-  check('pre.49 展开块字段齐全（Key / 名字 / 称呼 / 音色 / 保存 / 工作能力 / 冲突提醒）',
+  const assistant = readFileSync(join(ROOT, 'src', 'panel-tabs-assistant.js'), 'utf8');
+  const client = readFileSync(join(ROOT, 'src', 'client.js'), 'utf8');
+  const build = readFileSync(join(ROOT, 'scripts', 'build-client.mjs'), 'utf8');
+  const separated = (petsSrc) => !petsSrc.includes('PetChatSettings')
+    && petsSrc.includes('在左侧「智能大肥鱼」里配置');
+  check('pre.51 桌宠页不再挂载语音助手表单，只留一行指路',
+    separated(pets) && !pets.includes('模型 Key') && !pets.includes('apiKey'));
+  check('pre.51 一级设置项 folia-assistant（order 502）注册 AssistantSection',
+    /id: "folia-assistant", order: 502/.test(client)
+      && /React\.createElement\(AssistantSection\)/.test(client));
+  check('pre.51 独立页字段齐全（Key / 名字 / 称呼 / 音色 / 保存 / 工作能力 / 冲突提醒）',
     ['模型 Key', '名字', '称呼', '音色', '保存', '可选工作能力（已安装才可用）', '冲突提醒：']
-      .every((text) => pets.includes(text)));
-  check('pre.49 aria-controls 指向的设置块 id 真的存在',
-    /id: 'we-pet-chat-settings'/.test(pets));
-  // 负对照：无条件渲染 / 按钮跑到「大小」前面，必须被上面同一套判据判红。
-  const conditionalOf = (src) => /if \(assistantOpen\) \{[\s\S]{0,180}React\.createElement\(PetChatSettings/.test(src)
-    && !/^\s{2}children\.push\(React\.createElement\(PetChatSettings/m.test(src);
-  check('pre.49 negative control：无条件渲染会被「默认收起」判据判红',
-    !conditionalOf('children.push(React.createElement(PetChatSettings, { key: "petChat" }));'));
-  const wrongOrder = 'React.createElement("button", null, "🐟 " + weT("智能大肥鱼")) ... weT("大小")';
-  check('pre.49 negative control：按钮放到「大小」前面会被顺序判据判红',
-    !(wrongOrder.indexOf('weT("大小")') < wrongOrder.indexOf('weT("智能大肥鱼")')));
+      .every((text) => assistant.includes(text)));
+  check('pre.51 独立页保留设置块 id（样式与锚点不变）',
+    /id: 'we-pet-chat-settings'/.test(assistant));
+  check('pre.51 新组件已登记构建内联清单 + markers',
+    build.includes('src/panel-tabs-assistant.js')
+      && build.includes("'function AssistantSection()'")
+      && build.includes("'function PetChatSettings()'"));
+  // 负对照：把表单塞回桌宠页，同一条"分开"判据必须判红。
+  check('pre.51 negative control：表单塞回桌宠页会被同一条判据判红',
+    !separated(pets + '\nchildren.push(React.createElement(PetChatSettings));'));
+}
+
+/* ⑥ pre.51：侧栏壁纸筛选条 = 缓存 / 子标签 / 来源 三档（分级、类型已删） */
+{
+  const quick = readFileSync(join(ROOT, 'src', 'quick-panel.js'), 'utf8');
+  // 只看代码：注释里写"不再有 typeFilter"不算残留。
+  const code = quick.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+  const cleanBar = (src) => !src.includes('we-qp__rating') && !src.includes('we-qp__type');
+  check('pre.51 侧栏筛选条是 缓存 / 子标签 / 来源 三档',
+    ['we-qp__cache', 'we-qp__subtag', 'we-qp__source'].every((cls) => quick.includes(cls))
+      && quick.includes('weT("缓存状态")') && quick.includes('weT("子标签")')
+      && quick.includes('weT("来源筛选")'));
+  check('pre.51 侧栏不再有内容分级 / 类型两档',
+    cleanBar(code) && !code.includes('contentRatingFilter') && !code.includes('typeFilter'));
+  check('pre.51 三个筛选经 filters 入参进入渲染器（不读外层未定义变量）',
+    /function qpRenderViewBar\(sel, view, filters, switchView\)/.test(quick)
+      && /function qpRenderLibrarySection\(sel, view, filters, listRef/.test(quick)
+      && quick.includes('onCacheFilterChange, onSubtagFilterChange'));
+  check('pre.51 过滤流水线：未缓存 = localReady !== true；子标签按 w.subtag 精确匹配',
+    /const ready = Boolean\(w && w\.localReady === true\)/.test(quick)
+      && /cacheFilter === "uncached" && ready/.test(quick)
+      && /String\(\(w && w\.subtag\) \|\| ""\)\.trim\(\) !== subtagFilter/.test(quick));
+  check('pre.51 子标签选项来自站点 facets（站点新增后重开即同步）',
+    /tagOptionsFromFacets\(sel\.inventory && sel\.inventory\.facets\)/.test(quick)
+      && /group === "subtags"/.test(quick));
+  // 负对照：旧的分级/类型下拉，同一条判据必须判红。
+  const oldBar = 'React.createElement("select", { className: "we-picker__select we-qp__rating" })'
+    + 'React.createElement("select", { className: "we-picker__select we-qp__type" })';
+  check('pre.51 negative control：旧的分级/类型下拉会被同一条判据判红', !cleanBar(oldBar));
 }
 
 /* ── 汇总 ────────────────────────────────────────────────────────────────── */

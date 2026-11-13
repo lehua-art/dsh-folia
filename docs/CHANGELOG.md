@@ -1,5 +1,40 @@
 # 变更记录（Changelog）
 
+### v4.26.0-pre.51（2026-11-13，**智能大肥鱼独立页 + 侧栏三档筛选 + 能力「如何使用」扩充**）
+
+> 三件事一个版本；不新增依赖、不新增颜色样式。判据：
+> `verify-panel-interactions` 29 条（新增「拆页」6 条 +「侧栏筛选」6 条，含两条负对照）、
+> `verify-capabilities` C6 3 条（262 条 usage 长度/步骤/例句/注意 + 去重地板 + 负对照）、
+> `verify-pet-settings` ①b/①c（桌宠页无表单残留 + 指路文案）、`verify-guard-map` 重算。
+
+- **任务 1：把「智能大肥鱼」拆成独立设置页**（用户口径：桌宠页与语音助手不要在一个界面）
+  - 新增 `src/panel-tabs-assistant.js`：`AssistantSection`（页面标题 + 一句说明）+
+    `PetChatSettings` 整块从 `src/panel-tabs-pets.js` 搬入；字段与接口一字未改
+    （模型 Key / 名字 / 称呼 / 音色占位 / 保存 / 已保存 Key / 可选工作能力 / 冲突提醒）。
+  - `src/client.js`：注册第三个一级设置项 `settings.section`（id=`folia-assistant`，
+    order 502，label=`智能大肥鱼`），与 `folia`=500 / `folia-capabilities`=501 并列。
+  - `src/panel-tabs-pets.js`：删掉 `assistantOpen` 展开态、控制行按钮与内联表单；
+    只留一行指路「语音助手（Key、名字、称呼、音色）在左侧「智能大肥鱼」里配置。」
+  - `scripts/build-client.mjs`：登记 `src/panel-tabs-assistant.js` 的 INLINE_MODULES 与
+    markers（`AssistantSection` / `PetChatSettings` / `CHAT_DEFAULTS` / `we-pet-chat-settings`）。
+  - `src/i18n-copy-panel.js`：补指路文案与独立页说明两条英文词条。
+- **任务 2：侧栏壁纸筛选条改成 缓存 / 子标签 / 来源 三个下拉**
+  - `src/quick-panel.js`：删除「内容分级」「类型」两个下拉与 `qpTypes` / `qpRatings`
+    两套档位表；新增缓存档（全部 / 已缓存 / 未缓存，复用 `readPickerCacheFilter` /
+    `writePickerCacheFilter` 与 `onCacheFilterChange`）、子标签档（站点 `facets.subtags`
+    现算，重开面板即同步）、保留来源档。
+  - 筛选值/处理器全部经 `qpRenderLibrarySection(sel, view, filters, …)` 的 `filters`
+    入参进入渲染器，避免"外层变量未定义"；过滤流水线只留 `localReady` / `w.subtag` /
+    `source` / 搜索词四条。
+  - `src/styles-quick.js`：视图条改为确定性两行 —— 第一行搜索 + 列表/卡片切换，
+    第二行三个下拉 `flex:1` 平分；窄右侧栏（内容 276px）不碎行。
+  - `src/i18n-copy-picker.js`：补缓存/子标签筛选提示与两条空态文案。
+- **任务 3：能力页「如何使用」写详细**
+  - 新增 `scripts/gen-capabilities-usage.mjs`（后处理生成器）：按 19 类关键词重写
+    `lib/capabilities-catalog.js` 的 262 条 `usage`，每条 2–4 步（① 去哪 / ② 怎么触发 /
+    ③ 注意）+ 1–2 个对话例句；只替换 usage 行，其余字段逐字保留。最短 127 字，
+    去重 260 条。前端 `panel-tabs-work.js` 无需改动。
+
 ### v4.26.0-pre.49（2026-11-13，**桌宠页：控制行加「🐟 智能大肥鱼」，点开才显示语音助手设置**）
 
 > 纯布局调整，不改任何字段/接口/设置键；不新增依赖。

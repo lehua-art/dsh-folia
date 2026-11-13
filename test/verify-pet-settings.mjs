@@ -46,9 +46,10 @@ const getJson = async (url, init) => {
 const postJson = (url, body) => getJson(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) });
 const settings = { petChat: { enabled: false } };
 
-/* ① 控件齐全（源码级：面板三项 —— Key / 名字 / 音色占位，无开关） */
+/* ① 控件齐全（源码级：pre.51 起表单在「智能大肥鱼」独立页 —— Key / 名字 / 音色占位，无开关） */
 {
-  const full = readFileSync(join(ROOT, 'src', 'panel-tabs-pets.js'), 'utf8');
+  const pets = readFileSync(join(ROOT, 'src', 'panel-tabs-pets.js'), 'utf8');
+  const full = readFileSync(join(ROOT, 'src', 'panel-tabs-assistant.js'), 'utf8');
   // 只看桌宠语音助手那一块：桌宠自身还有「显示桌宠/声音/音量」开关，不属于本页签的对话设置
   const at = full.indexOf('function PetChatSettings');
   const source = at >= 0 ? full.slice(at) : full;
@@ -60,9 +61,17 @@ const settings = { petChat: { enabled: false } };
     '上下文轮数', '字数上限', '朗读引擎', '主动闲聊', '人设', '试听', '暂时不说话',
     '开启对话', '测试连接', '显示', '隐藏', '静音',
   ].filter((label) => source.includes(label));
+  // pre.51：桌宠页不再内联表单，只留一行指路；两块必须是两个界面。
+  const stray = ['PetChatSettings', '模型 Key', 'apiKey', '工作能力（已安装才可用）']
+    .filter((label) => pets.includes(label));
   check('① 面板三项（Key / 名字 / 音色占位）+ 无开关无多余按钮',
     missing.length === 0 && legacy.length === 0,
     `缺=${missing.join('、') || '无'} · 残留=${legacy.join('、') || '无'}`);
+  check('①b 桌宠页不再内联语音助手表单（独立页 pre.51）',
+    stray.length === 0,
+    `桌宠页残留=${stray.join('、') || '无'}`);
+  check('①c 桌宠页保留一行指路到「智能大肥鱼」',
+    pets.includes('weT("语音助手（Key、名字、称呼、音色）在左侧「智能大肥鱼」里配置。")'));
 }
 
 /* ② 保存后配置立刻生效（新结构） */

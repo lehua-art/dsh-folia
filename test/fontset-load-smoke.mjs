@@ -41,6 +41,9 @@ const check = (label, cond, detail = '') => {
 // 假 React 直接把它当值返回的话，页签永远是默认的「壁纸」——面板内容就驱动不到。
 const React = { Fragment: 'Fragment', useState: (init) => [typeof init === 'function' ? init() : init, () => {}],
   useEffect: () => {}, useRef: (v) => ({ current: v }),
+  // pre.51：「智能大肥鱼」独立设置页里的 PetChatSettings 用 useCallback 合并 draft；
+  // 台子不跑 effect / setter 是空操作，这里返回原函数即可（与 useState 的"只读台"口径一致）。
+  useCallback: (fn) => fn,
   createElement: (t, p, ...c) => { assertChildren(c); return typeof t === 'function' ? t(p || {}, ...c) : { type: t, props: p || null, children: c }; } };
 // ⚠️ 这一档**不跑 effect、setter 是空操作** ⇒ 这台子看不见"改了状态却忘了 `emit()`"的缺陷
 //（真机的重渲挂在**插件自己那个根组件**的 effect 上，而台子渲染的是 `slots.register` 的渲染器）。

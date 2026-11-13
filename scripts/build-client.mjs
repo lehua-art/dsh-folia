@@ -397,6 +397,11 @@ const INLINE_MODULES = [
     markers: ['function PetsTabPanel()', 'function renderPetsTab()', 'const PET_STYLE = '],
   },
   {
+    file: 'src/panel-tabs-assistant.js',
+    why: '「智能大肥鱼」一级设置项（pre.51）：独立页面承载桌宠语音助手表单（Key/名字/称呼/音色/工作能力）',
+    markers: ['function AssistantSection()', 'function PetChatSettings()', 'const CHAT_DEFAULTS = ', 'id: \'we-pet-chat-settings\''],
+  },
+  {
     file: 'src/panel-tabs-work.js',
     why: '「能力」一级设置项：工作能力/娱乐 两区卡片 + 详情 + 复制安装命令（只读展示，不做一键安装）',
     markers: ['function CapabilitiesSection()', 'function CapabilityCard(', 'const CAP_STATUS_TEXT = '],

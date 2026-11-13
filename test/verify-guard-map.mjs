@@ -84,7 +84,6 @@ const ZERO_COVERAGE_WHY = {
   //    由目录集合或产物动态派生的守卫按口径算零覆盖，故在这里登记。
 
   // ── 我们自己的新模块：覆盖来自功能级测试与守卫（按口径算零覆盖）──
-  [M('lib', 'capabilities-catalog.js')]: '能力页数据源（市场快照生成，仅导出常量数组）：由 verify-capabilities 与 /pet-chat/capabilities 路由 + test/boot-http 族间接覆盖；本工具只认字面量路径 ⇒ 按口径算零覆盖',
   [M('lib', 'routes', 'modules.js')]: '站点模块索引（开机动画候选的兜底来源）：由 test/boot-http.mjs 的真实下载链路间接驱动（候选解析走它），本工具只认字面量路径 ⇒ 按口径算零覆盖',
   [M('lib', 'routes', 'site-thumb.js')]: '站点图片缩略图代理：行为由 verify-media-bytes 族与手工端到端验证（首拉 524KB、次拉 4ms 命中缓存）覆盖，路径穿越由 /media 白名单判据覆盖；本工具只认字面量路径 ⇒ 按口径算零覆盖',
 

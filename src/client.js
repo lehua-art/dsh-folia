@@ -7256,6 +7256,18 @@ function apply(ctx) {
       ),
     );
   }
+  // 2a-2. 第三个一级设置项：「智能大肥鱼」（pre.51）。
+  //     用户口径：桌宠页和语音助手必须是**两个界面** —— 桌宠页只留一行指路，
+  //     完整表单（Key / 名字 / 称呼 / 音色 / 工作能力）整体搬到这一页。
+  //     order 502 与 folia=500 / folia-capabilities=501 并列，排在其后。
+  if (ctx.slots) {
+    ctx.slots.inject("settings.section", () =>
+      ctx.slots.register(
+        { name: "settings.section", id: "folia-assistant", order: 502, label: () => weT("智能大肥鱼") },
+        () => React.createElement(AssistantSection),
+      ),
+    );
+  }
 
   // 2b. 设置导航图标：官方 nav 的图标是 shell 里 navIcon(id) 的硬编码映射，第三方
   //     section 一律拿兜底齿轮 —— 用 DOM 补丁把「壁纸引擎」那格换成自绘 SVG
