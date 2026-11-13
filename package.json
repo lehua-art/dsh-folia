@@ -48,7 +48,7 @@
     "lib/voice/record.js",
     "lib/asr/asr-local.js",
     "lib/asr/asr-worker.cjs",
-    "lib/tts/tts-worker.cjs",
+    "lib/tts/",
     "lib/routes/pet-chat.js",
     "lib/download-queue.js",
     "lib/host-boot.js",

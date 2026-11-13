@@ -1125,6 +1125,14 @@
         {
           "kind": "guard",
           "npm": null,
+          "file": "test/verify-voice-tts.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
           "file": "test/verify-capabilities.mjs",
           "args": [],
           "tier": "hard",
@@ -2371,6 +2379,14 @@
           "kind": "guard",
           "npm": null,
           "file": "test/verify-asr-local.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-voice-tts.mjs",
           "args": [],
           "tier": "hard",
           "probe": false

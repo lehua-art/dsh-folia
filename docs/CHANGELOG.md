@@ -1,5 +1,31 @@
 # 变更记录（Changelog）
 
+### v4.26.0-pre.45（2026-11-13，**智能语音桌宠闭环 P1：SAPI → Edge 系统音色 → 明确错误**）
+
+> 一个版本内把「说完自动停 → 逐句字幕 + 朗读 → 说话即打断 → 待办/提醒可调用」闭环补齐；
+> 不新增模型下载、不新增依赖，沿用既有 ffmpeg 录音 / SenseVoice 转写 / SSE 对话。
+> 判据：`test/verify-voice-tts.mjs` **27 条**（真合成 / 兜底链 / 路由 / stop 幂等 / barge-in 顺序 /
+> 分句队列 / 三态气泡 / 工作联动），挂 verify 硬档；`CHAIN_FLOOR` 抬到 **142/155**。
+
+- **合成**：`lib/tts/tts-worker.cjs` 补成真实合成子进程（NDJSON）：
+  `System.Speech`（SAPI5，离线）优先；失败自动退 WinRT `Windows.Media.SpeechSynthesis`
+  （Edge/OneCore 系统音色，离线）；再失败回 `tts-unavailable` + 每跳原因。
+  中文只走 UTF-8 JSON 文件、PowerShell stdio 全走文件（避开 Electron piped stdio EPERM）。
+- **服务**：`lib/tts/tts.js` 懒启动 worker、串行队列、超时、WAV 校验、按句缓存；
+  `stop()` 递增 generation，在途结果作废（不补念）。
+- **路由**：`GET /folia/pet-chat/tts`（audio/wav，单句 240 字上限）、`POST /folia/pet-chat/tts/stop`（幂等）、
+  `GET /folia/pet-chat/tts/state`；`GET /folia/pet-chat/events` + `POST /folia/pet-chat/speak`
+  作为待办/提醒的工作联动反向通道（无客户端时最多排队 5 条）。
+- **客户端**：`src/pet-tts.js` 按句切分/预取/排队播放，`petSpeakStop()` 清队列并停当前音频；
+  `src/pet-voice-input.js` 在录音前先调 `onBeforeRecord`（barge-in）；
+  `src/pet-chat.js` 流式切句、第一句标点一到就入队合成，气泡逐句字幕；
+  `src/pet-bubble.js` 三态 `listen/think/speak`（说时四根竖条波形，伪元素 + `currentColor`）。
+- **VAD 自动停**：`lib/voice/record.js` 边录边轮询 ffmpeg `silencedetect`，说完写 `q` 让 ffmpeg
+  优雅退出并补好 WAV 头（覆盖「一开口就说话、无前导静音」）；不再必然等满 20 秒。
+- **发布面**：`package.json files` 改 `lib/tts/`；`test/verify-guard-chain.mjs` fixture 与
+  `docs/GUARD-MAP.md` 重新生成；`verify-inject-contracts` 入口选择修正（注册入口而非第一个
+  export function），恢复 M8=100%。
+
 ### v4.25.5（2026-11-05，**删掉「改用边下边播」+ 缓存进度必须有明确状态**；发布到 next，latest 保持 4.25.4）
 
 > 用户的两条要求：① **按用户要求删掉「改用边下边播」**——播放只留"下载完 + 校验通过 ⇒ 本地播"

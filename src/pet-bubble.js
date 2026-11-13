@@ -47,6 +47,40 @@ function petBubbleCreate(deps) {
   let text = '';
   let visible = false;
   let fadeTimer = null;
+  let stylesInjected = false;
+
+  /**
+   * 三态与“说”的波形（P1）：
+   *   listen / think / speak / idle —— 只改 `data-state`，由一小段**无颜色**的 CSS 表现：
+   *   · listen：正文前的实心点；think：省略号；speak：正文下一排四根跳动竖条。
+   * 用伪元素而不是新增 DOM 子节点，是因为气泡正文一直用 `textContent` 整体写入
+   * （设 textContent 会把子节点一起清掉）；伪元素不会被它清掉，也不会引入第二种“文字容器”。
+   */
+  const WAVE_CSS = [
+    '.we-pet-bubble[data-state="listen"]::before{content:"●";margin-right:4px;opacity:.55;}',
+    '.we-pet-bubble[data-state="think"]::before{content:"…";margin-right:4px;opacity:.6;}',
+    '.we-pet-bubble[data-state="speak"]::after{content:"";display:block;width:34px;height:10px;margin-top:6px;opacity:.85;',
+    'background:',
+    'linear-gradient(currentColor,currentColor) 0 100%/3px 45% no-repeat,',
+    'linear-gradient(currentColor,currentColor) 8px 100%/3px 90% no-repeat,',
+    'linear-gradient(currentColor,currentColor) 16px 100%/3px 60% no-repeat,',
+    'linear-gradient(currentColor,currentColor) 24px 100%/3px 100% no-repeat;',
+    'transform-origin:0 100%;animation:we-pet-bubble-wave .8s ease-in-out infinite alternate;}',
+    '@keyframes we-pet-bubble-wave{from{transform:scaleY(.55);opacity:.55;}to{transform:scaleY(1);opacity:.95;}}',
+  ].join('');
+
+  /** 只注入一次；没有 head 的环境（判据的极简 DOM）静默跳过。 */
+  function ensureStyles() {
+    if (stylesInjected) return;
+    stylesInjected = true;
+    try {
+      if (!doc || !doc.head || typeof doc.createElement !== 'function') return;
+      const style = doc.createElement('style');
+      style.setAttribute('data-folia-pet-bubble', '1');
+      style.textContent = WAVE_CSS;
+      if (typeof doc.head.appendChild === 'function') doc.head.appendChild(style);
+    } catch { /* 气泡是装饰层，样式失败不能影响显示 */ }
+  }
 
   /** 锚点 → 气泡位置：水平居中于桌宠，垂直贴在头顶上方。 */
   function place() {
@@ -141,9 +175,10 @@ function petBubbleCreate(deps) {
     doHide();
   }
 
-  /** 状态：听 / 想 / 答（客户端据此换桌宠动作、给气泡配色）。 */
+  /** 状态：听 / 想 / 说（客户端据此换桌宠动作、气泡配色与波形）。 */
   function setState(kind) {
-    if (!el) return;
+    if (!ensure()) return;
+    ensureStyles();
     el.dataset = el.dataset || {};
     el.dataset.state = String(kind || '');
   }

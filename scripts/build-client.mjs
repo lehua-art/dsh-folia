@@ -429,6 +429,14 @@ const INLINE_MODULES = [
     markers: ['function petBubbleCreate(', 'function place()', 'MAX_LINES'],
   },
   {
+    // P1 朗读（智能语音闭环）：按句入队播放 + 字幕 + stop/barge-in。
+    // 排在 pet-chat.js 之前：后者在模块顶层构造 petTts 实例。
+    file: 'src/pet-tts.js',
+    why: '桌宠朗读客户端：petTtsSplit 切句 / 排队播放 / 预取下一句 / stop 清队列 / 句字幕回调',
+    markers: ['function petTtsSplit(', 'function petTtsSentences(', 'function petTtsCreate(',
+      'function speak(text, speech) {'],
+  },
+  {
     file: 'src/pet-chat.js',
     why: '桌宠语音助手客户端：点桌宠唤醒 → 气泡显示 + edge 朗读（失败回落系统音色），无面板无输入框',
     markers: ['function mountPetChat()', 'const PET_CHAT_PRESET_LINES = ', 'function petChatWake()'],

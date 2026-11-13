@@ -463,6 +463,9 @@ const VERIFY_STEPS = [
   // 语音输入（6 条：全链路 / 权限 / asr-not-ready / 15s 上限 / 静音结束 / 打字兜底）
   step('test/verify-pet-voice.mjs'),
   step('test/verify-asr-local.mjs'),
+  // P1 智能语音闭环：真合成（SAPI → Edge 系统音色 → 明确错误）/ /tts 与 /tts/stop 路由 /
+  // stop 幂等 / barge-in 调用顺序 / 分句排队 / 三态气泡 / 工作联动 speak 通道。
+  step('test/verify-voice-tts.mjs'),
   step('test/verify-capabilities.mjs'),
   step('test/verify-boot-pool.mjs'),
 ];

@@ -14,6 +14,12 @@ function petVoiceInputCreate(deps) {
   const onText = typeof options.onText === 'function' ? options.onText : () => {};
   const onError = typeof options.onError === 'function' ? options.onError : () => {};
   const onState = typeof options.onState === 'function' ? options.onState : () => {};
+  /**
+   * barge-in（P1）：**录音一开始**先停掉正在播的朗读。
+   * 做成注入点而不是在这里直接引用 petSpeakStop：模块在构建期被内联进同一作用域，
+   * 直接引用会把“朗读”与“录音”焊死；注入后判据也能用假函数断言调用顺序。
+   */
+  const onBeforeRecord = typeof options.onBeforeRecord === 'function' ? options.onBeforeRecord : () => {};
 
   let active = false;
 
@@ -26,6 +32,8 @@ function petVoiceInputCreate(deps) {
   async function start() {
     if (active) return true;
     active = true;
+    // ⚠️ 顺序是判据：先打断朗读，再开麦（用户一说话就把桌宠的声音掐掉）
+    try { onBeforeRecord(); } catch { /* 打断失败不能挡住录音 */ }
     onState({ state: 'listening' });
     let result;
     try {

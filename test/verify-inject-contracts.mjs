@@ -313,6 +313,25 @@ function parseDeclaredList(raw, name) {
 }
 
 /**
+ * `lib/route-registry.js` 的**已迁移族**：`register: registerXxxRoutes` + `deps: (c) => ({ … })`。
+ * 注册表重构后 `lib/index.js` 不再逐个写调用点（统一走 `registerFeatureRoutes`），
+ * 直接扫调用点会把这 7 个族漏成“孤儿”。这里把 `deps` 对象键当调用点实参键补回来。
+ */
+function parseRegistryFamilies() {
+  const rel = 'lib/route-registry.js';
+  const raw = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+  const out = [];
+  const re = /register:\s*([A-Za-z_$][\w$]*)\s*,\s*deps:\s*\([^)]*\)\s*=>\s*\(\{([\s\S]*?)\}\),/g;
+  let m;
+  while ((m = re.exec(raw)) !== null) {
+    const keys = m[2].split(',').map((part) => part.trim().split(':')[0].trim()).filter(Boolean);
+    const line = raw.slice(0, m.index).split('\n').length;
+    out.push({ rel, fn: m[1], keys, line });
+  }
+  return out;
+}
+
+/**
  * 解析一个路由模块的注入契约。**全部走中和文本 + 偏移**，所以多行解构、`c.x` 成员访问、
  * 模块级 helper 传播、嵌套同名形参遮蔽都能在同一遍里判对。
  * @param {string} raw 源码
@@ -325,7 +344,22 @@ export function parseModuleContract(raw, rel) {
   //   两者与原文**等长** ⇒ 偏移可直接互换（行号也一直是对的）。
   const text = neutralize(raw);
   const idText = stripComments(String(raw));
-  const fnM = /export\s+function\s+([A-Za-z_$][\w$]*)\s*\(([^()]*)\)\s*\{/.exec(text);
+  // ⚠️ 入口选择：路由族模块可能在注册入口**之前**还有别的导出函数
+  // （`wavSeconds` / `isWithin` / `inventoryEpoch` …）。本守卫要对账的是**注册入口**
+  // （`register<X>Routes(webServer, …)`），不是"文件里第一个 export function" ——
+  // 选错会把一个纯函数当成族入口，逐键对账随即变成空转（HEAD 上的真实红）。
+  // 仍然保留"没有注册入口就退回第一个 export function"的旧行为：负对照夹具用的是
+  // 不带 webServer 形参的合成模块，它们必须还能被解析。
+  const fnM = (() => {
+    const all = /export\s+function\s+([A-Za-z_$][\w$]*)\s*\(([^()]*)\)\s*\{/g;
+    let first = null;
+    let hit;
+    while ((hit = all.exec(text)) !== null) {
+      if (!first) first = hit;
+      if (/^register[A-Za-z_$][\w$]*Routes$/.test(hit[1]) && /\bwebServer\b/.test(hit[2])) return hit;
+    }
+    return first;
+  })();
   if (!fnM) return { rel, ok: false, reason: '没找到 `export function <名>(…) {`（本守卫只认这一种入口形态）' };
   const fnName = fnM[1];
   const registerOpenParen = fnM.index + fnM[0].indexOf('(');
@@ -835,14 +869,22 @@ async function main() {
   const declaredKeys = modules.reduce((n, m) => n + (m.deps ? m.deps.length : 0), 0);
   const withDecl = modules.filter((m) => Array.isArray(m.deps)).length;
   const built = buildIndex();
-  const builtFns = built.modules.map((m) => m.fnName);
+  // 独立索引枚举的是"路由模块文件 × 文件里的**全部**导出函数"；本守卫只对账注册入口。
+  // 两张面必须按同一口径比：文件面（去重）× 注册入口函数面（`register…Routes`）。
+  const builtFns = [...new Set(built.modules.map((m) => m.fnName)
+    .filter((fn) => /^register[A-Za-z_$][\w$]*Routes$/.test(fn)))];
+  const builtRels = [...new Set(built.modules.map((m) => m.rel))];
   const ourFns = [...byFn.keys()];
+  const ourRels = modules.map((m) => m.rel);
   check('覆盖面：本守卫解析出的路由模块面 / 函数面 == 独立索引 `buildIndex()` 的面（两个解析器不许互相矛盾）',
-    modules.length > 0 && built.modules.length === modules.length
+    modules.length > 0
+    && missingFrom(ourRels, builtRels).length === 0 && missingFrom(builtRels, ourRels).length === 0
     && missingFrom(ourFns, builtFns).length === 0 && missingFrom(builtFns, ourFns).length === 0,
-    '本守卫 ' + modules.length + ' 模块 / ' + ourFns.length + ' 族 · 独立索引 ' + built.modules.length + ' 模块 / ' + builtFns.length + ' 族'
+    '本守卫 ' + modules.length + ' 模块 / ' + ourFns.length + ' 族 · 独立索引 ' + builtRels.length + ' 模块 / ' + builtFns.length + ' 注册入口'
       + (missingFrom(ourFns, builtFns).length ? ' · 本守卫漏了 ' + missingFrom(ourFns, builtFns).join(' ') : '')
-      + (missingFrom(builtFns, ourFns).length ? ' · 本守卫多了 ' + missingFrom(builtFns, ourFns).join(' ') : ''));
+      + (missingFrom(builtFns, ourFns).length ? ' · 本守卫多了 ' + missingFrom(builtFns, ourFns).join(' ') : '')
+      + (missingFrom(ourRels, builtRels).length ? ' · 模块面漏了 ' + missingFrom(ourRels, builtRels).join(' ') : '')
+      + (missingFrom(builtRels, ourRels).length ? ' · 模块面多了 ' + missingFrom(builtRels, ourRels).join(' ') : ''));
   check('覆盖面：每个族都有 DEPS 声明面、且每族至少声明 1 个键（空声明面 / 空数组 = 不可对账）',
     modules.length > 0 && withDecl === modules.length && declaredKeys >= modules.length,
     `模块 ${modules.length} · 有声明 ${withDecl} · 声明键 ${declaredKeys}（≥ 族数 ${modules.length}）`);
@@ -876,8 +918,7 @@ async function main() {
   const leaf = await loadLeafKeyNames();
   const sites = [];
   const siteIssues = [];
-  const entryReports = [];
-  for (const rel of MAIN_MODULES) {
+  const entryReports = [];  for (const rel of MAIN_MODULES) {
     const raw = readFileSync(join(ROOT, rel), 'utf8');
     const id = subpackageEntryId(rel);
     const table = id ? (leaf.tables.get(id) || null) : null;
@@ -901,11 +942,22 @@ async function main() {
       : [];
     entryReports.push({ rel, id, explicit, fns: families.map((f) => f.fnName), tableKeys: (table || []).length, problems });
   }
+  // 已迁移族：`lib/index.js` 里不再逐个写调用点，统一走注册表 `registerFeatureRoutes(webServer, ctx)`。
+  // 把 `deps: (c) => ({ … })` 的键当作“调用点实参键”补进来 —— 否则这 7 个族会被判成
+  // “无调用点”的孤儿（HEAD 上的真实红），而注册表有没有把每个族要的键给全也就没人对账。
+  const registry = parseRegistryFamilies();
+  for (const entry of registry) {
+    const site = { rel: entry.rel, line: entry.line, fn: entry.fn, keys: entry.keys, dynamic: null, viaRegistry: true };
+    sites.push(site);
+    const issues = reconcileCallSite(site, byFn.get(site.fn));
+    if (issues.length) siteIssues.push([site, issues]);
+  }
   const subpackageRels = MAIN_MODULES.filter((rel) => subpackageEntryId(rel) !== null);
   const unreadable = subpackageRels.filter((rel) => !leaf.tables.get(subpackageEntryId(rel)));
   check('② 子包行入口的声明面真源 = 叶子 `subpackageKeyNames(id)`（读不到 / 空表 = 红，不许退化成空对空）',
-    leaf.error === null && subpackageRels.length > 0 && unreadable.length === 0,
+    leaf.error === null && unreadable.length === 0 && (subpackageRels.length > 0 || leaf.tables.size > 0),
     leaf.error || (subpackageRels.length + ' 个子包行入口 · 冻结表 ' + [...leaf.tables.keys()].join(' / ')
+      + (subpackageRels.length === 0 ? '（单包布局：无 packages/ 行入口；冻结表供组件行复用）' : '')
       + (unreadable.length ? ' · 取不到冻结表：' + unreadable.join(' ') : '')));
   const subpackageDynamic = sites.filter((s) => subpackageEntryId(s.rel) !== null && s.dynamic);
   check('② 子包入口的 ...subpackageKeys(id) / ...host.keys(id, ctx) 展开必须被认出来（认不出 = 整包调用点不可对账）',
@@ -921,17 +973,25 @@ async function main() {
   const orphans = [...byFn.keys()].filter((f) => !calledFns.has(f));
   // 调用点覆盖面：**对账另一个解析器**（`rowRegistrationCounts()` 按行首形态独立扫同一批行模块），
   // 取代原先写死的 `sites.length >= 20`（快照：上游加一族 ⇒ 无判别力的绿）。
+  // 只比**直接调用点**（`viaRegistry` 的实参来自注册表，独立索引看不到那 7 条）；
+  // 独立索引会把 `registerFeatureRoutes(webServer, ctx)` 这个分发器也当调用点，这里按
+  // `knownFns`（真正的族入口）过滤掉它 —— 否则会出现“索引 18 / 本守卫 17”的假红。
+  const directSites = sites.filter((s) => !s.viaRegistry);
   const builtCallKeys = MAIN_MODULES.flatMap((rel) => rowRegistrationCounts(rel, built.modules).fns
+    .filter((fn) => knownFns.has(fn))
     .map((f) => rel + '::' + f));
-  const ourCallKeys = sites.map((s) => s.rel + '::' + s.fn);
+  const ourCallKeys = directSites.map((s) => s.rel + '::' + s.fn);
   const missingCalls = missingFrom(ourCallKeys, builtCallKeys);
   const extraCalls = missingFrom(builtCallKeys, ourCallKeys);
-  check('覆盖面：调用点面 == 独立索引解析出的调用点面（两个解析器不许互相矛盾）',
-    sites.length > 0 && builtCallKeys.length > 0 && missingCalls.length === 0 && extraCalls.length === 0 && orphans.length === 0,
-    `调用点 ${sites.length}（独立索引 ${builtCallKeys.length}）`
+  check('覆盖面：直接调用点面 == 独立索引解析出的调用点面（两个解析器不许互相矛盾）',
+    directSites.length > 0 && builtCallKeys.length > 0 && missingCalls.length === 0 && extraCalls.length === 0 && orphans.length === 0,
+    `直接调用点 ${directSites.length}（独立索引 ${builtCallKeys.length}）· 注册表族 ${registry.length}`
       + (missingCalls.length ? ' · 本守卫漏了 ' + missingCalls.join(' ') : '')
       + (extraCalls.length ? ' · 本守卫多了 ' + extraCalls.join(' ') : '')
       + (orphans.length ? ' · 无调用点：' + orphans.join(' ') : ''));
+  check('覆盖面：注册表里的已迁移族都有 deps 声明面且能对账（≥1 族，不许退化成空对空）',
+    registry.length > 0 && registry.every((entry) => byFn.has(entry.fn)),
+    registry.map((entry) => entry.fn + '(' + entry.keys.length + ' 键)').join(' · ') || '（注册表里没有族）');
   for (const [s, issues] of siteIssues) console.log('  ✗ ' + s.rel + ':' + s.line + ' → ' + s.fn + '(): ' + issues.map((i) => i.text).join('；'));
   check('② 每个调用点的实参键与声明面对账（门面/组件行双向；子包入口 = 叶子表 ∪ 显式键 ⊇ 族声明面）',
     siteIssues.length === 0,
