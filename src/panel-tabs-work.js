@@ -76,23 +76,11 @@ function CapabilityCard({ item }) {
   const body = [head];
   if (open) {
     const line = (k, v) => React.createElement('div', { key: k, className: 'we-picker__hint', style: { marginTop: '4px' } }, v);
-    if (Array.isArray(item.features) && item.features.length) {
-      body.push(React.createElement('div', { key: 'feat-title', style: { marginTop: '8px', fontSize: '12px', fontWeight: 600 } }, weT('功能')));
-      item.features.forEach((f, i) => body.push(line('f' + i, '· ' + f)));
-    }
-    if (Array.isArray(item.examples) && item.examples.length) {
-      body.push(React.createElement('div', { key: 'ex-title', style: { marginTop: '8px', fontSize: '12px', fontWeight: 600 } }, weT('你可以这样说')));
-      item.examples.forEach((ex, i) => body.push(line('e' + i, '「' + ex + '」')));
-    }
+    body.push(React.createElement('div', { key: 'd-title', style: { marginTop: '8px', fontSize: '12px', fontWeight: 600 } }, weT('详情')));
+    body.push(line('desc', item.authorDesc || item.summary || ''));
+    body.push(React.createElement('div', { key: 'u-title', style: { marginTop: '8px', fontSize: '12px', fontWeight: 600 } }, weT('如何使用')));
+    body.push(line('usage', item.usage || ''));
     if (item.requires) body.push(line('req', weT('前提：') + item.requires));
-    if (item.authorDesc) body.push(line('desc', weT('作者描述：') + item.authorDesc));
-    if (item.downloads || item.stars) {
-      body.push(line('stat', weT('近 30 天下载 {d} · 星 {s}', { d: item.downloads || 0, s: item.stars || 0 })));
-    }
-    if (item.source) {
-      body.push(React.createElement('div', { key: 'src', className: 'we-picker__hint', style: { marginTop: '4px' } },
-        React.createElement('a', { href: item.source, target: '_blank', rel: 'noreferrer' }, item.source)));
-    }
     if (!item.installed && item.command) {
       body.push(React.createElement('div', {
         key: 'cmd',
@@ -104,7 +92,6 @@ function CapabilityCard({ item }) {
       }, item.command));
     }
   }
-
   body.push(React.createElement('div', { key: 'btns', style: { display: 'flex', gap: '6px' } },
     React.createElement('button', {
       type: 'button', className: 'we-picker__btn', onClick: () => setOpen((v) => !v),

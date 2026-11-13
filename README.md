@@ -1,5 +1,10 @@
 <div align="center">
 
+# Folia · 壁纸引擎与桌宠
+
+<p>本机 WE 壁纸实时渲染 · 桌宠与皮肤 · 开机动画 · 本地语音对话 · 在线素材站</p>
+
+
 <p>
   <a href="README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/key-lang-zh-dark.png"><img src="assets/readme/key-lang-zh-light.png" alt="中文" width="64"></picture></a>
   <a href="README.en.md"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/readme/key-lang-en-dark.png"><img src="assets/readme/key-lang-en-light.png" alt="English" width="92"></picture></a>

@@ -432,6 +432,7 @@ const WE_I18N_EN_PANEL = {
   "对话": "Chat",
   "可选工作能力（已安装才可用）": "Optional work capabilities (installed only)",
   "能力": "Capabilities",
+  "如何使用": "How to use",
   "作者描述：": "Author description: ",
   "近 30 天下载 {d} · 星 {s}": "Downloads (30d) {d} · Stars {s}",
   "显示更多（还有 {n} 个）": "Show more ({n} left)",
