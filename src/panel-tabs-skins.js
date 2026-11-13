@@ -190,7 +190,7 @@ function SkinsTabPanel() {
       });
       await dlAwaitJob(active.id);
       if (!alive) return;
-      await load(true);
+      void load(true).catch(() => { /* 后台对齐（不阻塞界面） */ });
     })();
     return () => { alive = false; };
   }, [load]);
@@ -313,7 +313,8 @@ function SkinsTabPanel() {
             ? weT("已切换到：{name}（本插件的壁纸与玻璃已让位）", { name: label || "" })
             : weT("已恢复官方默认外观（壁纸已按记忆放回）"),
         });
-        await load(true);
+      setState((prev) => (prev ? { ...prev, active: wantId || "" } : prev));
+        void load(true).catch(() => { /* 后台对齐（不阻塞界面） */ });
         return;
       }
 
@@ -345,7 +346,7 @@ function SkinsTabPanel() {
         if (click.skipped) {
           cards.markOk(cardId);
           setNote({ ok: true, text: weT("已装过：{name}", { name: label || "" }) });
-          await load(true);
+          void load(true).catch(() => { /* 后台对齐（不阻塞界面） */ });
           return;
         }
         resp = click.resp;
@@ -359,7 +360,7 @@ function SkinsTabPanel() {
       if (resp && resp.ok && r && r.deduped) {
         setNote({ ok: true, text: weT("这套皮肤正在安装中，稍后自动刷新：{name}", { name: label || "" }) });
         if (cardId && await skinInstalledNow(cardId)) cards.markOk(cardId);
-        await load(true);
+        void load(true).catch(() => { /* 后台对齐（不阻塞界面） */ });
         return;
       }
       // 还没下完：宿主回 202 pending（弱网下 13.8 MB 可能要两分钟以上）。
@@ -430,8 +431,13 @@ function SkinsTabPanel() {
               const already = await skinInstalledNow((payload && payload.id) || cardId);
               if (already) {
                 if (cardId) cards.markOk(cardId);
+          // 就地更新：这张卡立刻变「已安装/应用」，整表只在后台对齐
+          setState((prev) => {
+            if (!prev || !Array.isArray(prev.site)) return prev;
+            return { ...prev, site: prev.site.map((x) => (x && x.id === cardId ? { ...x, installed: true } : x)) };
+          });
                 setNote({ ok: true, text: weT("已确认装好：{name} —— 点「应用」就能切换", { name: label2 }) });
-                await load(true);
+                void load(true).catch(() => { /* 后台对齐（不阻塞界面） */ });
                 return;
               }
               if (cardId) cards.fail(cardId, "job-lost");
@@ -494,7 +500,7 @@ function SkinsTabPanel() {
           if (already) {
             if (cardId) cards.markOk(cardId);
             setNote({ ok: true, text: weT("已确认装好：{name} —— 点「应用」就能切换", { name: label2 }) });
-            await load(true);
+            void load(true).catch(() => { /* 后台对齐（不阻塞界面） */ });
             return;
           }
         }
@@ -545,7 +551,7 @@ function SkinsTabPanel() {
               : weT("这套清单本来就合规（没有可修的）；若仍未被收录，把卡片上的原因发我"),
           });
         }
-        await load(true);
+        void load(true).catch(() => { /* 后台对齐（不阻塞界面） */ });
       } else {
         const code = (r && r.error) || "failed";
         // 失败原因的**唯一真源**是 `dlFailReason`（四模块共用一张表，见 src/local-first.js）：

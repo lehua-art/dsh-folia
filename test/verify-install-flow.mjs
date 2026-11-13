@@ -435,7 +435,9 @@ if (client) {
     const listed = await listedInstalled(REFRESH_ID);
     const skinsTab = readFileSync(join(ROOT, 'src', 'panel-tabs-skins.js'), 'utf8');
     // 面板：markOk 之后必须紧跟一次 load(true)（"装完不刷新 = 卡片还显示安装"就是 4.23.4 的老毛病）
-    const refreshAfterOk = /cards\.markOk\(cardId\);[\s\S]{0,1200}?await load\(true\);/.test(skinsTab);
+    // 4.26：刷新改为**后台非阻塞**（void load(true)），判据接受两种写法 ——
+  // 关键是"markOk 之后确实刷新了清单"，不是"把界面卡住等它"。
+  const refreshAfterOk = /cards\.markOk\(cardId\);[\s\S]{0,1200}?(?:await|void) load\(true\)/.test(skinsTab);
     listRoute.handler = orig;
     A.push({
       id: 'A18', name: 'install 成功后 /skins/list 被刷新（卡片才有"已安装"的真源）',
