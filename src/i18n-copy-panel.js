@@ -406,6 +406,9 @@ const WE_I18N_EN_PANEL = {
   "位置已复位（下一次出现回到右下角）": "Position reset — it returns to the bottom-right next time",
   "复位位置": "Reset position",
   "大小": "Size",
+  // pre.49：桌宠页控制行最右侧的语音助手开关（点开才挂载设置块）。
+  "智能大肥鱼": "Smart Chubby Fish",
+  "桌宠语音助手": "Pet voice assistant",
   "卸载": "Uninstall",
   "{cols} 列 · {size}": "{cols} cols · {size}",
   "还没有安装任何桌宠 —— 从下面的站点清单里挑一只。": "No pets installed yet — pick one from the site list below.",

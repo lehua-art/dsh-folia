@@ -1,5 +1,20 @@
 # 变更记录（Changelog）
 
+### v4.26.0-pre.49（2026-11-13，**桌宠页：控制行加「🐟 智能大肥鱼」，点开才显示语音助手设置**）
+
+> 纯布局调整，不改任何字段/接口/设置键；不新增依赖。
+> 判据：`test/verify-panel-interactions.mjs` 新增 6 条（按钮位置 / `.we-picker__btn` /
+> 默认收起 / 条件渲染 / 字段齐全 / 两条负对照），仍挂 verify 硬档。
+
+- `src/panel-tabs-pets.js`：控制行在「大小」下拉右侧新增「🐟 智能大肥鱼」按钮
+  （`.we-picker__btn`，`aria-expanded` / `aria-controls`），点击切换 `assistantOpen`；
+  默认 **收起**。`PetChatSettings` 改为 `assistantOpen ? … : null` **条件渲染**
+  （不常驻挂载，因此也不会常驻请求 `/pet-chat/config` 与 `/work-plugins`）。
+- 展开块内容与字段**一字未改**：模型 Key / 名字 / 称呼 / 音色 / 保存 / 已保存 Key 提示 /
+  可选工作能力（已安装才可用）/ @linxin666/dsh-web-all 冲突提醒。
+- `src/i18n-copy-panel.js`：补 `智能大肥鱼` / `桌宠语音助手` 两条英文词条。
+- 控制行沿用既有 `PET_STYLE.row`（`flex-wrap: wrap`），窄容器自动换行；不新增颜色样式。
+
 ### v4.26.0-pre.46（2026-11-13，**音色设置真生效 + 下载完成未落地自愈**）
 
 > 两个修复一个版本；不新增依赖。判据：`verify-voice-tts` 27 → **33 条**、

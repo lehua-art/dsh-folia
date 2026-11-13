@@ -71,6 +71,37 @@ function check(name, cond, detail) { results.push({ name, ok: Boolean(cond), det
   check('pets: 提示行常驻', !/^\s{2}if \(note\) \{/m.test(pets));
 }
 
+/* ⑤ pre.49：桌宠页「🐟 智能大肥鱼」开关（控制行最右，默认收起，点开才挂载语音助手设置） */
+{
+  const sizeAt = pets.indexOf('weT("大小")');
+  const fishAt = pets.indexOf('weT("智能大肥鱼")');
+  check('pre.49 控制行「大小」之后有「智能大肥鱼」按钮（同一 flex-wrap 控制行）',
+    sizeAt >= 0 && fishAt > sizeAt
+      && /row: \{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" \}/.test(pets),
+    `size@${sizeAt} · fish@${fishAt}`);
+  check('pre.49 按钮沿用 .we-picker__btn，带 aria-expanded / aria-controls，点击切换本地 state',
+    /className: "we-picker__btn"[\s\S]{0,320}?["']aria-expanded["']?: assistantOpen/.test(pets)
+      && /"aria-controls": "we-pet-chat-settings"/.test(pets)
+      && /onClick: \(\) => setAssistantOpen\(\(v\) => !v\)/.test(pets));
+  check('pre.49 语音助手默认收起，且只在展开时条件渲染（不是 CSS 隐藏）',
+    /const \[assistantOpen, setAssistantOpen\] = React\.useState\(false\)/.test(pets)
+      && /if \(assistantOpen\) \{[\s\S]{0,180}React\.createElement\(PetChatSettings/.test(pets)
+      && !/^\s{2}children\.push\(React\.createElement\(PetChatSettings/m.test(pets));
+  check('pre.49 展开块字段齐全（Key / 名字 / 称呼 / 音色 / 保存 / 工作能力 / 冲突提醒）',
+    ['模型 Key', '名字', '称呼', '音色', '保存', '可选工作能力（已安装才可用）', '冲突提醒：']
+      .every((text) => pets.includes(text)));
+  check('pre.49 aria-controls 指向的设置块 id 真的存在',
+    /id: 'we-pet-chat-settings'/.test(pets));
+  // 负对照：无条件渲染 / 按钮跑到「大小」前面，必须被上面同一套判据判红。
+  const conditionalOf = (src) => /if \(assistantOpen\) \{[\s\S]{0,180}React\.createElement\(PetChatSettings/.test(src)
+    && !/^\s{2}children\.push\(React\.createElement\(PetChatSettings/m.test(src);
+  check('pre.49 negative control：无条件渲染会被「默认收起」判据判红',
+    !conditionalOf('children.push(React.createElement(PetChatSettings, { key: "petChat" }));'));
+  const wrongOrder = 'React.createElement("button", null, "🐟 " + weT("智能大肥鱼")) ... weT("大小")';
+  check('pre.49 negative control：按钮放到「大小」前面会被顺序判据判红',
+    !(wrongOrder.indexOf('weT("大小")') < wrongOrder.indexOf('weT("智能大肥鱼")')));
+}
+
 /* ── 汇总 ────────────────────────────────────────────────────────────────── */
 let failed = 0;
 for (const r of results) {
