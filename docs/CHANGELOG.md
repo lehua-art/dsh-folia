@@ -1,5 +1,30 @@
 # 变更记录（Changelog）
 
+### v4.26.0-pre.46（2026-11-13，**音色设置真生效 + 下载完成未落地自愈**）
+
+> 两个修复一个版本；不新增依赖。判据：`verify-voice-tts` 27 → **33 条**、
+> 新增 `verify-stall-heal` **12 条**（挂 verify 硬档）；`CHAIN_FLOOR` 抬到 **143/156**。
+
+- **修复 A：音色设置不生效（实测：配置 `zh-CN-XiaoxiaoNeural`，实际响的是 Huihui）**
+  - `lib/tts/tts-worker.cjs`：按音色路由引擎 —— neural 名（`zh-CN-…Neural`）**edge 优先**；
+    SAPI 名/空 sapi 优先。显式音色在某一跳不存在时脚本 `throw voice-not-found`，
+    该跳记一次 attempt 后换下一跳，**禁止用默认音色静默当成功**。
+  - `lib/tts/tts.js`：缓存 key 加入**引擎**（`v1|engine|voice|rate|text`）；命中时校验
+    缓存里的实际音色，修复前“Huihui 冒充 Xiaoxiao”的旧条目会被丢弃重合成。
+  - `lib/routes/pet-chat.js`：`/tts` 响应头回 `X-Folia-TTS-Requested-Voice` / `X-Folia-TTS-Voice`
+    / `X-Folia-TTS-Engine` / `X-Folia-TTS-Attempts`；`/tts/state` 回
+    `requestedVoice / actualVoice / engine / attempts / lastTts`。
+- **修复 B：卡片卡在「解压/落位中…」/「下载已完成但安装未落地」**
+  - `src/local-first.js`：`dlHealStuck()` 支持 `attempts + backoff`（boot/skin 传 0s/3s/8s）；
+    新增卡片态 `healing`（`cards.heal / healOk / healFail / healOf`），自愈期间显示
+    「正在补收尾… 第 a/t 次」，成功就地 done 并清历史错误，三次全失败才写红字 +「重试」。
+  - `src/panel-tabs-boot.js` / `src/panel-tabs-skins.js`：挂载自愈接线到 healing 三态；
+    开机动画成功仍以 `/boot/list` 的 `installed` 为真源重拉。
+  - 文案：`src/i18n-copy-panel.js` 补 `正在补收尾…` / `第 {a}/{t} 次 · 下载已完成，正在补落地`。
+- **判据**：`test/verify-voice-tts.mjs` 新增音色路由/严格失败/缓存 key 含引擎/响应头与 state；
+  `test/verify-stall-heal.mjs` 覆盖挑选面、0/3/8s 退避、失败/成功卡片态、面板接线。
+- **发布面**：runner fixture、`docs/GUARD-MAP.md`、`CHAIN_FLOOR` 同步重生成。
+
 ### v4.26.0-pre.45（2026-11-13，**智能语音桌宠闭环 P1：SAPI → Edge 系统音色 → 明确错误**）
 
 > 一个版本内把「说完自动停 → 逐句字幕 + 朗读 → 说话即打断 → 待办/提醒可调用」闭环补齐；

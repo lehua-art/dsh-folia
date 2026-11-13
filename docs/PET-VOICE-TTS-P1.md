@@ -16,12 +16,23 @@
 
 约定：
 
+- **音色 → 引擎路由（pre.46）**：`zh-CN-XiaoxiaoNeural` 这类 Edge/WinRT 命名（`/^[a-z]{2}-[A-Z]{2}-\w+Neural$/`）
+  先走 `edge`；`Microsoft Xxx Desktop` 或空音色先走 `sapi`。显式音色在某一跳不存在时脚本
+  `throw voice-not-found`，该跳记一次 attempt 后换下一跳；**不许用默认音色静默当成功**。
+- **缓存 key 含引擎（pre.46）**：`sha256('v1|<engine>|<voice>|<rate>|<text>')`。同一句话在
+  SAPI 与 Edge 下是不同音色，不能互相命中；命中时还会校验缓存里的实际音色与请求一致，
+  修复前留下的“Huihui 冒充 Xiaoxiao”旧条目会被丢弃重合成。
+- **可观测（pre.46）**：`/tts` 响应头 `X-Folia-TTS-Requested-Voice` / `X-Folia-TTS-Voice`（实际）/
+  `X-Folia-TTS-Engine` / `X-Folia-TTS-Attempts`（URI 编码 JSON）；`/tts/state` 回
+  `requestedVoice / actualVoice / engine / attempts / lastTts`。
 - **中文文本只经 UTF-8 JSON 文件**，从不放进命令行参数（避开 Windows PowerShell 引号/编码坑）；
 - PowerShell 的 **stdin/stdout/stderr 不走管道**（Electron 里 piped stdio 会 EPERM）：配置/脚本/日志/音频全部走临时文件；
 - SAPI/Edge 脚本是 **ASCII**，脚本 stdout 的 `OK <voice>` 回真实选中的音色；
-- SAPI 选音色：请求名精确匹配 → `zh-CN` 默认 → 任意；Edge 同理。设置里默认的 `zh-CN-XiaoxiaoNeural`
-  是 Edge 名字，SAPI 匹配不到时自动用本机中文 SAPI 音色（不静默，响应头 `X-Folia-TTS-Engine` 标明实际引擎）。
+- 未显式指定音色时：SAPI 选 `zh-CN` 默认（再退任意），Edge 选 `zh*` 默认（再退任意）；
+  显式指定时只接受精确匹配，匹配不到就是该引擎的 attempt 失败。
 - 单句 240 字上限；单引擎 12s 超时；同一句命中缓存（`<DSH_FOLIA_HOME>/tts/cache`）为 0ms。
+- 本机没有 Edge 音色包时的行为：`/tts` 回 503 + `attempts` 里逐跳写明
+  `voice-not-found: <voice>`（不会静默换成 Huihui）。
 
 ## 2. 路由（`lib/routes/pet-chat.js`）
 

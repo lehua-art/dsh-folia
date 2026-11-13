@@ -933,6 +933,14 @@
         {
           "kind": "guard",
           "npm": null,
+          "file": "test/verify-stall-heal.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
           "file": "test/verify-media-selfheal.mjs",
           "args": [],
           "tier": "hard",
@@ -2187,6 +2195,14 @@
           "kind": "guard",
           "npm": null,
           "file": "test/verify-first-click-feedback.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-stall-heal.mjs",
           "args": [],
           "tier": "hard",
           "probe": false

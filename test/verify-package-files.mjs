@@ -408,7 +408,9 @@ async function main() {
     //（按本文件既有纪律：地板 = 实测步数，抬本身即证据；下面的负对照保证"删一步即红"）。
     // 4.26.0-pre.45 抬到 **142/155**：P1 智能语音闭环（`test/verify-voice-tts.mjs`：
     // SAPI/Edge 合成链 + /tts 路由 + stop 幂等 + barge-in 顺序 + 分句队列 + 三态气泡 + 联动通道）。
-    const CHAIN_FLOOR = { verify: 142, docs: 6, smoke: 6, all: 155 };
+    // 4.26.0-pre.46 抬到 **143/156**：卡片「下载完成但没落地」自愈
+    // （`test/verify-stall-heal.mjs`：挂载补收尾 + 0/3/8s 三次退避 + healing 卡片态）。
+    const CHAIN_FLOOR = { verify: 143, docs: 6, smoke: 6, all: 156 };
     /** 地板表与 GROUPS 的对齐体检：键名必须与**组名**逐一对齐（纯函数 ⇒ 负对照可直接喂）。 */
     const floorGaps = (groups, floors) => groups.map(([, g]) => g).filter((g) => !Number.isInteger(floors[g]));
     const problems = floorGaps(GROUPS, CHAIN_FLOOR).map((g) => '地板表缺组 ' + g

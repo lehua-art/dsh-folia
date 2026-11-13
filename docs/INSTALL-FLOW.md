@@ -74,13 +74,16 @@
 
 ## 4. 挂载自愈（用户什么都不点也要能修好）
 
-面板挂载时按"队列状态 + 本地是否已装"做三件事，**同一 id 每次会话只自动尝试一次**
-（`LF_HEAL_TRIED`，页面级；用户手动点「重试」不受此限）：
+面板挂载时按"队列状态 + 本地是否已装"做三件事。`LF_HEAL_TRIED` 仍按 `kind:id` **每次会话只领取一次**；
+pre.46 起 **boot / skin 在同一次挂载内做 0s / 3s / 8s 三次退避重试**（`attempts: 3`），
+三次全失败才把原因写回卡片；用户手动点「重试」不受此限：
 
 | 情形 | 动作 | 幂等机制 | 用例 |
 |---|---|---|---|
-| job `done` 但本机未落地 | POST 一次收尾接口：皮肤 `/folia/skins/install`、开机动画 `/folia/boot/download`、桌宠 `/folia/pets/install` | 三者都先看本地文件/缓存：已有 → `exists:true`；否则读 `cache/*-zip/`（**不重新下载**） | **E1 / E2** |
-| 自愈失败 | `cards.fail(id, code)` ⇒ 卡片红字原因 +「重试」；提示行同一句人话 | — | A11 / A12 |
+| job `done` 但本机未落地 | POST 收尾接口：皮肤 `/folia/skins/install`、开机动画 `/folia/boot/download`、桌宠 `/folia/pets/install` | 三者都先看本地文件/缓存：已有 → `exists:true`；否则读 `cache/*-zip/`（**不重新下载**） | **E1 / E2** |
+| 自愈进行中 | `cards.heal(id, attempt, total)` ⇒ 卡片显示「正在补收尾… · 第 a/t 次」，**不是**「解压/落位中…」 | 每次重试都更新 a/t；不新增网络请求 | `verify-stall-heal` |
+| 3 次都失败 | `cards.healFail(id, code)` ⇒ 卡片红字原因 +「重试」；提示行同一句人话 | 只写最后一次宿主错误码 | A11 / A12 |
+| 自愈成功 | `cards.healOk(id)` ⇒ 就地 done（皮肤）/ 重拉清单（开机动画），并清掉历史错误 | 宿主回 2xx | **E1 / E2** |
 | 本地没有对应 job（残留的"进行中"） | `cards.settle(id)` 清掉残留痕迹 ⇒ 回落 `idle`、可点安装 | 队列里没有它 ⇒ 它就不在发生 | **A10** |
 
 另外：开机动画 / 桌宠的收尾接口在**已落地时直接回 `exists:true`**，所以面板可以无脑重试。

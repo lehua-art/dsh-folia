@@ -5,7 +5,7 @@
 > 口径：只统计守卫**代码**里真正碰到的模块（先剥注释），并区分"直接读源文件"与"隔着产物 `lib/client.js`"。
 > 写法：字面量路径 / `join(...)` 拼接 / 唯一 basename / 产物配方 / **前缀族读法** `scopeFiles|scopeText(<前缀>)` / **经共享族助手读**（`import { panelText } from './tools/src-scope.mjs'` + 真调用；族口径封在那个库里，见 DEV-GUIDE §4.6「同时是守卫的库」）/ **真源定位读**（`locate('符号')` / `locateFile('文件名')`，`test/tools/source-locator.mjs`：符号唯一声明在哪就是读了哪个模块）。
 
-模块面 217 个 · 守卫 156 个
+模块面 217 个 · 守卫 157 个
 
 ## 守卫 → 模块
 
@@ -140,6 +140,7 @@
 | `verify-site-v1-sync.mjs` | `lib/routes/boot.js` `lib/routes/downloads.js` `lib/routes/inventory.js` `lib/routes/pets.js` `lib/routes/skins.js` `lib/site-list.js` `lib/variant-pick.js` `src/download-first.js` `src/video-layer.js` `src/video-switch.js` |  |
 | `verify-skin-center-bundle.mjs` | `src/features.js` `src/skin-compat.js` |  |
 | `verify-softrender.mjs` | — | ✅ |
+| `verify-stall-heal.mjs` | `src/local-first.js` `src/panel-tabs-boot.js` `src/panel-tabs-skins.js` |  |
 | `verify-static.mjs` | — |  |
 | `verify-steam-discovery.mjs` | `lib/index.js` `lib/steam-discovery.js` |  |
 | `verify-subpackage-boot.mjs` | `lib/index.js` `lib/subpackage-boot.js` |  |
@@ -342,7 +343,7 @@
 | `src/live-layer-underlay.js` | 5 | `verify-glass-surfaces` `verify-logging` `verify-occlusion-client` `verify-scene-live` `verify-theme-follow` |
 | `src/live-layer-watch.js` | 6 | `verify-client` `verify-glass-surfaces` `verify-logging` `verify-occlusion-client` `verify-scene-live` `verify-theme-follow` |
 | `src/live-layer.js` | 7 | `verify-client` `verify-glass-surfaces` `verify-logging` `verify-media-selfheal` `verify-occlusion-client` `verify-scene-live` `verify-theme-follow` |
-| `src/local-first.js` | 17 | `verify-dead-code` `verify-download-chain` `verify-download-first` `verify-downloads` `verify-first-click-feedback` `verify-hash-source` `verify-install-flow` `verify-local-media-heal` `verify-media-selfheal` `verify-media-state` `verify-no-auto-enqueue` `verify-queue-priority` `verify-variant-hash` `verify-variants` `verify-wallpaper-chain` `verify-wallpaper-core` `verify-wallpaper-progress` |
+| `src/local-first.js` | 18 | `verify-dead-code` `verify-download-chain` `verify-download-first` `verify-downloads` `verify-first-click-feedback` `verify-hash-source` `verify-install-flow` `verify-local-media-heal` `verify-media-selfheal` `verify-media-state` `verify-no-auto-enqueue` `verify-queue-priority` `verify-stall-heal` `verify-variant-hash` `verify-variants` `verify-wallpaper-chain` `verify-wallpaper-core` `verify-wallpaper-progress` |
 | `src/media-prep.js` | 12 | `verify-client` `verify-download-first` `verify-downloads` `verify-first-frame` `verify-fontset` `verify-media-state` `verify-queue-priority` `verify-scene-live` `verify-theme-follow` `verify-transcode-state` `verify-wallpaper-chain` `verify-wallpaper-core` |
 | `src/media-state.js` | 2 | `verify-media-state` `verify-wallpaper-chain` |
 | `src/module-reset.js` | 2 | `verify-fontset` `verify-scene-live` |
@@ -350,11 +351,11 @@
 | `src/occlusion.js` | 1 | `verify-occlusion-client` |
 | `src/panel-tabs-advanced.js` | 13 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-cache-manager` `verify-client` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-local-media-heal` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs-appearance.js` | 12 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-subpackage-toggle-roundtrip` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
-| `src/panel-tabs-boot.js` | 14 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-downloads` `verify-first-click-feedback` `verify-fontset` `verify-glass-surfaces` `verify-panel-interactions` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
+| `src/panel-tabs-boot.js` | 15 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-downloads` `verify-first-click-feedback` `verify-fontset` `verify-glass-surfaces` `verify-panel-interactions` `verify-scene-live` `verify-stall-heal` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs-effects.js` | 12 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-download-first` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs-mascot.js` | 11 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs-pets.js` | 15 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-downloads` `verify-first-click-feedback` `verify-fontset` `verify-glass-surfaces` `verify-panel-interactions` `verify-pet-settings` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
-| `src/panel-tabs-skins.js` | 15 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-downloads` `verify-first-click-feedback` `verify-fontset` `verify-glass-surfaces` `verify-install-flow` `verify-panel-defensive` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
+| `src/panel-tabs-skins.js` | 16 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-downloads` `verify-first-click-feedback` `verify-fontset` `verify-glass-surfaces` `verify-install-flow` `verify-panel-defensive` `verify-scene-live` `verify-stall-heal` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs-wallpaper.js` | 15 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-avatar-interval-and-rotation` `verify-client` `verify-contracts` `verify-downloads` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` `verify-wallpaper-chain` `verify-wallpaper-core` |
 | `src/panel-tabs-work.js` | 12 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-capabilities` `verify-client` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs.js` | 14 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-api-client` `verify-client` `verify-component-visibility` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-subpackage-toggle-roundtrip` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |

@@ -479,13 +479,18 @@ function dlHealTargets(jobs, kind, items, doneOf) {
 }
 
 /**
- * 挂载自愈**执行体**：对 `dlHealTargets()` 挑出来的条目各补打一次收尾请求。
+ * 挂载自愈**执行体**：对 `dlHealTargets()` 挑出来的条目各补打收尾请求。
  *
- * 约定（四个回调都由页签提供，本函数不认识组件、也不认识 React）：
+ * 约定（回调都由页签提供，本函数不认识组件、也不认识 React）：
  *   · `path` / `body(it)`   打哪个宿主接口、带什么体（三个模块各一条，都是幂等的）；
- *   · `onTry(it)`           发出前（用来写"正在自动补装…"的提示与卡片 submitting）；
- *   · `onOk(it)`            宿主明确回 2xx（页签据此 `cards.markOk()` + 重拉清单）；
- *   · `onFail(it, code)`    失败（页签据此 `cards.fail()` **把原因写在卡片上**，不许静默）。
+ *   · `onTry(it, attempt, total)`  每次发出前（用来写「正在补收尾… 第 a/t 次」与卡片 healing）；
+ *   · `onRetry(it, code, attempt, total)` 退避重试前（可选；默认没有额外动作）；
+ *   · `onOk(it)`            宿主明确回 2xx（页签据此 `cards.healOk()` + 重拉清单）；
+ *   · `onFail(it, code)`    **全部 attempts 都失败**（页签据此 `cards.healFail()` 把原因写在卡片上）。
+ *
+ * pre.46：一次 → 带退避多次（调用方传 `attempts: 3, backoff: [3000, 8000]`）。
+ * 默认仍是 1 次，保持既有调用点/判据的语义；`dlHealOnce` 仍按 `<kind>:<id>` 每次会话只领一次，
+ * 所以“3 次”是**同一次挂载内**的退避重试，切页签不会无限重打。
  *
  * 绝不抛：任何一个模块/一张卡片失败都不该让别的卡片或整页挂掉。
  *
@@ -498,21 +503,41 @@ async function dlHealStuck(opts) {
   const targets = (() => {
     try { return dlHealTargets(o.jobs, kind, o.items, o.doneOf); } catch { return []; }
   })();
+  const attempts = Math.max(1, Math.min(5, Number(o.attempts) || 1));
+  const backoff = Array.isArray(o.backoff) ? o.backoff : [3000, 8000];
+  const post = typeof o.post === "function" ? o.post : apiPostJson;
+  const sleep = typeof o.sleep === "function"
+    ? o.sleep
+    : (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
   for (const it of targets) {
     if (!dlHealOnce(kind + ":" + it.id)) continue;
     tried.push(it);
-    try { if (typeof o.onTry === "function") o.onTry(it); } catch { /* 提示失败不影响补装 */ }
     /** 空串 = 成功；非空 = 宿主给的错误码（或兜底码）。 */
-    let code;
-    try {
-      const resp = await apiPostJson(String(o.path || ""), typeof o.body === "function" ? o.body(it) : (o.body || {}), { parse: "always" });
-      const data = (resp && resp.data) || null;
-      // 宿主回 `{ ok:false, error }` 时把**它的**错误码带出去（比 `http-500` 有信息量）。
-      if (resp && resp.ok && data && data.ok === false) code = String(data.error || "failed");
-      else if (!(resp && resp.ok)) code = String((data && data.error) || ("http-" + ((resp && resp.status) || 0)));
-      else code = "";
-    } catch (e) {
-      code = /timeout|超时/i.test(String((e && e.message) || "")) ? "submit-timeout" : "network";
+    let code = "";
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      if (attempt > 1) {
+        const wait = Math.max(0, Number(backoff[attempt - 2]) || 0);
+        try {
+          if (typeof o.onRetry === "function") o.onRetry(it, code, attempt, attempts);
+        } catch { /* 重试提示失败不影响补装 */ }
+        if (wait > 0) {
+          // eslint-disable-next-line no-await-in-loop -- 退避本来就是按 attempt 串行等待
+          try { await sleep(wait); } catch { /* 定时器失败就立刻重试 */ }
+        }
+      }
+      try { if (typeof o.onTry === "function") o.onTry(it, attempt, attempts); } catch { /* 提示失败不影响补装 */ }
+      code = "";
+      try {
+        const resp = await post(String(o.path || ""), typeof o.body === "function" ? o.body(it) : (o.body || {}), { parse: "always" });
+        const data = (resp && resp.data) || null;
+        // 宿主回 `{ ok:false, error }` 时把**它的**错误码带出去（比 `http-500` 有信息量）。
+        if (resp && resp.ok && data && data.ok === false) code = String(data.error || "failed");
+        else if (!(resp && resp.ok)) code = String((data && data.error) || ("http-" + ((resp && resp.status) || 0)));
+        else code = "";
+      } catch (e) {
+        code = /timeout|超时/i.test(String((e && e.message) || "")) ? "submit-timeout" : "network";
+      }
+      if (!code) break;
     }
     try {
       if (code) { if (typeof o.onFail === "function") o.onFail(it, code); }
@@ -590,7 +615,7 @@ function dlBusyLabel(job) {
  */
 const DL_PHASES = {
   IDLE: "idle", SUBMITTING: "submitting", QUEUED: "queued",
-  RUNNING: "running", INSTALLING: "installing", DONE: "done", FAILED: "failed",
+  RUNNING: "running", INSTALLING: "installing", HEALING: "healing", DONE: "done", FAILED: "failed",
 };
 
 /** 提交请求的宽容窗口：超过它还没返回 ⇒ 按「提交超时」失败并给「重试」，不让卡片永远停在提交中。
@@ -841,6 +866,21 @@ function dlCardState(inp) {
   //     而"我们刚试过、宿主明确回了错"比"队列说 done"更具体，所以它优先。
   //     它不盖正常路径：`begin()`（用户点下去）会清掉这条失败，`markOk()` 让卡片直接变 done。
   if (o.err && o.err.code) return fail(o.err.code);
+  // ②c pre.46：**正在补收尾**（挂载自愈的 3 次退避重试期间）。
+  //
+  //     必须排在 ③ 之前：否则卡片会先显示「解压/落位中…」，用户只能干等；
+  //     而自愈其实已经在打幂等的 `/boot/download` / `/skins/install`。
+  //     失败后 `healFail` 会清掉这一格并写 `err` ⇒ 落在 ②b 的红字 +「重试」。
+  if (o.heal && String(o.heal.id || "") === String(o.id || "")) {
+    const attempt = Math.max(1, Number(o.heal.attempt) || 1);
+    const total = Math.max(1, Number(o.heal.total) || 3);
+    return make(
+      DL_PHASES.HEALING,
+      weT("正在补收尾…"),
+      weT("第 {a}/{t} 次 · 下载已完成，正在补落地", { a: attempt, t: total }),
+      true, false, "",
+    );
+  }
   // ③ 包下完了、还没落地：宿主正在解压 / 规范化清单 / 写目录。
   //
   // ⚠️ 4.23.6：这一格**必须有上界**（老实现无条件映射成 installing：disabled、retry=false、
@@ -1568,6 +1608,8 @@ function useDlCards(dl) {
   const [sub, setSub] = React.useState(null);
   const [errs, setErrs] = React.useState({});
   const [okIds, setOkIds] = React.useState({});
+  /** pre.46：正在挂载自愈的卡片 `id → { attempt, total, at }`（卡片显示「正在补收尾…」）。 */
+  const [heals, setHeals] = React.useState({});
   const [eta, setEta] = React.useState({});
   const [nowMs, setNowMs] = React.useState(() => Date.now());
   const samplesRef = React.useRef(new Map());
@@ -1716,6 +1758,53 @@ function useDlCards(dl) {
      * 而不是静默回到「安装」——那正是"点了没反应"的另一种样子。
      */
     markOk: (id) => { setOkIds((m) => (m[key(id)] ? m : { ...m, [key(id)]: true })); },
+    /**
+     * pre.46：挂载自愈进行中 —— 卡片显示「正在补收尾…」而不是「解压/落位中…」。
+     * 每次重试都更新 attempt/total，用户能看到“第 2/3 次”。
+     */
+    heal: (id, attempt, total) => {
+      const k = key(id);
+      setHeals((m) => ({ ...m, [k]: { attempt: Math.max(1, Number(attempt) || 1), total: Math.max(1, Number(total) || 3), at: Date.now() } }));
+      // 新一轮补收尾 ⇒ 清掉上一轮的失败红字（失败会由 healFail 重新写）
+      setErrs((m) => {
+        if (!Object.prototype.hasOwnProperty.call(m, k)) return m;
+        const n = { ...m };
+        delete n[k];
+        return n;
+      });
+    },
+    healEnd: (id) => {
+      const k = key(id);
+      setHeals((m) => {
+        if (!Object.prototype.hasOwnProperty.call(m, k)) return m;
+        const n = { ...m };
+        delete n[k];
+        return n;
+      });
+    },
+    /** 补收尾成功：清 healing + 标记已装（皮肤页签据此立刻变 done）。 */
+    healOk: (id) => {
+      const k = key(id);
+      setHeals((m) => {
+        if (!Object.prototype.hasOwnProperty.call(m, k)) return m;
+        const n = { ...m };
+        delete n[k];
+        return n;
+      });
+      setOkIds((m) => (m[k] ? m : { ...m, [k]: true }));
+    },
+    /** 3 次都失败：清 healing + 写失败原因（卡片红字 +「重试」）。 */
+    healFail: (id, code) => {
+      const k = key(id);
+      setHeals((m) => {
+        if (!Object.prototype.hasOwnProperty.call(m, k)) return m;
+        const n = { ...m };
+        delete n[k];
+        return n;
+      });
+      setErrs((m) => ({ ...m, [k]: { code: String(code == null ? "failed" : code) } }));
+    },
+    healOf: (id) => heals[key(id)] || null,
     // 卸载成功后必须把它忘掉：否则卡片会一直按"已安装"渲染（站点已删、徽标还在）。
     clearOk: (id) => {
       const k = key(id);
@@ -1739,7 +1828,8 @@ function useDlCards(dl) {
       const since = stallOf(x.id, x.job, x.done);
       const st = dlCardState({
         id: x.id, job: x.job, done: x.done, labels: x.labels,
-        sub: api.subOf(x.id), err: api.errOf(x.id), etaSec: api.etaOf(x.job), nowMs,
+        sub: api.subOf(x.id), err: api.errOf(x.id), heal: api.healOf(x.id),
+        etaSec: api.etaOf(x.job), nowMs,
         installStallMs: stallMs, installingSince: since,
       });
       // 已经判过超时 ⇒ 标记 expired：秒表停转（不空转），卡片保持 failed +「重试」。

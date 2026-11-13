@@ -614,6 +614,9 @@ const WE_I18N_EN_PANEL = {
   "提交中…（正在准备）": "Submitting… (preparing)",
   "已等待 {s} 秒": "Waiting {s}s",
   "解压/落位中…": "Extracting…",
+  // pre.46：挂载自愈的 3 次退避重试期间，卡片显示“正在补收尾…”而不是干等 90 秒。
+  "正在补收尾…": "Finishing install…",
+  "第 {a}/{t} 次 · 下载已完成，正在补落地": "Attempt {a}/{t} · download finished, finishing install",
   // ── 「下载已完成但安装没落地」的自愈（4.23.6）──────────────────────────────
   // 死锁形态：job=done、落地没发生、卡片永远「解压/落位中…」。两类文案：
   //   ① 超时之后**结果**（失败原因，卡片上的红字 +「重试」）；

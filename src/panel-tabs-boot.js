@@ -138,18 +138,23 @@ function BootTabPanel() {
       doneOf: (c) => Boolean(c.installed),
       path: "/boot/download",
       body: (c) => ({ id: c.id }),
-      onTry: (c) => {
+      // pre.46：一次 → 0s / 3s / 8s 三次退避；全部失败才把原因写到卡片上。
+      attempts: 3,
+      backoff: [3000, 8000],
+      onTry: (c, attempt, total) => {
         if (!alive) return;
+        cards.heal(c.id, attempt, total);
         setNote({ ok: true, text: weT("下载已完成但没落地，正在自动收尾：{name}", { name: c.title || c.id }) });
       },
       onOk: (c) => {
         if (!alive) return;
+        cards.healOk(c.id);
         setNote({ ok: true, text: weT("下载已完成，已自动收尾：{name}", { name: c.title || c.id }) });
         load(true);
       },
       onFail: (c, code) => {
         if (!alive) return;
-        cards.fail(c.id, code);
+        cards.healFail(c.id, code);
         setNote({ ok: false, text: weT("自动收尾失败：{why}", { why: dlFailReason(code) }) });
       },
     }).catch(() => { /* dlHealStuck 内部已兜住 */ });

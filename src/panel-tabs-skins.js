@@ -222,19 +222,23 @@ function SkinsTabPanel() {
       doneOf: (it) => Boolean(it.installed) || cards.okOf(it.id),
       path: "/skins/install",
       body: (it) => ({ id: it.id, url: it.url }),
-      onTry: (it) => {
+      // pre.46：一次 → 0s / 3s / 8s 三次退避；全部失败才把原因写到卡片上。
+      attempts: 3,
+      backoff: [3000, 8000],
+      onTry: (it, attempt, total) => {
         if (!alive) return;
+        cards.heal(it.id, attempt, total);
         setNote({ ok: true, text: weT("下载已完成但没落地，正在自动补装：{name}", { name: it.title || it.id }) });
       },
       onOk: (it) => {
         if (!alive) return;
-        cards.markOk(it.id);
+        cards.healOk(it.id);
         setNote({ ok: true, text: weT("下载已完成，已自动补装：{name} —— 点「应用」就能切换", { name: it.title || it.id }) });
         load(true);
       },
       onFail: (it, code) => {
         if (!alive) return;
-        cards.fail(it.id, code);
+        cards.healFail(it.id, code);
         setNote({ ok: false, text: weT("自动补装失败：{why}", { why: dlFailReason(code) }) });
       },
     }).catch(() => { /* dlHealStuck 内部已兜住；这里只防未处理的 rejection */ });
