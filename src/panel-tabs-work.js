@@ -85,6 +85,14 @@ function CapabilityCard({ item }) {
       item.examples.forEach((ex, i) => body.push(line('e' + i, '「' + ex + '」')));
     }
     if (item.requires) body.push(line('req', weT('前提：') + item.requires));
+    if (item.authorDesc) body.push(line('desc', weT('作者描述：') + item.authorDesc));
+    if (item.downloads || item.stars) {
+      body.push(line('stat', weT('近 30 天下载 {d} · 星 {s}', { d: item.downloads || 0, s: item.stars || 0 })));
+    }
+    if (item.source) {
+      body.push(React.createElement('div', { key: 'src', className: 'we-picker__hint', style: { marginTop: '4px' } },
+        React.createElement('a', { href: item.source, target: '_blank', rel: 'noreferrer' }, item.source)));
+    }
     if (!item.installed && item.command) {
       body.push(React.createElement('div', {
         key: 'cmd',
@@ -110,6 +118,9 @@ function CapabilityCard({ item }) {
 }
 
 function CapGroup({ title, hint, items }) {
+  // 220 条一次性渲染会卡（每张卡都带状态），先展示 60 条，按需展开。
+  const PAGE = 60;
+  const [visibleCount, setVisibleCount] = React.useState(PAGE);
   return React.createElement('div', { style: { marginTop: '14px' } },
     React.createElement('div', { style: { display: 'flex', alignItems: 'baseline', gap: '8px' } },
       React.createElement('div', { style: { fontWeight: 600, fontSize: '14px' } }, title),
@@ -121,7 +132,11 @@ function CapGroup({ title, hint, items }) {
         gap: '8px',
         marginTop: '8px',
       },
-    }, items.map((it) => React.createElement(CapabilityCard, { key: it.pkg, item: it }))));
+    }, items.slice(0, visibleCount).map((it) => React.createElement(CapabilityCard, { key: it.pkg || it.name, item: it })),
+      items.length > visibleCount
+        ? React.createElement("button", { key: "more", type: "button", className: "we-picker__btn", style: { marginTop: "8px" }, onClick: () => setVisibleCount((n) => n + PAGE) },
+            weT("显示更多（还有 {n} 个）", { n: items.length - visibleCount }))
+        : null));
 }
 
 function CapabilitiesSection() {
