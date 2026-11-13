@@ -252,17 +252,22 @@ function PetsTabPanel() {
       }),
       weT("显示桌宠"),
     ),
-    React.createElement("label", { style: { display: "flex", gap: "6px", alignItems: "center", fontSize: "12px" } },
+    React.createElement("label", {
+      // pre.53：这里一直是**桌宠音效**（cfg.sound，见 pet-layer.js 的 petVoice），
+      // 不是朗读回答。旧文案「声音」会被误解成语音朗读开关 ⇒ 明确写成「桌宠音效」。
+      title: weT("点击与动作音效；朗读回答的开关在「智能大肥鱼」页"),
+      style: { display: "flex", gap: "6px", alignItems: "center", fontSize: "12px" },
+    },
       React.createElement("input", {
         type: "checkbox",
         checked: Boolean(cfg.sound),
         disabled: Boolean(busy),
         onChange: (e) => act("config", { sound: e.target.checked }, ""),
       }),
-      weT("声音"),
+      weT("桌宠音效"),
     ),
     React.createElement("label", { style: { display: "flex", gap: "4px", alignItems: "center", fontSize: "12px" } },
-      weT("音量"),
+      weT("音效音量"),
       React.createElement("select", {
         className: "we-picker__playlist-select",
         value: String(cfg.volume == null ? 0.6 : cfg.volume),

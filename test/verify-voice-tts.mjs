@@ -536,6 +536,25 @@ async function waitFor(fn, ms = 3000) {
     getVoice: () => ({ muted: true }),
   });
   check('⑥ 静音时不请求合成、不播（speak 返回 false）', tts4.speak('别念。') === false && mutedCalls.length === 0);
+
+  // pre.53 正对照：同一个入口把 muted 改回 false ⇒ 必须真的发 /tts 请求（判据不是恒假）。
+  const unmutedCalls = [];
+  const tts5 = ttsModule.petTtsCreate({
+    apiFetch: async (url) => {
+      unmutedCalls.push(url);
+      return { ok: true, status: 200, response: { blob: async () => ({ size: 12000 }) } };
+    },
+    Audio: FakeAudio3,
+    URL: makeFakeUrl(),
+    getVoice: () => ({ name: 'zh-CN-XiaoxiaoNeural', muted: false, rate: 0 }),
+    onState: () => {}, onSentence: () => {}, onError: () => {},
+  });
+  const spoke = tts5.speak('这句要念。');
+  await waitFor(() => unmutedCalls.length >= 1);
+  tts5.stop();
+  check('⑥ pre.53 朗读开关打开（muted=false）⇒ 真的请求 /tts（与静音形成正反对照）',
+    spoke === true && unmutedCalls.some((u) => String(u).includes('/pet-chat/tts')),
+    'spoke=' + spoke + ' calls=' + JSON.stringify(unmutedCalls));
 }
 
 /* ── ⑦ 气泡三态 + 波形 ───────────────────────────────────────────────────── */

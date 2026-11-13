@@ -1,5 +1,31 @@
 # 变更记录（Changelog）
 
+### v4.26.0-pre.53（2026-11-13，**「朗读回答」开关收进智能大肥鱼页 + 桌宠页音效改名**）
+
+> 用户口径：「为什么不把 设置→桌宠：☑声音（不勾就不会出声）放到 设置→左侧「智能大肥鱼」里面」
+> 先分清两个“声音”：`cfg.sound / cfg.volume` 是**桌宠音效**（`src/pet-layer.js` 的 `petVoice`），
+> `voice.muted` 才是**朗读回答**。结论：不搬音效，补朗读开关 + 音色，并把音效文案改名。
+
+- **`src/panel-tabs-assistant.js`**
+  - 新增「🔊 朗读回答」复选框（= `voice.muted` 取反）；音色下拉从只读占位改为可选
+    `voice.name`（晓晓 / 晓伊 / 云希 / 云健）。
+  - 保存时显式带上 `voice: { name, muted }`（宿主保存会整体替换 voice 对象），仍走
+    `/pet-chat/config` 现有链路；保存后静音则 `petSpeakStop()` 停当前朗读，并
+    `petChatRefreshVoice()` 刷新客户端缓存 ⇒ **不用重启即时生效**。
+  - `CHAT_DEFAULTS` 补 `voice` 默认值；加载时对嵌套 `voice` 做默认值合并。
+- **`src/panel-tabs-pets.js`**
+  - 确认 `cfg.sound` 控制的是点击/动作音效（`pet-layer.js` 的 `petVoice`），不是朗读：
+    「声音」→「桌宠音效」、「音量」→「音效音量」，并加 title 指路「朗读回答的开关在
+    「智能大肥鱼」页」。功能与 `act("config", { sound, volume })` 一字未改。
+- **客户端朗读链路**（`src/pet-tts.js` / `src/pet-chat.js` 既有实现，pre.53 只补界面与刷新）
+  - `petTts.speak()` 在 `getVoice().muted === true` 时直接返回 false，不请求 `/pet-chat/tts`；
+    字幕仍由对话气泡的按句显示逻辑照常输出。
+- **i18n**：补「音色 / 🔊 朗读回答 / 关闭后只显示字幕… / 各音色名 / 桌宠音效 / 音效音量 /
+  点击与动作音效… / 已保存（朗读已关闭）」英文词条。
+- **判据**：`verify-pet-settings` ①d/①e/①f/②b（开关绑定、即时生效、音效改名、muted 持久化
+  且 `/state` 同步）；`verify-voice-tts` ⑥ 新增 muted=false 正对照（真发 `/pet-chat/tts`，
+  与既有 muted=true 零请求形成正反对照）。全量 `run-audit` 114 通过 / 51 退役 / 0 失败。
+
 ### v4.26.0-pre.52（2026-11-13，**下载截断续传 + 卡片状态收敛 + 卸载提速 + 两页签预热 + 文案/冗余清理**）
 
 > 合并 pre.52 / pre.53 两份交接，一个版本全做；不新增依赖、不新增颜色样式。

@@ -409,6 +409,22 @@ const WE_I18N_EN_PANEL = {
   // pre.49：桌宠页控制行最右侧的语音助手开关（点开才挂载设置块）。
   "智能大肥鱼": "Smart Chubby Fish",
   "桌宠语音助手": "Pet voice assistant",
+  // pre.53：朗读开关 + 音色（voice.muted / voice.name）；桌宠页的音效标签同步改名。
+  "音色": "Voice",
+  "🔊 朗读回答": "🔊 Read replies aloud",
+  "关闭后只显示字幕、不合成语音（省算力）；保存后立刻生效。":
+    "When off, replies are shown as subtitles only (no speech synthesis); takes effect as soon as you save.",
+  "填 Key、起名字、选音色，再决定要不要朗读。主动搭话与记忆是固定策略；停止/恢复对它说一声就行。":
+    "Fill in the key, give it a name, pick a voice, then decide whether it should read replies aloud. Proactive chat and memory are fixed behaviours; just tell it to stop or resume.",
+  "晓晓（女声，默认）": "Xiaoxiao (female, default)",
+  "晓伊（女声，活泼）": "Xiaoyi (female, lively)",
+  "云希（男声）": "Yunxi (male)",
+  "云健（男声，沉稳）": "Yunjian (male, calm)",
+  "已保存（朗读已关闭）": "Saved (read-aloud is off)",
+  "桌宠音效": "Pet sound effects",
+  "音效音量": "SFX volume",
+  "点击与动作音效；朗读回答的开关在「智能大肥鱼」页":
+    "Click and action sound effects; the read-aloud toggle lives in the Smart Chubby Fish section",
   "卸载": "Uninstall",
   "{cols} 列 · {size}": "{cols} cols · {size}",
   "还没有安装任何桌宠 —— 从下面的站点清单里挑一只。": "No pets installed yet — pick one from the site list below.",

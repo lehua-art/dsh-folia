@@ -46,25 +46,24 @@ const getJson = async (url, init) => {
 const postJson = (url, body) => getJson(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) });
 const settings = { petChat: { enabled: false } };
 
-/* ① 控件齐全（源码级：pre.51 起表单在「智能大肥鱼」独立页 —— Key / 名字 / 音色占位，无开关） */
+/* ① 控件齐全（源码级：pre.51 独立页 + pre.53 朗读回答开关） */
 {
   const pets = readFileSync(join(ROOT, 'src', 'panel-tabs-pets.js'), 'utf8');
   const full = readFileSync(join(ROOT, 'src', 'panel-tabs-assistant.js'), 'utf8');
-  // 只看桌宠语音助手那一块：桌宠自身还有「显示桌宠/声音/音量」开关，不属于本页签的对话设置
+  // 只看桌宠语音助手那一块：桌宠自身还有「显示桌宠/桌宠音效/音效音量」开关，不属于本页签的对话设置
   const at = full.indexOf('function PetChatSettings');
   const source = at >= 0 ? full.slice(at) : full;
-  // 验收口径：模型 Key / 名字（含称呼）/ 音色占位；只有保存按钮
-  const required = ['模型 Key', '名字', '称呼', '音色', '保存'];
+  // 验收口径：模型 Key / 名字（含称呼）/ 音色 / 朗读回答开关；只有保存按钮
+  const required = ['模型 Key', '名字', '称呼', '音色', '🔊 朗读回答', '保存'];
   const missing = required.filter((label) => !source.includes(label));
-  // 旧长设置区、静默开关、多余按钮都必须不在
+  // 旧长设置区的**控件文案**必须不在（注释/说明里提到"静音"不算 —— 新开关本来就要解释它）
   const legacy = [
-    '上下文轮数', '字数上限', '朗读引擎', '主动闲聊', '人设', '试听', '暂时不说话',
-    '开启对话', '测试连接', '显示', '隐藏', '静音',
+    '上下文轮数', '字数上限', '朗读引擎', '主动闲聊', '人设', '试听', '暂时不说话', '测试连接',
   ].filter((label) => source.includes(label));
   // pre.51：桌宠页不再内联表单，只留一行指路；两块必须是两个界面。
   const stray = ['PetChatSettings', '模型 Key', 'apiKey', '工作能力（已安装才可用）']
     .filter((label) => pets.includes(label));
-  check('① 面板三项（Key / 名字 / 音色占位）+ 无开关无多余按钮',
+  check('① 朗读页字段齐全（Key / 名字 / 音色 / 朗读回答 / 保存）+ 无多余按钮',
     missing.length === 0 && legacy.length === 0,
     `缺=${missing.join('、') || '无'} · 残留=${legacy.join('、') || '无'}`);
   check('①b 桌宠页不再内联语音助手表单（独立页 pre.51）',
@@ -72,6 +71,14 @@ const settings = { petChat: { enabled: false } };
     `桌宠页残留=${stray.join('、') || '无'}`);
   check('①c 桌宠页不再留指路提示（pre.52 用户要求删掉那句）',
     !pets.includes('在左侧「智能大肥鱼」里配置') && !pets.includes('assistantHint'));
+  // pre.53：朗读开关 = voice.muted 取反；音色 = voice.name；保存走同一 config 链路。
+  check('①d 朗读开关写 voice.muted（勾选 = 不静音），音色写 voice.name',
+    /muted: !e\.target\.checked/.test(source) && /name: e\.target\.value/.test(source)
+      && /Object\.assign\(\{\}, CHAT_DEFAULTS\.voice, draft\.voice/.test(source));
+  check('①e 保存后立刻生效（静音时停当前朗读 + 刷新客户端 voice）',
+    /petSpeakStop\(\)/.test(source) && /petChatRefreshVoice\(\)/.test(source));
+  check('①f 桌宠页的音效标签已改名（不再被误读成朗读）',
+    /weT\("桌宠音效"\)/.test(pets) && /weT\("音效音量"\)/.test(pets) && !/weT\("声音"\)/.test(pets));
 }
 
 /* ② 保存后配置立刻生效（新结构） */
@@ -92,6 +99,16 @@ const settings = { petChat: { enabled: false } };
       && config.body.data.voice.name === 'zh-CN-XiaoyiNeural'
       && config.body.data.wake.keyword === '小鲸',
     `petName=${config.body.data.petName} · voice=${config.body.data.voice.name} · wake=${config.body.data.wake.keyword}`);
+  // pre.53：朗读开关持久化（voice.muted），且 /state 立刻反映（客户端唤醒时读它）。
+  await postJson(`${host.base}/config`, { voice: { name: 'zh-CN-YunxiNeural', muted: true } });
+  const mutedDoc = await getJson(`${host.base}/config`);
+  const mutedState = await getJson(`${host.base}/state`);
+  await postJson(`${host.base}/config`, { voice: { name: 'zh-CN-YunxiNeural', muted: false } });
+  const unmutedDoc = await getJson(`${host.base}/config`);
+  check('②b 朗读开关（voice.muted）可保存，/state 立刻同步 true → false',
+    mutedDoc.body.data.voice.muted === true && mutedState.body.voice.muted === true
+      && unmutedDoc.body.data.voice.muted === false,
+    `saved=${mutedDoc.body.data.voice.muted} state=${mutedState.body.voice.muted} off=${unmutedDoc.body.data.voice.muted}`);
   await host.close();
 }
 
