@@ -64,7 +64,7 @@ const BOOT_STYLE = {
 };
 
 /** 页签级缓存：切走再切回来直接用上一份清单渲染，网络在后台刷新（"首次点击要等一会"的解药）。 */
-let BOOT_TAB_CACHE = null;
+let BOOT_TAB_CACHE = (typeof globalThis !== "undefined" && globalThis.__FOLIA_BOOT_WARM__) || null;
 
 function BootTabPanel() {
   const [state, setState] = React.useState(BOOT_TAB_CACHE);
