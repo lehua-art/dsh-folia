@@ -4888,6 +4888,30 @@ const onSourceFilterChange = (e) => {
  * 与分级/类型/来源不同，这一档**不是本地过滤** —— 标签是站点的聚合维度，
  * 只有让服务端筛，计数才对得上（本地筛会把"共 N 条"算错）。
  */
+// 缓存状态与子标签：面板三个下拉里的第 1/2 个（站点新增子标签时，这里自动跟着变）
+const PICKER_CACHE_KEY = 'folia.picker.cacheFilter';
+const PICKER_SUBTAG_KEY = 'folia.picker.subtagFilter';
+function readPickerCacheFilter() {
+  try { return window.localStorage.getItem(PICKER_CACHE_KEY) || 'all'; } catch { return 'all'; }
+}
+function writePickerCacheFilter(v) {
+  try { window.localStorage.setItem(PICKER_CACHE_KEY, String(v || 'all')); } catch { /* ignore */ }
+}
+function readPickerSubtagFilter() {
+  try { return window.localStorage.getItem(PICKER_SUBTAG_KEY) || ''; } catch { return ''; }
+}
+function writePickerSubtagFilter(v) {
+  try { window.localStorage.setItem(PICKER_SUBTAG_KEY, String(v || "")); } catch { /* ignore */ }
+}
+const onCacheFilterChange = (e) => {
+  writePickerCacheFilter(e.target.value);
+  emit();
+};
+const onSubtagFilterChange = (e) => {
+  writePickerSubtagFilter(e.target.value);
+  emit();
+};
+
 const onTagFilterChange = (e) => {
   const picked = tagPickedFromSelectEvent(e);
   writeTagFilter(picked);
@@ -5476,6 +5500,8 @@ function WallpaperPicker() {
     ratingFilter: sel.contentRatingFilter,
     typeFilter: sel.typeFilter,
     sourceFilter: sel.sourceFilter,
+  cacheFilter: readPickerCacheFilter(),
+  subtagFilter: readPickerSubtagFilter(),
     editorPage: sel.editorPage,
   });
   // CD-rack mode: compact one-page grid (no pagination, no virtualization —
@@ -5650,6 +5676,16 @@ function WallpaperPicker() {
         // 标签筛选（4.23.9）：选项由 facets 现算（缺失 ⇒ [] ⇒ 只剩「全部」）；
         // 已选从持久化读，切页签时由 picker 侧重置。
         tagOptions: tagOptionsFromFacets(sel.inventory && sel.inventory.facets),
+    // 缓存状态 / 子标签（子标签选项来自站点 facets，站点改了不用改插件）
+    cacheFilter: readPickerCacheFilter(),
+    onCacheFilterChange,
+    subtagFilter: readPickerSubtagFilter(),
+    onSubtagFilterChange,
+    subtagOptions: (() => {
+      const groups = tagOptionsFromFacets(sel.inventory && sel.inventory.facets);
+      const g = groups.find((x) => x && x.group === "subtags");
+      return g && Array.isArray(g.items) ? g.items : [];
+    })(),
         tagPicked: readTagFilter(),
         onTagFilterChange,
         onShowNormalView, onShowHiddenView,

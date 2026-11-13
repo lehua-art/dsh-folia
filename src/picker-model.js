@@ -154,23 +154,48 @@ function hiddenWallpapers(wallpapers, hiddenIds) {
   return wallpapers.filter((w) => isHiddenWallpaper(w.id, hiddenIds));
 }
 
+/** 缓存状态档：all / cached（已缓存）/ uncached（未缓存）。 */
+function matchesCacheFilter(w, cacheFilter) {
+  if (!cacheFilter || cacheFilter === "all") return true;
+  const ready = Boolean(w && (w.localReady === true || w.local === true));
+  return cacheFilter === "cached" ? ready : !ready;
+}
+
+/** 子标签档：空 = 全部；否则按条目的 subtag 精确匹配（站点 facets 里的 value）。 */
+function matchesSubtagFilter(w, subtagFilter) {
+  const want = String(subtagFilter || "").trim();
+  if (!want) return true;
+  const have = String((w && w.subtag) || "").trim();
+  return have === want;
+}
+
 function pickerModel(input) {
   const list = input.wallpapers || [];
   const hiddenIds = input.hiddenIds || [];
   const ratingFilter = input.ratingFilter;
   const typeFilter = input.typeFilter;
   const sourceFilter = input.sourceFilter;
+  const cacheFilter = input.cacheFilter;
+  const subtagFilter = input.subtagFilter;
   // 标题搜索（选择器模态框）：在两级过滤之上再收窄可播放网格。大小写不敏感的**子串**匹配。
   const query = (input.search || "").trim().toLowerCase();
   // 只有可播放的 Video/Web/Image 才进网格 —— Scene/Application 不能嵌进 web UI，
   // 隐掉它们网格才有用。已隐藏（软删除）的壁纸离开这里去「已隐藏」区；两级过滤再收窄。
   const playableList = list.filter((w) =>
+    matchesCacheFilter(w, cacheFilter) && matchesSubtagFilter(w, subtagFilter)
+    &&
     isRotatableWallpaper(w, ratingFilter, typeFilter, sourceFilter) && !isHiddenWallpaper(w.id, hiddenIds)
     && (!query || String(w.title || "").toLowerCase().indexOf(query) !== -1));
   // 两个过滤下拉的分档计数（可播放、未隐藏）：反映实际可用量，与当前生效的过滤无关。
   const basePlayable = list.filter((w) => isPlayableType(w) && !isHiddenWallpaper(w.id, hiddenIds));
   // 来源分档计数（可播放、未隐藏、**不受来源过滤影响** —— 它要能反映“切过去有多少张”）。
   const sourceCounts = { local: 0, site: 0 };
+  // 缓存状态分档计数（底数同 sourceCounts：可播放、未隐藏、不受自身过滤影响）
+  const cacheCounts = { cached: 0, uncached: 0 };
+  for (const w of basePlayable) {
+    const ready = Boolean(w && (w.localReady === true || w.local === true));
+    cacheCounts[ready ? "cached" : "uncached"] += 1;
+  }
   for (const w of basePlayable) sourceCounts[sourceOf(w)] += 1;
   // 单遍聚合 —— 分档计数各刷一遍 basePlayable 是 10 次 O(n)（5 个分级档 + 5 个类型档）。
   const ratingCounts = { everyone: 0, pg13: 0, mature: 0, unrated: 0 };
@@ -191,6 +216,7 @@ function pickerModel(input) {
     editorList,
     hiddenList,
     sourceCounts,
+    cacheCounts,
     normalPage: pageSlice(playableList, input.page),
     hiddenPageView: pageSlice(hiddenList, input.hiddenPage),
     editorPageView: pageSlice(editorList, input.editorPage),
