@@ -338,7 +338,7 @@ const localStorage = {
 };
 
 // 库存夹具与 test/verify-client.mjs 同形：30 张合成视频 + a/b（可播放）、c（有帧的场景）、
-// d（无帧的场景，不可播放）、e（PG13，默认 Everyone 下被过滤）⇒ 默认状态下 **33 张可播放**。
+// d（无帧的场景，不可播放）、e（PG13，分级控件已移除 ⇒ 列表按 all 计算）⇒ 默认状态下 **34 张可播放**。
 const WALLPAPERS = [
   ...Array.from({ length: 30 }, (_, i) => ({
     id: 'w' + i, title: 'Wall ' + i, type: 'video', playable: true,
@@ -630,15 +630,14 @@ await sleep(80); // 等 loadPersisted → loadInventory → revalidateSelection 
     wallpapers: WALLPAPERS,
     hiddenIds: [], // 起点没有隐藏项（localStorage 未种选择）
     search: searchValue(root),
-    ratingFilter: selectValue(root, '内容分级'),
-    typeFilter: selectValue(root, '类型'),
+    ratingFilter: "all",
+    typeFilter: "all",
     page: 0, hiddenPage: 0, editorPage: 0,
   }, over));
 
   const ratingSel = findByProp(tree, 'aria-label', '内容分级');
   const typeSel = findByProp(tree, 'aria-label', '类型');
-  check('跨层：两个过滤下拉都在（模型入参从它们读，读不到就会静默用 null）',
-    !!ratingSel && !!typeSel, '分级=' + selectValue(tree, '内容分级') + ' 类型=' + selectValue(tree, '类型'));
+  check('跨层：分级/类型下拉已移除（模型入参改为显式 all，不再是 null）', !ratingSel && !typeSel, '分级=' + selectValue(tree, '内容分级') + ' 类型=' + selectValue(tree, '类型'));
 
   // ── 状态 A：未过滤的虚拟首窗（默认 Everyone 档、无搜索、无隐藏）──
   const modelA = modelFromUi(tree);
@@ -653,7 +652,7 @@ await sleep(80); // 等 loadPersisted → loadInventory → revalidateSelection 
       { playableList: modelA.playableList.slice(0, 10) })));
   check('跨层（未过滤首窗）：绝对锚点 = 渲染 29 张壁纸卡 + 关闭卡（33 张可播放 > 首窗，防"空对空"）',
     renderedCardCount(tree) === 29 && collectCards(tree).length === 30
-    && modelA.playableList.length === 33,
+    && modelA.playableList.length === 34,
     '壁纸卡 ' + renderedCardCount(tree) + ' / 总卡 ' + collectCards(tree).length
     + ' / 模型 ' + modelA.playableList.length);
   check('负对照：首窗判据对"多一张"判为假（数字不是恒真）',

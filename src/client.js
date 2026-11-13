@@ -5497,8 +5497,9 @@ function WallpaperPicker() {
     wallpapers: list,
     hiddenIds: selection.hiddenIds,
     search: sel.search,
-    ratingFilter: sel.contentRatingFilter,
-    typeFilter: sel.typeFilter,
+    // 分级/类型下拉已移除 ⇒ 列表恒按 all 计算（旧持久化值不许在后台偷偷过滤）
+    ratingFilter: "all",
+    typeFilter: "all",
     sourceFilter: sel.sourceFilter,
   cacheFilter: readPickerCacheFilter(),
   subtagFilter: readPickerSubtagFilter(),

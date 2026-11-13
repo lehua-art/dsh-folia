@@ -446,36 +446,7 @@
       React.createElement("option", { value: "local" }, weT("本机 Wallpaper Engine（{n}）", { n: (sourceCounts && sourceCounts.local) || 0 })),
       React.createElement("option", { value: "site" }, weT("站点壁纸（{n}）", { n: (sourceCounts && sourceCounts.site) || 0 })),
       ),
-      React.createElement("span", { className: "we-picker__hint we-picker__label" }, weT("内容分级")),
-      React.createElement("select", {
-        className: "we-picker__playlist-select",
-        value: sel.contentRatingFilter,
-        onChange: onRatingFilterChange,
-        "aria-label": weT("内容分级"),
-        title: weT("对应 Wallpaper Engine 的内容分级（project.json contentrating）"),
-      },
-      React.createElement("option", { value: "all" }, weT("全部（{n}）", { n: basePlayable.length })),
-      React.createElement("option", { value: "everyone" }, weT("Everyone / G（{n}）", { n: ratingCounts.everyone })),
-      React.createElement("option", { value: "pg13" }, weT("PG13（{n}）", { n: ratingCounts.pg13 })),
-      React.createElement("option", { value: "mature" }, weT("Mature / R（{n}）", { n: ratingCounts.mature })),
-      React.createElement("option", { value: "unrated" }, weT("未分级（{n}）", { n: ratingCounts.unrated })),
-      ),
-      React.createElement("span", { className: "we-picker__hint we-picker__label" }, weT("类型")),
-      React.createElement("select", {
-        className: "we-picker__playlist-select",
-        value: sel.typeFilter,
-        onChange: onTypeFilterChange,
-        "aria-label": weT("类型"),
-        title: weT("按壁纸类型过滤（只筛列表与轮播候选，不打断正在应用的壁纸）"),
-      },
-      React.createElement("option", { value: "all" }, weT("全部（{n}）", { n: basePlayable.length })),
-      React.createElement("option", { value: "video" }, weT("视频（{n}）", { n: typeCounts.video || 0 })),
-      React.createElement("option", { value: "web" }, weT("网页（{n}）", { n: typeCounts.web || 0 })),
-      React.createElement("option", { value: "image" }, weT("图片（{n}）", { n: typeCounts.image || 0 })),
-      React.createElement("option", { value: "scene" }, weT("场景（{n}）", { n: typeCounts.scene || 0 })),
-      ),
-      renderTagSelect({ tagOptions, tagPicked, onTagFilterChange }),
-    );
+      );
   }
 
   /**

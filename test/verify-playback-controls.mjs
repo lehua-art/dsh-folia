@@ -232,14 +232,6 @@ function findWallpaperCard(tree, title) {
   });
   return hit;
 }
-function findSelect(tree, ariaLabel) {
-  let hit = null;
-  walk(tree, (n) => {
-    if (hit) return;
-    if (n.type === 'select' && n.props && n.props['aria-label'] === ariaLabel) hit = n;
-  });
-  return hit;
-}
 const renderTree = () => pickerRenders[0]();
 const tick = (ms = 20) => new Promise((r) => { setTimeout(r, ms); });
 const treeText = () => JSON.stringify(renderTree());
@@ -281,8 +273,8 @@ async function main() {
   // ── A. Root cause: custom uploads are selectable under the DEFAULT filter ──
   const uploadCard = findWallpaperCard(tree, 'My Upload Video');
   check('A1 custom-uploaded video is listed under the default 「Everyone」 filter (#84)', !!uploadCard);
-  check('A2 an explicitly Mature upload is still filtered out by default',
-    !findWallpaperCard(tree, 'My Mature Upload'));
+  check('A2 an explicitly Mature upload is now visible too (rating filter removed; list is all)',
+    !!findWallpaperCard(tree, 'My Mature Upload'));
 
   assert(uploadCard && typeof uploadCard.props.onClick === 'function', 'upload card clickable');
   uploadCard.props.onClick(); // applySelection('up-v1')
@@ -464,73 +456,9 @@ async function main() {
   await tick(30);
   check('D3 that 「播放」 resumes the new wallpaper', layerVideo().paused === false && toggleLabel(renderTree()) === '暂停');
 
-  // ── E. A filter that drops the active wallpaper explains itself ───────────
-  tree = openLibrary(); // 分级筛选下拉住在库视图里
-  const ratingSelect = findSelect(tree, '内容分级');
-  assert(ratingSelect && typeof ratingSelect.props.onChange === 'function', 'rating filter select found');
-  ratingSelect.props.onChange({ target: { value: 'mature' } });
-  await tick(30);
-  closeLibrary(); // 被拒原因渲染在页签的当前壁纸卡里
-  check('E1 dropping the active wallpaper via a filter is explained (no silent blank)',
-    treeText().includes('被「内容分级」过滤排除了'));
-  check('E2 the layer really is gone (the note replaces an unexplained blank)',
-    !document.getElementById('dsh-folia-layer'));
-
-  // The Mature upload is now the one that matches the filter.
-  tree = openLibrary();
-  const matureCard = findWallpaperCard(tree, 'My Mature Upload');
-  check('E3 the filter now offers the explicitly Mature upload', !!matureCard);
-  if (matureCard) {
-    matureCard.props.onClick();
-    await tick(30);
-    check('E4 an explicitly rated upload plays like any other', layerVideo() && layerVideo().paused === false);
-  }
-
-  // Back to the default filter: the now-unrated-for-that-filter wallpaper is
-  // dropped again, and the explanation follows the CURRENT reason truthfully.
-  //（库视图在 E3 后仍开着，直接切下拉；断言前再退回页签。）
-  findSelect(renderTree(), '内容分级').props.onChange({ target: { value: 'everyone' } });
-  await tick(30);
-  closeLibrary();
-  check('E5 switching the filter back re-explains the drop (never a silent blank)',
-    treeText().includes('被「内容分级」过滤排除了'));
-  tree = openLibrary();
-  const uploadAgain = findWallpaperCard(tree, 'My Upload Video');
-  check('E6 the user\'s own upload is selectable again under the default filter', !!uploadAgain);
-  if (uploadAgain) {
-    uploadAgain.props.onClick();
-    await tick(30);
-    closeLibrary();
-    check('E7 …and it plays, with the explanation cleared',
-      layerVideo() && layerVideo().paused === false && !treeText().includes('过滤排除'));
-  }
-
-  // ── F. The TYPE filter is a LIST filter — it never stops the applied wallpaper ──
-  //（E 段钉的是分级闸门：内容分级照旧干掉并解释。类型档只筛列表与轮播候选 ——
-  // 用户口径：设置页切类型不该把正在应用的壁纸干掉。）
-  tree = openLibrary();
-  const typeSelect = findSelect(tree, '类型');
-  assert(typeSelect && typeof typeSelect.props.onChange === 'function', 'type filter select found');
-  typeSelect.props.onChange({ target: { value: 'scene' } });
-  await tick(30);
-  closeLibrary();
-  check('F1 switching the TYPE filter keeps the applied wallpaper mounted',
-    !!document.getElementById('dsh-folia-layer'));
-  check('F2 …still playing (the switch must not blank or pause it)',
-    layerVideo() && layerVideo().paused === false);
-  check('F3 …and no note claims the wallpaper was filtered out',
-    !treeText().includes('过滤排除'));
-  // 对照：过滤本身必须真的生效（否则 F1–F3 是空跑）—— 同一张卡在库里已经不在。
-  tree = openLibrary();
-  check('F4 the filter really applies to the list (the playing card is gone from the grid)',
-    !findWallpaperCard(tree, 'My Upload Video'));
-  // 切回全部：卡回来，壁纸照旧在播（往返不打断）。
-  findSelect(renderTree(), '类型').props.onChange({ target: { value: 'all' } });
-  await tick(30);
-  tree = renderTree();
-  check('F5 switching the filter back restores the card without touching playback',
-    !!findWallpaperCard(tree, 'My Upload Video')
-    && layerVideo() && layerVideo().paused === false && !treeText().includes('过滤排除'));
+// ── E/F（已移除）：分级 / 类型筛选控件按产品要求删掉了，
+//     这两段原本验证"切分级把当前壁纸干掉并解释"与"类型档只筛列表"，
+//     控件不存在后这两条语义不再可达，故整段删除（不是跳过）。
 
   /* ── G. 4.23.22 错误映射表 + 负对照（把"一律浏览器拒绝"贴回 ⇒ 第一条红）────
    *
