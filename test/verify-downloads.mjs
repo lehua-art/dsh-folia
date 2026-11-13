@@ -896,6 +896,30 @@ try { rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
     check('㉓ 没有速度样本时**不编**剩余时间（只给 MB）',
       noEta.detail.includes('MB') && !noEta.detail.includes('约剩'), JSON.stringify(noEta.detail));
 
+    // ⑤b pre.52（P0/P1）：续传文案 / 100% 收尾中 / done 压过历史失败
+    const resumeSt = st({
+      job: { status: 'running', resuming: true, percent: 42, received: 42 * 1048576, total: 100 * 1048576, mode: 'single' },
+    });
+    check('㉓ pre.52 续传 ⇒「续传中 已恢复 42%」（不从 0% 重来）',
+      resumeSt.phase === 'running' && resumeSt.label === '续传中 已恢复 42%',
+      JSON.stringify(resumeSt));
+    const resumeQueued = st({
+      job: { status: 'queued', resuming: true, error: 'download-truncated', percent: 18, received: 18, total: 100 },
+    });
+    check('㉓ pre.52 续传排队中也显示已恢复比例（不退回单纯的「排队中」）',
+      resumeQueued.label.includes('续传中') && resumeQueued.label.includes('18%'),
+      JSON.stringify(resumeQueued));
+    const finishing = st({
+      job: { status: 'running', percent: 100, received: 7 * 1048576, total: 7 * 1048576, mode: 'single' },
+    });
+    check('㉓ pre.52 字节收满但 status 未 done ⇒「收尾中…」，不是「下载中… 100%」',
+      finishing.phase === 'running' && finishing.label === '收尾中…', JSON.stringify(finishing));
+    const doneWithErr = st({ done: true, err: { code: 'network' }, job: { status: 'failed', error: 'network' } });
+    check('㉓ pre.52 done（已安装）压过历史失败：phase=done、无红字原因',
+      doneWithErr.phase === 'done' && !doneWithErr.reason, JSON.stringify(doneWithErr));
+    check('㉓ pre.52 负对照：未安装时同一条 error 仍必须是 failed（done 没有把失败吞掉）',
+      st({ done: false, err: { code: 'network' } }).phase === 'failed');
+
     // ⑥ installing / done
     check('㉓ 包下完但还没落地 ⇒ installing（解压/落位中…）',
       st({ job: { status: 'done' } }).phase === 'installing');
@@ -963,6 +987,13 @@ try { rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
       && !/disabled: busyIsStructural \|\| busy === "install:" \+ s\.id \|\| jobBusy/.test(skinsTab));
     check('㉓ 三个页签都把失败原因写回卡片（cards.fail）并清掉（cards.end）',
       [bootTab, petsTab, skinsTab].every((t) => /cards\.fail\(cardId/.test(t) && /cards\.end\(cardId/.test(t) && /cards\.begin\(cardId\)/.test(t)));
+    // pre.52（P1）：卡片状态收敛 —— done 真值 / 已装清历史失败。
+    check('㉓ pre.52 boot 的 done 传 Boolean(c.installed)（不再写死 false ⇒「下载中 100%」）',
+      /done: Boolean\(c\.installed\)/.test(bootTab));
+    check('㉓ pre.52 useDlCards 暴露 clearErr（已装 ⇒ 历史失败原因必须消失）',
+      /clearErr: \(id\) =>/.test(lf) && /cards\.clearErr\(/.test(bootTab) && /cards\.clearErr\(/.test(skinsTab));
+    check('㉓ pre.52 皮肤清单 installed=true ⇒ clearErr + markOk',
+      /cards\.clearErr\(s\.id\); cards\.markOk\(s\.id\)/.test(skinsTab));
     check('㉓ 失败原因的人话表只有一处（四模块共用 dlFailReason）',
       (lf.match(/function dlFailReason\(/g) || []).length === 1
       && [bootTab, petsTab, skinsTab].every((t) => /dlFailReason\(/.test(t)));

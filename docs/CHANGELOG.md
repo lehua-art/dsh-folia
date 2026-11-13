@@ -1,5 +1,52 @@
 # 变更记录（Changelog）
 
+### v4.26.0-pre.52（2026-11-13，**下载截断续传 + 卡片状态收敛 + 卸载提速 + 两页签预热 + 文案/冗余清理**）
+
+> 合并 pre.52 / pre.53 两份交接，一个版本全做；不新增依赖、不新增颜色样式。
+> 判据：`verify-download-recovery` 27 条（新增 C1–C3 截断续传/上限）、`verify-downloads`
+> ㉓ 新增续传/收尾中/done 压过失败、`verify-panel-interactions` 41 条（新增 P2/P4/P5）、
+> `verify-media-state` M4f/M4g（截断不显示已缓存、补齐后 promote）、`skins-http` 62 条、
+> 全量 `run-audit` **114 通过 / 51 退役 / 0 失败**。
+
+- **P0 下载截断与续传**（`lib/download-queue.js` · `lib/media-verify.js` 判据 · `src/local-first.js` 文案）
+  - 完成路径**先判长度，再判 sha**：盘上字节 < 清单 `bytes` ⇒ `download-truncated`，
+    **保留 `.part`**、下一轮从盘上偏移发 Range；只有"长度够但 sha 不符"才是 `hash-mismatch`。
+  - 链路中途断开（`fetch failed` / `terminated` / socket）且盘上已有字节 ⇒ 走同一条续传路径；
+    第一次续传置 `forceRanged`（8 路 Range），单流反复断的现场更容易拼完。
+  - 每次下载会话最多自动续 **12 次 / 10 分钟**（`DSH_FOLIA_TRUNCATED_RETRIES` /
+    `DSH_FOLIA_RESUME_BUDGET_MS` 可覆盖）；超限才 `failed(download-truncated)`，
+    `.part` 保留，用户点「重试」从已下部分继续。
+  - 客户端：`job.resuming` ⇒ 卡片「续传中 已恢复 x%」；`download-truncated` 有独立人话文案。
+- **P1 卡片状态收敛**（`src/panel-tabs-boot.js` · `src/panel-tabs-skins.js` · `src/local-first.js`）
+  - boot 卡片 `done` 改为 `Boolean(c.installed)`（不再写死 false ⇒「下载中 100%」）。
+  - `useDlCards.clearErr(id)`：清单/宿主说已装 ⇒ 历史失败原因与 healing 残留一并清掉；
+    skins 对 `installed===true` 的条目 `clearErr + markOk`。
+  - `dlCardState`：`done` 优先于历史 `err`；`received >= total` 但 status 未 done ⇒「收尾中…」。
+- **P2 卸载卡顿**（`src/panel-tabs-skins.js` · `lib/routes/skins.js`）
+  - 客户端点卸载先置 `removing`（卡片同帧从「本机已装」消失 +「卸载中…」提示），失败回滚。
+  - 宿主不再同步递归 `rmSync`：先 `renameSync` 到 `$DSH_HOME/skins/.trash/…`（O(1)）立即回 200，
+    递归删除放 `setImmediate` 后台；`listInstalled()` 跳过点目录，残留不会被当成已装。
+- **P3 已缓存角标**（`lib/media-state.js` 既有单产地 · `test/verify-media-state.mjs` 新判据）
+  - 确认并钉住：done + 盘上有效 ⇒ `localReady=true`；截断文件 ⇒ pending + `localReady=false`；
+    补齐后对账 ⇒ done + `localReady=true`。前端只读 `localReady`，不自造第二套判断。
+- **P4 两页签预热**（`src/panel-tabs-boot.js` · `src/panel-tabs-skins.js` · `src/features.js`）
+  - 各自导出 `warmBootTab` / `warmSkinsTab`（in-flight 去重、失败静默），写既有
+    `BOOT_TAB_CACHE` / `SKINS_TAB_CACHE`；`features.js` 收口成通用 `warmFeaturePanels()`，
+    设置面板挂载时调一次（client.js 只调通用入口，不点名具体功能）。
+- **P5 删三处文案**（用户明确要求）
+  - `panel-tabs-pets.js`：整块 `assistantHint` 删除；「站点桌宠」标题只在有可装条目或
+    `siteError` 时渲染。
+  - `panel-tabs-assistant.js`：删掉标题下那句说明，保留标题「智能大肥鱼」+ 表单。
+- **P6 代码冗余清理（先量化再删）**
+  - `verify-dead-code` / `verify-dead-declarations` 均 0 零引用声明；`verify-guard-map` 重算。
+  - 删除 11 个文件（均零引用 / 已过期）：根目录 5 份一次性 `_verify*` 报告与 JSON；
+    `docs/` 5 份过期阶段文档（`PET-CHAT-ROUND-NEXT` / `PET-CHAT-SETTINGS-UI` /
+    `PET-V01-ACCEPTANCE` / `PET-V011-REWORK` / `PET-V02-TTS-AND-ACTION`）；
+    `scripts/publish-folia.ps1`（旧八包 pnpm 发布流程，已被单包 npm 流程取代）。
+  - `assets/readme` 65 个文件 / 2.51 MB **未加回** `files`（会显著增大 tarball；
+    该目录是 GitHub README 的素材，不属于运行面）。
+  - npm tarball：4,349,526 B（pre.51）→ **4,357,320 B**（pre.52，+7,794 B / +0.18%，文件数 157 不变）。
+
 ### v4.26.0-pre.51（2026-11-13，**智能大肥鱼独立页 + 侧栏三档筛选 + 能力「如何使用」扩充**）
 
 > 三件事一个版本；不新增依赖、不新增颜色样式。判据：

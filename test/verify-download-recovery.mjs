@@ -77,12 +77,37 @@ async function waitFor(fn, ms = 15000) {
  *   · `'416-always'` —— 任何请求都回 416（A6）
  * `hits` 记录每次 GET 的 Range（`''` = 没有），用来证明"到底有没有重下 / 用的是哪个起点"。
  */
-async function serve(body, mode = 'range', etag = '"recovery"') {
+async function serve(body, mode = 'range', etag = '"recovery"', dropAt = 0) {
   const hits = [];
+  let dropped = false;
   const srv = createServer((req, res) => {
     const method = String(req.method || 'GET').toUpperCase();
     const range = String(req.headers.range || '');
     if (method === 'GET') hits.push(range);
+    // pre.52：模拟真实 pages.dev 现场 —— 回完 Content-Length 后只发一部分就断连接。
+    //   · drop-once   ：第一枪断，后续正常（验"断一次 ⇒ 自动续传完成"）
+    //   · drop-always ：每一枪都断（验"续传上限 ⇒ failed(download-truncated)"）
+    if (mode === 'drop-once' || mode === 'drop-always') {
+      const doDrop = mode === 'drop-always' || !dropped;
+      if (doDrop) {
+        dropped = true;
+        const dm = /^bytes=(\d+)-(\d*)$/.exec(range);
+        const dStart = dm ? Math.max(0, Number(dm[1])) : 0;
+        const dEnd = dm && dm[2] ? Math.min(body.length - 1, Number(dm[2])) : body.length - 1;
+        const dSlice = body.subarray(dStart, dEnd + 1);
+        res.statusCode = dm ? 206 : 200;
+        res.setHeader('content-type', 'video/mp4');
+        res.setHeader('accept-ranges', 'bytes');
+        res.setHeader('etag', etag);
+        if (dm) res.setHeader('content-range', 'bytes ' + dStart + '-' + dEnd + '/' + body.length);
+        res.setHeader('content-length', String(dSlice.length));
+        res.write(dSlice.subarray(0, Math.max(1, Math.min(dropAt || 1024, dSlice.length))));
+        // 用 end() 而不是 destroy()：这样客户端能先收到那部分字节（真实链路断开时也是
+        // "已写出的字节先到、随后连接结束"），否则 RST 会把缓冲一起丢掉，测不到续传。
+        res.end();
+        return;
+      }
+    }
     if (mode === '416-always') {
       res.statusCode = 416;
       res.setHeader('content-range', 'bytes */' + body.length);
@@ -148,7 +173,7 @@ function freshHome(label) {
  * 播一个 job 到终态。`seed` 描述"下载前盘上已有什么"。
  * 返回 `{ dest, part, job }`（job 取队列快照里那一行）。
  */
-async function runToTerminal({ home, lib, url, total, seedPart, seedDest, expect, label = 'w1', seedAfter = false }) {
+async function runToTerminal({ home, lib, url, total, seedPart, seedDest, expect, label = 'w1', seedAfter = false, onTick, log, waitMs = 15000, jobPatch }) {
   // ⚠️ job id **不是**调用方自造的字符串：它是 urlKey(url)（队列内部规则）。
   // 这里用队列自己的 idForUrl() 取，避免在测试里手抄一份散列口径（那正是"两处会漂"的病）。
   const probe = createDownloadQueue({ home, log: () => {}, concurrency: 1 });
@@ -169,10 +194,11 @@ async function runToTerminal({ home, lib, url, total, seedPart, seedDest, expect
   const jobs = [{
     id: jobId, url, dest, kind: 'wallpaper', total,
     status: 'pending', error: null, at: 1, priority: 'high',
+    ...(jobPatch || {}),
   }];
   writeFileSync(join(home, 'downloads.json'), JSON.stringify({ version: 1, paused: false, jobs }), 'utf8');
   const queue = createDownloadQueue({
-    home, log: () => {}, concurrency: 1,
+    home, log: typeof log === 'function' ? log : () => {}, concurrency: 1,
     resolveExpectation: expect || null,
   });
   if (seedAfter) {
@@ -182,8 +208,9 @@ async function runToTerminal({ home, lib, url, total, seedPart, seedDest, expect
   queue.add({ url, dest, kind: 'wallpaper', priority: 'high' });
   const done = await waitFor(() => {
     const j = queue.snapshot().find((x) => x.id === jobId);
+    if (j && typeof onTick === 'function') { try { onTick(j); } catch { /* ignore */ } }
     return Boolean(j) && (j.status === 'done' || j.status === 'failed' || j.status === 'cancelled');
-  });
+  }, waitMs);
   const job = queue.snapshot().find((x) => x.id === jobId) || null;
   return { queue, dest, part, job, settled: done };
 }
@@ -338,7 +365,84 @@ console.log('\nA. 队列 `.part` 体检（P0-1：http-416 的根因）');
   } finally { srv.close(); }
 }
 
-/* ══ B：皮肤缓存 zip（P0-2）═══════════════════════════════════════════════ */
+/* ══ C：截断续传（pre.52，P0：pages.dev 7 MB zip 反复断线） ═══════════════════ */
+console.log('\nC. 连接中途断开 ⇒ 保留 .part 续传（pre.52）');
+{
+  /* C1：断一次 ⇒ 自动续传完成，且第一枪是无 Range 的整下 */
+  const body = fakeMp4(65536, 0x31);
+  const srv = await serve(body, 'drop-once', '"trunc-once"', 24576);
+  const { home, lib } = freshHome('c1');
+  const url = srv.origin + '/wallpaper/c1.mp4';
+  try {
+    let sawResume = false;
+    let maxRecv = 0;
+    const r = await runToTerminal({
+      home, lib, url, total: body.length, label: 'c1',
+      onTick: (j) => {
+        if (j && j.resuming === true) sawResume = true;
+        maxRecv = Math.max(maxRecv, Number(j && j.received) || 0);
+      },
+    });
+    check('C1 连接中途断开 ⇒ 不判失败，自动从已下字节续传并完成（final sha 对）',
+      r.job && r.job.status === 'done'
+        && sha256(readFileSync(r.dest)) === sha256(body),
+      'status=' + (r.job && r.job.status) + ' ranges=' + JSON.stringify(srv.hits));
+    check('C1b 续传用的是 Range（不是从 0 重下）：首枪无 Range，后续至少一枪带 Range',
+      srv.hits[0] === '' && srv.hits.slice(1).some((h) => h.startsWith('bytes=')),
+      'ranges=' + JSON.stringify(srv.hits));
+    check('C1c 续传期间 job.resuming=true 且已收到字节（面板据此显示「续传中 已恢复 x%」）',
+      sawResume && maxRecv > 0, 'resuming=' + sawResume + ' maxRecv=' + maxRecv);
+  } finally { srv.close(); }
+}
+
+{
+  /* C2：长度够、sha 真不符 ⇒ 仍是 hash-mismatch，不能被"续传"吞掉 */
+  const body = fakeMp4(32768, 0x32);
+  const srv = await serve(body, 'range');
+  const { home, lib } = freshHome('c2');
+  const url = srv.origin + '/wallpaper/c2.mp4';
+  try {
+    const r = await runToTerminal({
+      home, lib, url, total: body.length, label: 'c2',
+      expect: () => ({ sha256: '0'.repeat(64), bytes: body.length, source: 'original', at: Date.now() }),
+    });
+    check('C2 长度够但 sha 真不符 ⇒ 仍 failed(hash-mismatch)（截断判据没有放水）',
+      r.job && r.job.status === 'failed' && /^hash-mismatch/.test(String(r.job.error)),
+      'status=' + (r.job && r.job.status) + ' error=' + (r.job && r.job.error));
+  } finally { srv.close(); }
+}
+
+{
+  /* C3：每一枪都断 ⇒ 12 次续传后 failed(download-truncated)，.part 保留可人工重试 */
+  const body = fakeMp4(65536, 0x33);
+  const srv = await serve(body, 'drop-always', '"trunc-always"', 1024);
+  const { home, lib } = freshHome('c3');
+  const url = srv.origin + '/wallpaper/c3.mp4';
+  try {
+    // 续传上限用环境变量压到 1 次（默认 12 次；这条只验"超限 ⇒ 稳定错误码 + 保留 .part"，
+    // 不在这里跑满 12 轮 —— 真实现场 8 路 Range 每轮都要等超时，跑满会拖慢整条审计）。
+    const prevLimit = process.env.DSH_FOLIA_TRUNCATED_RETRIES;
+    process.env.DSH_FOLIA_TRUNCATED_RETRIES = '1';
+    let r;
+    try {
+      r = await runToTerminal({
+        home, lib, url, total: body.length, label: 'c3', waitMs: 45000,
+        jobPatch: { truncateRetries: 1, resumeWindowStart: Date.now() },
+      });
+    } finally {
+      if (prevLimit == null) delete process.env.DSH_FOLIA_TRUNCATED_RETRIES;
+      else process.env.DSH_FOLIA_TRUNCATED_RETRIES = prevLimit;
+    }
+    check('C3 续传超限 ⇒ failed(download-truncated)（稳定错误码，面板有人话）',
+      r.job && r.job.status === 'failed' && r.job.error === 'download-truncated',
+      'status=' + (r.job && r.job.status) + ' error=' + (r.job && r.job.error)
+        + ' tries=' + (r.job && r.job.truncateRetries));
+    check('C3b 放弃时 .part 仍保留已下字节（用户点「重试」从已下部分继续，不从 0）',
+      existsSync(r.part) && statSync(r.part).size > 0,
+      'part=' + (existsSync(r.part) ? statSync(r.part).size : 'absent'));
+  } finally { srv.close(); }
+}
+
 console.log('\nB. 皮肤缓存 zip 与清单 sha 不符（P0-2：必须删缓存重下，不得直接 failed）');
 {
   // 站点清单：url + sha256。`verifyCachedZip` 用的就是这条来源（与队列完成时的校验同源）。

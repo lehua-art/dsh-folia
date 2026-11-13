@@ -292,14 +292,6 @@ function PetsTabPanel() {
     ),
   ));
 
-  // pre.51：语音助手（Key / 名字 / 称呼 / 音色）整体搬到左侧「智能大肥鱼」一级分区。
-  // 桌宠页只留一行指路，不再内联表单 —— 两个界面彻底分开。
-  children.push(React.createElement("div", {
-    key: "assistantHint",
-    className: "we-picker__hint",
-    style: { margin: "0 0 10px" },
-  }, weT("语音助手（Key、名字、称呼、音色）在左侧「智能大肥鱼」里配置。")));
-
   // 与开机动画页签同理：提示行常驻占位，避免开关时整块高度跳动。
   children.push(React.createElement("div", {
     key: "note",
@@ -372,13 +364,17 @@ function PetsTabPanel() {
 
   // 站点：未装的可安装
   const available = site.filter((s) => !installedIds.has(s.id));
-  children.push(React.createElement("div", { key: "siteHead", className: "we-picker__section-head", style: { marginTop: "14px" } },
-    React.createElement("span", { className: "we-picker__section-label" },
-      weT("站点桌宠")),
-    state.siteError
-      ? React.createElement("span", { className: "we-picker__hint", style: { marginLeft: "auto" } }, weT("站点不可达"))
-      : null,
-  ));
+  // pre.52（P5）：标题只在**真有内容**（可安装条目）或站点不可达时渲染；
+  // 以前无论有没有站点桌宠都先画「站点桌宠」四个字，空页多一行标题。
+  if (available.length || state.siteError) {
+    children.push(React.createElement("div", { key: "siteHead", className: "we-picker__section-head", style: { marginTop: "14px" } },
+      React.createElement("span", { className: "we-picker__section-label" },
+        weT("站点桌宠")),
+      state.siteError
+        ? React.createElement("span", { className: "we-picker__hint", style: { marginLeft: "auto" } }, weT("站点不可达"))
+        : null,
+    ));
+  }
 
   if (available.length) {
     children.push(React.createElement("div", { key: "site", style: PET_STYLE.grid },

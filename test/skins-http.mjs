@@ -271,7 +271,18 @@ function call(route, { method = 'GET', body = null, url = null, host = null } = 
   check('不存在 ⇒ 404', missing.status === 404, 'status=' + missing.status);
   const okDel = await call(find('/folia/skins/remove'), { method: 'POST', body: { id: 'fresh-skin' } });
   check('卸载成功 200', okDel.status === 200 && okDel.json.ok === true, JSON.stringify(okDel.json));
-  check('目录确实删了', !existsSync(join(dshHome, 'skins', 'fresh-skin')));
+  check('目录已移出 skins 根（响应前完成 rename，不再同步递归删）', !existsSync(join(dshHome, 'skins', 'fresh-skin')));
+  // pre.52（P2）：真正的递归删除交给后台；最多等 4 秒确认 .trash 被清空（失败也只是残留，不影响已装清单）。
+  let trashCleared = false;
+  for (let i = 0; i < 40; i += 1) {
+    const trashDir = join(dshHome, 'skins', '.trash');
+    const left = existsSync(trashDir) ? readdirSync(trashDir).length : 0;
+    if (!left) { trashCleared = true; break; }
+    await sleep(100);
+  }
+  check('后台把 .trash 清掉（响应不阻塞；残留也不会被 listInstalled 当成已装）', trashCleared);
+  const lsAfterDel = await call(find('/folia/skins/list'), { method: 'GET' });
+  check('被删条目不再出现在本机已装清单', !((lsAfterDel.json && lsAfterDel.json.installed) || []).some((x) => x.id === 'fresh-skin'));
   const other = await call(find('/folia/skins/remove'), { method: 'POST', body: { id: 'demo-skin' } });
   check('已装的还能删', other.status === 200);
 }

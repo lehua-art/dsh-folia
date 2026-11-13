@@ -95,7 +95,7 @@
 | `verify-package-files.mjs` | `lib/http-body.js` `lib/index.js` `lib/pkg-read.js` `lib/routes/upload.js` | ✅ |
 | `verify-package-publish.mjs` | `lib/index.js` `lib/pkg-read.js` `src/client.js` | ✅ |
 | `verify-panel-defensive.mjs` | `lib/routes/kernel.js` `lib/routes/skins.js` `src/panel-tabs-skins.js` `src/quick-panel.js` |  |
-| `verify-panel-interactions.mjs` | `src/client.js` `src/panel-tabs-assistant.js` `src/panel-tabs-boot.js` `src/panel-tabs-pets.js` `src/quick-panel.js` | ✅ |
+| `verify-panel-interactions.mjs` | `lib/routes/skins.js` `src/client.js` `src/features.js` `src/panel-tabs-assistant.js` `src/panel-tabs-boot.js` `src/panel-tabs-pets.js` `src/panel-tabs-skins.js` `src/quick-panel.js` | ✅ |
 | `verify-pet-bubble.mjs` | `src/pet-bubble.js` |  |
 | `verify-pet-chat.mjs` | `lib/pet-chat-memory.js` `lib/pet-chat-proactive.js` `lib/routes/pet-chat.js` `lib/settings-schema.js` `src/pet-chat.js` |  |
 | `verify-pet-hotplug-client.mjs` | `lib/components/pet-link/src/official-pet.js` `lib/components/pet-link/src/pet-link.js` |  |
@@ -277,7 +277,7 @@
 | `lib/routes/settings.js` | 2 | `verify-scene` `verify-settings-namespaces` |
 | `lib/routes/site-media.js` | 4 | `verify-downloads` `verify-first-frame` `verify-media-state` `verify-site-media` |
 | `lib/routes/site-thumb.js` | 0 | **（无）** |
-| `lib/routes/skins.js` | 10 | `verify-dead-code` `verify-download-chain` `verify-download-first` `verify-download-recovery` `verify-downloads` `verify-hash-source` `verify-install-flow` `verify-no-local-paths` `verify-panel-defensive` `verify-site-v1-sync` |
+| `lib/routes/skins.js` | 11 | `verify-dead-code` `verify-download-chain` `verify-download-first` `verify-download-recovery` `verify-downloads` `verify-hash-source` `verify-install-flow` `verify-no-local-paths` `verify-panel-defensive` `verify-panel-interactions` `verify-site-v1-sync` |
 | `lib/routes/upload.js` | 2 | `verify-body-caps` `verify-package-files` |
 | `lib/routes/we-assets.js` | 1 | `verify-scene-live` |
 | `lib/scene-manifest.js` | 2 | `verify-scene-probe` `verify-scene` |
@@ -316,7 +316,7 @@
 | `src/effects.js` | 7 | `verify-adapter` `verify-client` `verify-component-fonts` `verify-extra-glass` `verify-glass-surfaces` `verify-scene-live` `verify-theme-layer` |
 | `src/ext-avatar.js` | 2 | `verify-avatar-interval-and-rotation` `verify-scene-live` |
 | `src/extension-registry.js` | 3 | `verify-fontset` `verify-scene-live` `verify-subpackage-toggle-roundtrip` |
-| `src/features.js` | 2 | `verify-features` `verify-skin-center-bundle` |
+| `src/features.js` | 3 | `verify-features` `verify-panel-interactions` `verify-skin-center-bundle` |
 | `src/focus-handback.js` | 1 | `verify-client` |
 | `src/font/apply.js` | 4 | `verify-client` `verify-component-fonts` `verify-fontset` `verify-theme-layer` |
 | `src/font/color-roles.js` | 3 | `verify-fontset` `verify-scene-live` `verify-theme-layer` |
@@ -357,7 +357,7 @@
 | `src/panel-tabs-effects.js` | 12 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-download-first` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs-mascot.js` | 11 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs-pets.js` | 15 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-downloads` `verify-first-click-feedback` `verify-fontset` `verify-glass-surfaces` `verify-panel-interactions` `verify-pet-settings` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
-| `src/panel-tabs-skins.js` | 16 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-downloads` `verify-first-click-feedback` `verify-fontset` `verify-glass-surfaces` `verify-install-flow` `verify-panel-defensive` `verify-scene-live` `verify-stall-heal` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
+| `src/panel-tabs-skins.js` | 17 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-downloads` `verify-first-click-feedback` `verify-fontset` `verify-glass-surfaces` `verify-install-flow` `verify-panel-defensive` `verify-panel-interactions` `verify-scene-live` `verify-stall-heal` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs-wallpaper.js` | 15 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-avatar-interval-and-rotation` `verify-client` `verify-contracts` `verify-downloads` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` `verify-wallpaper-chain` `verify-wallpaper-core` |
 | `src/panel-tabs-work.js` | 12 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-capabilities` `verify-client` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs.js` | 14 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-api-client` `verify-client` `verify-component-visibility` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-subpackage-toggle-roundtrip` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |

@@ -71,14 +71,15 @@ function check(name, cond, detail) { results.push({ name, ok: Boolean(cond), det
   check('pets: 提示行常驻', !/^\s{2}if \(note\) \{/m.test(pets));
 }
 
-/* ⑤ pre.51：桌宠页与「智能大肥鱼」拆成两个界面（不再同页内联展开） */
+/* ⑤ pre.51/pre.52：桌宠页与「智能大肥鱼」两个界面；pre.52 起桌宠页的指路提示也删了 */
 {
   const assistant = readFileSync(join(ROOT, 'src', 'panel-tabs-assistant.js'), 'utf8');
   const client = readFileSync(join(ROOT, 'src', 'client.js'), 'utf8');
   const build = readFileSync(join(ROOT, 'scripts', 'build-client.mjs'), 'utf8');
   const separated = (petsSrc) => !petsSrc.includes('PetChatSettings')
-    && petsSrc.includes('在左侧「智能大肥鱼」里配置');
-  check('pre.51 桌宠页不再挂载语音助手表单，只留一行指路',
+    && !petsSrc.includes('在左侧「智能大肥鱼」里配置')
+    && !petsSrc.includes('assistantHint');
+  check('pre.51/52 桌宠页不再挂载语音助手表单，也不再留指路提示',
     separated(pets) && !pets.includes('模型 Key') && !pets.includes('apiKey'));
   check('pre.51 一级设置项 folia-assistant（order 502）注册 AssistantSection',
     /id: "folia-assistant", order: 502/.test(client)
@@ -88,6 +89,11 @@ function check(name, cond, detail) { results.push({ name, ok: Boolean(cond), det
       .every((text) => assistant.includes(text)));
   check('pre.51 独立页保留设置块 id（样式与锚点不变）',
     /id: 'we-pet-chat-settings'/.test(assistant));
+  check('pre.52 独立页标题下那句说明已删（保留标题 + 表单）',
+    !assistant.includes('这里是桌宠语音助手的完整设置') && assistant.includes("weT('智能大肥鱼')"));
+  check('pre.52 「站点桌宠」标题只在有可装条目或站点不可达时渲染',
+    /if \(available\.length \|\| state\.siteError\) \{/.test(pets)
+      && /key: "siteHead"/.test(pets));
   check('pre.51 新组件已登记构建内联清单 + markers',
     build.includes('src/panel-tabs-assistant.js')
       && build.includes("'function AssistantSection()'")
@@ -95,6 +101,8 @@ function check(name, cond, detail) { results.push({ name, ok: Boolean(cond), det
   // 负对照：把表单塞回桌宠页，同一条"分开"判据必须判红。
   check('pre.51 negative control：表单塞回桌宠页会被同一条判据判红',
     !separated(pets + '\nchildren.push(React.createElement(PetChatSettings));'));
+  check('pre.52 negative control：指路提示塞回桌宠页会被同一条判据判红',
+    !separated(pets + '\n// 语音助手（Key、名字、称呼、音色）在左侧「智能大肥鱼」里配置。'));
 }
 
 /* ⑥ pre.51：侧栏壁纸筛选条 = 缓存 / 子标签 / 来源 三档（分级、类型已删） */
@@ -124,6 +132,49 @@ function check(name, cond, detail) { results.push({ name, ok: Boolean(cond), det
   const oldBar = 'React.createElement("select", { className: "we-picker__select we-qp__rating" })'
     + 'React.createElement("select", { className: "we-picker__select we-qp__type" })';
   check('pre.51 negative control：旧的分级/类型下拉会被同一条判据判红', !cleanBar(oldBar));
+}
+
+/* ⑦ pre.52（P4）：开机动画 / 助手皮肤两页签预热（设置面板挂载时一次） */
+{
+  const features = readFileSync(join(ROOT, 'src', 'features.js'), 'utf8');
+  const client = readFileSync(join(ROOT, 'src', 'client.js'), 'utf8');
+  const boot = readFileSync(join(ROOT, 'src', 'panel-tabs-boot.js'), 'utf8');
+  const skins = readFileSync(join(ROOT, 'src', 'panel-tabs-skins.js'), 'utf8');
+  check('pre.52 注册表给 boot / skins 声明了 warm，并暴露通用 warmFeaturePanels()',
+    /warm: warmBootTab/.test(features) && /warm: warmSkinsTab/.test(features)
+      && /function warmFeaturePanels\(\)/.test(features));
+  check('pre.52 设置面板挂载时只调通用入口（不在 client.js 点名具体 warm 函数）',
+    /warmFeaturePanels\(\)/.test(client)
+      && !/warmBootTab\(/.test(client) && !/warmSkinsTab\(/.test(client));
+  check('pre.52 两个 warm 都写已有页签缓存，且失败静默（catch 返回 null）',
+    /async function warmBootTab\(\)[\s\S]{0,900}?BOOT_TAB_CACHE = r/.test(boot)
+      && /async function warmSkinsTab\(\)[\s\S]{0,900}?SKINS_TAB_CACHE = doc/.test(skins)
+      && /catch \{ return null; \}/.test(boot) && /catch \{ return null; \}/.test(skins));
+  check('pre.52 预热只发一次（有 in-flight promise 去重）',
+    /BOOT_WARM_PROMISE/.test(boot) && /SKINS_WARM_PROMISE/.test(skins));
+  // 负对照：在 client.js 里硬插具体调用，必须被判红（这正是上一轮构建报错的形态）。
+  const hard = client + '\nwarmBootTab(); warmSkinsTab();';
+  check('pre.52 negative control：client.js 里硬插具体 warm 调用会被同一条判据判红',
+    /warmBootTab\(/.test(hard) && /warmSkinsTab\(/.test(hard));
+}
+
+/* ⑧ pre.52（P2）：卸载不卡 —— 客户端乐观移除 + 宿主 rename 到 .trash 后台删 */
+{
+  const skinsTab = readFileSync(join(ROOT, 'src', 'panel-tabs-skins.js'), 'utf8');
+  const skinsRoute = readFileSync(join(ROOT, 'lib', 'routes', 'skins.js'), 'utf8');
+  check('pre.52 客户端卸载：点下去先置 removing + 提示「卸载中…」',
+    /const \[removing, setRemoving\] = React\.useState\(\{\}\)/.test(skinsTab)
+      && /if \(kind === "remove" && cardId\) \{\s*setRemoving/.test(skinsTab)
+      && /卸载中…：\{name\}/.test(skinsTab));
+  check('pre.52 已装列表按 removing 过滤（卡片同帧消失），失败路径会回滚',
+    /const installed = installedAll\.filter\(\(s\) => !s \|\| !removing\[s\.id\]\)/.test(skinsTab)
+      && (skinsTab.match(/delete n\[cardId\]/g) || []).length >= 2);
+  check('pre.52 宿主卸载：先 rename 到 .trash 再回 200，递归删除放后台',
+    /renameSync\(dir, trashed\)/.test(skinsRoute)
+      && /sendJson\(res, 200, \{ ok: true, id, clearedActive \}\)/.test(skinsRoute)
+      && /setImmediate\(later\)/.test(skinsRoute));
+  check('pre.52 listInstalled 跳过点目录（.trash 不会被当成已装）',
+    /!d\.name\.startsWith\('\.'\)/.test(skinsRoute));
 }
 
 /* ── 汇总 ────────────────────────────────────────────────────────────────── */

@@ -69,10 +69,35 @@ async function skinInstalledNow(rawId) {
 
 /** 页签级缓存：切回来先渲染上一份清单，再后台刷新。 */
 let SKINS_TAB_CACHE = (typeof globalThis !== "undefined" && globalThis.__FOLIA_SKINS_WARM__) || null;
+/** pre.52（P4）：预热只发一次；失败静默（面板首开仍走原来的 load）。 */
+let SKINS_WARM_PROMISE = null;
+
+/**
+ * pre.52（P4）：**设置面板挂载时预热**。
+ *
+ * 只拉 `/skins/list`（`installed` 是宿主现读磁盘，轻量），结果写进既有 `SKINS_TAB_CACHE`。
+ * 不在这里读皮肤中心 catalog/active —— 那两跳留给面板自己的 `load(false)`，失败也不影响首屏。
+ */
+async function warmSkinsTab() {
+  if (SKINS_TAB_CACHE) return SKINS_TAB_CACHE;
+  if (SKINS_WARM_PROMISE) return SKINS_WARM_PROMISE;
+  SKINS_WARM_PROMISE = (async () => {
+    try {
+      const resp = await apiJson("/skins/list", { parse: "always" });
+      const doc = (resp && resp.data) || null;
+      if (resp && resp.ok && doc && doc.ok) SKINS_TAB_CACHE = doc;
+      return doc;
+    } catch { return null; } finally { SKINS_WARM_PROMISE = null; }
+  })();
+  return SKINS_WARM_PROMISE;
+}
 
 function SkinsTabPanel() {
   const [state, setState] = React.useState(SKINS_TAB_CACHE);
   const [busy, setBusy] = React.useState("");
+  // pre.52（P2）：**乐观卸载**。点下去先把卡片从「本机已装」里摘掉并出「卸载中…」，
+  // 宿主失败再放回来。旧实现等宿主同步 rmSync 返回（实测 213s），卡片一直挂着。
+  const [removing, setRemoving] = React.useState({});
   // 刚卸载掉的 id：旧的下载 job 仍是 done，不能再用它算卡片状态（否则一直「解压/落位中…」）
   const skinRemovedIds = React.useRef(new Set());
   // 给"静默对账"用的只读镜像：定时器/可见性回调里不能读闭包里的旧 `busy`（会一直看到 ""），
@@ -145,6 +170,20 @@ function SkinsTabPanel() {
   }, []);
 
   React.useEffect(() => { load(false); }, [load]);
+
+  // pre.52（P1）：清单说 installed=true ⇒ 卡片上的历史失败原因必须消失 + 按完成显示。
+  // 真实故障：专业模式 2.92/2.92 MB、verified=sha256、installed=true，卡片却挂红字「未落地」；
+  // `cards.fail` 只写不清，装好了也一直留着。
+  React.useEffect(() => {
+    const installedList = (state && state.installed) || [];
+    for (const s of installedList) {
+      if (s && s.id) { cards.clearErr(s.id); cards.markOk(s.id); }
+    }
+    const siteList = (state && state.site) || [];
+    for (const it of siteList) {
+      if (it && it.id && it.installed === true) { cards.clearErr(it.id); cards.markOk(it.id); }
+    }
+  }, [state, dl.jobs]);
 
   // 与外部改动**保持同步**：皮肤可能在皮肤中心那边被删/装，也可能在另一个窗口里操作。
   // 之前只在挂载时拉一次 ⇒ 那边删了，这边还列着（点了才失败，看起来像"没同步"）。
@@ -261,6 +300,11 @@ function SkinsTabPanel() {
     if (busyKey && !isInstall) { setBusy(busyKey); busyRef.current = busyKey; }
     // 非安装类操作沿用旧口径：先把上一轮的提示清掉。安装类**不清** —— 见下面 dlInstallClick。
     if (!isInstall) setNote(null);
+    // pre.52（P2）：卸载先乐观移除（卡片同帧消失 + 提示「卸载中…」），失败再放回来。
+    if (kind === "remove" && cardId) {
+      setRemoving((m) => ({ ...m, [cardId]: true }));
+      setNote({ ok: true, text: weT("卸载中…：{name}", { name: label || "" }) });
+    }
     try {
       if (kind === "activate") {
         const wantId = (payload && payload.id) || null;
@@ -540,11 +584,23 @@ function SkinsTabPanel() {
       // 否则站点卡片会继续渲染「已安装」（真实反馈：卸了两次，徽标还挂着）。
       if (typeof cards.clearOk === "function") cards.clearOk(cardId);
       try { skinRemovedIds.current.add(cardId); } catch { /* ignore */ }
+      setRemoving((m) => {
+        if (!Object.prototype.hasOwnProperty.call(m, cardId)) return m;
+        const n = { ...m };
+        delete n[cardId];
+        return n;
+      });
       // 卸载后立刻就地改状态：
       // 否则等 load(true) 回来之前，卡片仍按旧的 installed=true 渲染 ⇒ "点了卸载，卡片闪一下又回来"。
       setState((prev) => {
-        if (!prev || !Array.isArray(prev.site)) return prev;
-        return { ...prev, site: prev.site.map((x) => (x && x.id === cardId ? { ...x, installed: false } : x)) };
+        if (!prev) return prev;
+        return {
+          ...prev,
+          installed: (prev.installed || []).filter((s) => !s || s.id !== cardId),
+          site: Array.isArray(prev.site)
+            ? prev.site.map((x) => (x && x.id === cardId ? { ...x, installed: false } : x))
+            : prev.site,
+        };
       });
     }
         if (kind === "repair") {
@@ -562,12 +618,30 @@ function SkinsTabPanel() {
         // 以前这张表只在本页签里，另外两个页签只会显示裸错误码，于是同一个故障在三个地方
         // 说法不一样。现在卡片与提示行读的是同一句人话。
         if (isInstall && cardId) cards.fail(cardId, code);
+        // pre.52（P2）：卸载失败 ⇒ 卡片放回来（乐观移除的回滚）。
+        if (kind === "remove" && cardId) {
+          setRemoving((m) => {
+            if (!Object.prototype.hasOwnProperty.call(m, cardId)) return m;
+            const n = { ...m };
+            delete n[cardId];
+            return n;
+          });
+        }
         setNote({ ok: false, text: dlFailReason(code) });
       }
     } catch (e) {
       const why = e && e.message ? String(e.message) : "";
       const code = /timeout|超时/i.test(why) ? "submit-timeout" : "network";
       if (isInstall && cardId) cards.fail(cardId, code);
+      // pre.52（P2）：卸载请求失败 ⇒ 同样回滚乐观移除。
+      if (kind === "remove" && cardId) {
+        setRemoving((m) => {
+          if (!Object.prototype.hasOwnProperty.call(m, cardId)) return m;
+          const n = { ...m };
+          delete n[cardId];
+          return n;
+        });
+      }
       setNote({ ok: false, text: weT("请求失败：{msg}", { msg: why || weT("网络错误") }) });
     } finally {
       // 请求返回/失败/超时都在这条路径上 ⇒ 退出「正在提交…」，卡片要么交给队列、要么给「重试」。
@@ -676,7 +750,10 @@ function SkinsTabPanel() {
   //   · 切换（activate）：只写 active，幂等且"最后动作优先"，期间只锁**该卡片的「应用」**
   // （这两面旗已上移到函数开头声明 —— 上面的「刷新」按钮文案要用到它们，写在这里会触发 TDZ。）
 
-  const installed = (state && state.installed) || [];
+  const installedAll = (state && state.installed) || [];
+  // pre.52（P2）：乐观卸载的卡片**同帧从列表摘掉**（请求在后台跑，失败再放回来）。
+  const installed = installedAll.filter((s) => !s || !removing[s.id]);
+  const removingList = installedAll.filter((s) => s && removing[s.id]);
   const activeId = (state && state.active) || "";
   // 「皮肤中心记着哪套」≠「屏上现在是哪套」：壁纸在台上时皮肤会 withhold 自己，
   // 但它持久化的 active 不会自动清（我们 4.15.1 起在用户选壁纸时主动清一次）。
@@ -713,6 +790,16 @@ function SkinsTabPanel() {
           ? weT(" · 皮肤已让位（壁纸在使用中）：{name}", { name: activeId })
           : weT(" · 使用中：{name}", { name: activeId }))
         : ""));
+    // pre.52（P2）：乐观移除后留一句「卸载中…」——卡片已经消失，但用户要知道它还在收尾。
+    if (removingList.length) {
+      children.push(React.createElement("div", {
+        key: "removing-hint",
+        className: "we-picker__hint",
+        style: { margin: "0 0 6px", opacity: 0.85 },
+      }, weT("卸载中…：{names}", {
+        names: removingList.map((s) => s.name || s.id).join("、"),
+      })));
+    }
     if (activeId && wallpaperOn) {
       children.push(React.createElement("div", {
         key: "yield-note",

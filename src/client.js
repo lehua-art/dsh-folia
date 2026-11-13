@@ -5293,6 +5293,12 @@ function WallpaperPicker() {
       }).catch(() => { /* ignore */ });
   };
 
+  // pre.52（P4）：设置面板挂载时预热「开机动画 / 助手皮肤」两页签。
+  // 只调注册表里的通用入口（features.js 的 warmFeaturePanels），不在这里点名具体功能。
+  React.useEffect(() => {
+    try { warmFeaturePanels(); } catch { /* 预热是增强：失败静默 */ }
+  }, []);
+
   // ESC anywhere closes the library view. Capture phase + stopPropagation so the
   // shell's own ESC handling (which may close the whole settings panel) never
   // sees the key while the view is open.

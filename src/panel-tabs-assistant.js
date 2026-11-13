@@ -166,14 +166,12 @@ function PetChatSettings() {
 }
 
 /**
- * 「智能大肥鱼」一级设置页。只做版面装配：标题 + 一句话说明 + 完整表单。
+ * 「智能大肥鱼」一级设置页。只做版面装配：标题 + 完整表单。
  * 设置导航的注册在 `src/client.js`（id=folia-assistant，order 502）。
  */
 function AssistantSection() {
   return React.createElement('div', { className: 'we-assistant-section', style: { padding: '4px 2px' } },
     React.createElement('div', { style: { fontSize: '14px', fontWeight: 600 } }, weT('智能大肥鱼')),
-    React.createElement('div', { className: 'we-picker__hint', style: { marginTop: '2px' } },
-      weT('这里是桌宠语音助手的完整设置：Key、名字、称呼、音色都在这一页。填好保存，桌宠就会用这个模型和你说话。')),
     React.createElement(PetChatSettings, null),
   );
 }

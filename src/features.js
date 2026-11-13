@@ -19,15 +19,36 @@
 /** 页签条（顺序 = 界面顺序）。label 用 getter：语言切换后能立刻生效。 */
 const WE_FEATURE_TABS = [
   // 开机动画与壁纸并列：它们回答的是同一个问题"开机/桌面看到什么"，不是壁纸的子功能。
-  { id: "boot", get label() { return weT("开机动画"); } },
+  { id: "boot", get label() { return weT("开机动画"); }, warm: warmBootTab },
   { id: "wallpaper", get label() { return weT("壁纸"); } },
   { id: "appearance", get label() { return weT("外观"); } },
   { id: "playback", get label() { return weT("播放"); } },
   // 桌宠是"桌面上多出来的一只东西"，与壁纸/开机动画并列。
   { id: "pets", get label() { return weT("桌宠"); } },
   // 助手皮肤：装的是皮肤中心的皮肤包。我们只管装/卸，渲染与启用归皮肤中心。
-  { id: "skins", get label() { return weT("助手皮肤"); } },
+  { id: "skins", get label() { return weT("助手皮肤"); }, warm: warmSkinsTab },
 ];
+
+/**
+ * pre.52（P4）：**两个慢页签的预热**。
+ *
+ * 首开慢的根因是"首开才发请求，本会话无预热"。设置面板挂载时由
+ * `src/client.js` 的 `WallpaperPicker` effect 调一次；各页签自己的 `warm()` 只拉清单、
+ * 写既有的 `BOOT_TAB_CACHE` / `SKINS_TAB_CACHE`，失败静默（面板首开的 load 会重试）。
+ *
+ * 为什么收在注册表里：装配点只认"页签有 warm 就调"，不再往 client.js 里硬插
+ * `warmBootTab(); warmSkinsTab();` —— 那样每次加功能都要改装配点，且构建顺序一变就 ReferenceError。
+ */
+let featureWarmStarted = false;
+function warmFeaturePanels() {
+  if (featureWarmStarted) return;
+  featureWarmStarted = true;
+  for (const tab of WE_FEATURE_TABS) {
+    try {
+      if (tab && typeof tab.warm === "function") void tab.warm();
+    } catch { /* 预热是增强：任何异常都不该影响设置面板打开 */ }
+  }
+}
 
 /**
  * 整区面板：这个页签的内容**整个**由功能自己的组件渲染（而不是 quick-panel 内的通用列表）。

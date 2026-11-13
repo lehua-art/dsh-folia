@@ -307,6 +307,29 @@ mkdirSync(LIB, { recursive: true });
   const deepJob = q.snapshot().find((j) => j.url.endsWith('/deep.mp4'));
   check('M4e deep 对账：长度对但 sha 不符 ⇒ 删文件 + pending（4.23.6 遗留也能清）',
     deepJob.status === 'pending' && !existsSync(deepDest), deepJob.status + ' file=' + existsSync(deepDest));
+
+  /* M4f/g pre.52（P3）：截断文件不显示已缓存；补齐后再对账 ⇒ done + localReady。 */
+  const repairedUrl = 'https://site.test/media/repaired.mp4';
+  const repairedBuf = fakeMp4(4096, 0x78);
+  const repairedDest = join(LIB, 'repaired.mp4');
+  writeFileSync(repairedDest, repairedBuf.subarray(0, 1024));   // 截断：只有 1/4
+  expectedByUrl.set(repairedUrl, shaOf(repairedBuf));
+  const repairedAdd = q.add({ url: repairedUrl, dest: repairedDest, kind: 'wallpaper' });
+  const repairedId = repairedAdd.job.id;
+  q.applyReconcile([{ id: repairedId, patch: { status: 'done', total: 4096 } }]);
+  await rec.reconcileAll({ reason: 'truncated-check' });
+  const repairedJob = q.jobById(repairedId);
+  const repairedState = rec.stateOfId(repairedId);
+  check('M4f 截断文件（长度 < 清单）⇒ job pending 且 localReady=false（不冒充已缓存）',
+    repairedJob.status === 'pending' && repairedState && repairedState.localReady === false,
+    'status=' + (repairedJob && repairedJob.status) + ' localReady=' + (repairedState && repairedState.localReady));
+  writeFileSync(repairedDest, repairedBuf);                     // 补齐成完整文件
+  await rec.reconcileAll({ reason: 'repaired-check' });
+  const repairedJob2 = q.jobById(repairedId);
+  const repairedState2 = rec.stateOfId(repairedId);
+  check('M4g 补齐后再对账 ⇒ done + localReady=true（done 即 promote，不留 pending）',
+    repairedJob2.status === 'done' && repairedState2 && repairedState2.localReady === true,
+    'status=' + (repairedJob2 && repairedJob2.status) + ' localReady=' + (repairedState2 && repairedState2.localReady));
 }
 
 /* ══ M5–M7 清缓存事务 / /local-media 缺失 / diag ═════════════════════════════ */

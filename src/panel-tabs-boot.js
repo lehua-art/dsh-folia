@@ -65,6 +65,29 @@ const BOOT_STYLE = {
 
 /** 页签级缓存：切走再切回来直接用上一份清单渲染，网络在后台刷新（"首次点击要等一会"的解药）。 */
 let BOOT_TAB_CACHE = (typeof globalThis !== "undefined" && globalThis.__FOLIA_BOOT_WARM__) || null;
+/** pre.52（P4）：预热只发一次；失败静默（下次首开仍走原来的 load）。 */
+let BOOT_WARM_PROMISE = null;
+
+/**
+ * pre.52（P4）：**设置面板挂载时预热**。
+ *
+ * 两页签首开慢的根因是"首开才发请求，本会话无预热"。这里只拉一次 `/boot/list`（宿主有
+ * 30s 清单缓存，代价很小），结果写进既有 `BOOT_TAB_CACHE`；面板首开直接用缓存渲染。
+ * 失败不写缓存、不打扰用户 —— 面板自己的 `load` 会在挂载时重试。
+ */
+async function warmBootTab() {
+  if (BOOT_TAB_CACHE) return BOOT_TAB_CACHE;
+  if (BOOT_WARM_PROMISE) return BOOT_WARM_PROMISE;
+  BOOT_WARM_PROMISE = (async () => {
+    try {
+      const resp = await apiJson("/boot/list", { parse: "always" });
+      const r = (resp && resp.data) || null;
+      if (r && r.ok !== false) BOOT_TAB_CACHE = r;
+      return r;
+    } catch { return null; } finally { BOOT_WARM_PROMISE = null; }
+  })();
+  return BOOT_WARM_PROMISE;
+}
 
 function BootTabPanel() {
   const [state, setState] = React.useState(BOOT_TAB_CACHE);
@@ -107,6 +130,15 @@ function BootTabPanel() {
   }, []);
 
   React.useEffect(() => { load(false); }, [load]);
+
+  // pre.52（P1）：清单说 installed=true ⇒ 卡片上的历史失败原因必须消失。
+  // 真实故障：大肥鱼 8/8 MB、verified=sha256、meta 已写，卡片却还挂着上一轮的「下载中/失败」。
+  React.useEffect(() => {
+    const list = (state && state.clips) || [];
+    for (const c of list) {
+      if (c && c.installed) cards.clearErr(c.id);
+    }
+  }, [state, dl.jobs]);
 
   // 4.23.6：**挂载自愈** —— 队列里 job 已经 `done`、但本机 `installed=false` 的条目，
   // 自动补打一次 `POST /folia/boot/download`。
@@ -523,8 +555,9 @@ function BootTabPanel() {
         // 这里天然就能显示「下载中… x%」——状态不跟着组件挂载/卸载走。
         const job = dlJobForCard(dl.jobs, "boot", c.url);
         // 4.23.4：卡片状态由**四模块共用**的状态机决定（下载按钮的文案/禁用/失败原因+重试）。
-        // `done` 传 false：本页签"完成"的形态是**换一组按钮**（使用/删除），不是同一个按钮变字。
-        const st = cards.stateOf({ id: c.id, job, done: false, labels: bootDlLabels });
+        // pre.52（P1）：`done` 传 `Boolean(c.installed)` —— 旧实现写死 false，导致下载已完成、
+        // 清单 installed=true 的卡片仍被状态机判成「下载中 100% / 解压/落位中」。
+        const st = cards.stateOf({ id: c.id, job, done: Boolean(c.installed), labels: bootDlLabels });
         // running 沿用 4.23.3 的紧凑文案（`下载中… 42% · 多连接(8)`），MB/剩余时间在下面那行明细里。
         const label = st.phase === "running" ? dlBusyLabel(job) : st.label;
         const isBusy = busy === c.id;
@@ -604,4 +637,4 @@ function renderBootTab() {
   return React.createElement(BootTabPanel, null);
 }
 
-export { BootTabPanel, renderBootTab };
+export { BootTabPanel, renderBootTab, warmBootTab };

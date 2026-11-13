@@ -594,6 +594,15 @@ function dlBusyLabel(job) {
   return weT("下载中… {p}%", { p: pct });
 }
 
+/**
+ * pre.52（P0）：续传文案。宿主在 `.part` 上从已有字节继续时把 job 标成 `resuming`；
+ * 卡片必须显示「续传中 已恢复 x%」，而不是从 0% 重新爬（用户会以为前功尽弃）。
+ */
+function dlResumeLabel(job) {
+  const pct = Math.max(0, Math.min(100, Math.round(Number(job && job.percent) || 0)));
+  return weT("续传中 已恢复 {p}%", { p: pct });
+}
+
 /* ── 统一卡片状态机（4.23.4）：四个模块共用一份 ───────────────────────────────
  *
  * 真实故障（用户实测，4.23.3）：「助手皮肤」页签里 14 MB 的包点下去能看到「安装中…」，
@@ -734,6 +743,9 @@ function dlFailReason(code) {
     'job-lost': weT("下载任务已丢失，点「重试」"),
     'download-failed': weT("下载失败（站点未返回文件），请稍后重试"),
     'download-timeout': weT("下载超时（已下部分会保留，再点「安装」可续传）"),
+    // pre.52（P0）：连接中途被对端断开 / 已自动续传满 12 次或 10 分钟仍未下完。
+    // 必须与 hash-mismatch 分开：这不是"站点内容变了"，而是"还没下完"，重试会从已下部分继续。
+    'download-truncated': weT("下载被截断（连接中途断开，已自动续传多次仍未下完）；点「重试」会从已下部分继续，不会从 0 开始"),
     // 4.23.17：本地临时/成品文件被外部清理（缓存管理器 / 手工删）——连续两次都这样才报这个。
     // 文案必须说清"不是站点的问题、重试会重新下"：否则用户会以为站点挂了。
     'file-vanished': weT("下载途中本地文件被清理掉了（连续两次），点「重试」会重新下载"),
@@ -831,6 +843,17 @@ function dlCardState(inp) {
     return make(DL_PHASES.FAILED, labels.failed || weT("重试"), weT("原因：{why}", { why }), false, true, why);
   };
 
+  // ①0 pre.52（P1）：**已装好就是已装好** —— 历史失败原因 / 残留进度都不许把它盖回红字。
+  //    这是"专业模式安装完成、列表 installed=true，卡片却还挂着未落地红字"的直接修法。
+  if (o.done) return make(DL_PHASES.DONE, labels.done || weT("已安装"), "", true, false, "");
+
+  // ①0b pre.52（P0）：**续传**优先于「排队中 / 下载中」—— 宿主从 `.part` 已有字节继续时，
+  //    卡片显示「续传中 已恢复 x%」，而不是从 0% 重新爬（那会让人以为前功尽弃）。
+  const resuming = Boolean(job && (job.resuming === true || job.error === 'download-truncated'));
+  if (job && resuming && (job.status === 'queued' || job.status === 'running')) {
+    return make(DL_PHASES.RUNNING, dlResumeLabel(job), dlProgressDetail(job, o.etaSec), true, false, "");
+  }
+
   // ① 队列里已经在排/在下 ⇒ **先报真进度**（哪怕"提交"这个 HTTP 请求还挂在那里）。
   //
   //    为什么要排在 submitting 前面：宿主侧 `POST /folia/skins/install` 会**同步等下载**
@@ -842,6 +865,13 @@ function dlCardState(inp) {
     return make(DL_PHASES.QUEUED, q, q, true, false, "");
   }
   if (job && job.status === 'running') {
+    // pre.52（P1）：字节收满但 status 还没 done（校验 / rename / 宿主收尾）⇒「收尾中…」，
+    // 不再显示「下载中 100%」那种看起来已经卡死的文案。
+    const recv = Math.max(0, Number(job.received) || 0);
+    const total = Math.max(0, Number(job.total) || 0);
+    if (total > 0 && recv >= total) {
+      return make(DL_PHASES.RUNNING, weT("收尾中…"), dlProgressDetail(job, o.etaSec), true, false, "");
+    }
     return make(DL_PHASES.RUNNING, dlBusyLabel(job), dlProgressDetail(job, o.etaSec), true, false, "");
   }
   // ② 点了、请求还没回来、也还没有 job 可看 ⇒ 立刻置灰 +「正在提交…」。
@@ -897,8 +927,7 @@ function dlCardState(inp) {
     if (since > 0 && now - since >= stallMs) return fail('install-stalled');
     return make(DL_PHASES.INSTALLING, weT("解压/落位中…"), "", true, false, "");
   }
-  // ④ 已经装好（或已下载）：按钮不再可点。
-  if (o.done) return make(DL_PHASES.DONE, labels.done || weT("已安装"), "", true, false, "");
+  // ④ 已经装好（或已下载）已在前面的 ①0 返回（pre.52 起 done 优先于历史失败）。
   // ⑤ 失败：队列里那条 job 自己失败了（`o.err` 已在 ②b 处理，不再重复）。
   if (job && (job.status === 'failed' || job.status === 'cancelled')) return fail(job.error || job.status);
   // ⑥ 什么也没发生。
@@ -1736,6 +1765,28 @@ function useDlCards(dl) {
     },
     /** 记下这张卡片的失败原因（卡片上显示人话 + 「重试」）。 */
     fail: (id, code) => { setErrs((m) => ({ ...m, [key(id)]: { code: String(code == null ? "failed" : code) } })); },
+    /**
+     * pre.52（P1）：**宿主/清单已经说"装好了" ⇒ 历史失败原因必须消失**。
+     *
+     * 真实故障（用户实测）：专业模式下载 done、verified=sha256、列表 installed=true，
+     * 卡片却一直挂着上一轮的红字（`cards.fail` 只写不清）。已装好的卡片再显示"失败"就是骗人。
+     * 同时清掉 healing 残留（那格也只属于"还没装好"的阶段）。
+     */
+    clearErr: (id) => {
+      const k = key(id);
+      setErrs((m) => {
+        if (!Object.prototype.hasOwnProperty.call(m, k)) return m;
+        const n = { ...m };
+        delete n[k];
+        return n;
+      });
+      setHeals((m) => {
+        if (!Object.prototype.hasOwnProperty.call(m, k)) return m;
+        const n = { ...m };
+        delete n[k];
+        return n;
+      });
+    },
     /**
      * 本地**没有对应 job** 的卡片：清掉残留的"进行中"痕迹，让它**回落到 idle、可点安装**。
      *

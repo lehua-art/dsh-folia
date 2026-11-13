@@ -70,8 +70,8 @@ const settings = { petChat: { enabled: false } };
   check('①b 桌宠页不再内联语音助手表单（独立页 pre.51）',
     stray.length === 0,
     `桌宠页残留=${stray.join('、') || '无'}`);
-  check('①c 桌宠页保留一行指路到「智能大肥鱼」',
-    pets.includes('weT("语音助手（Key、名字、称呼、音色）在左侧「智能大肥鱼」里配置。")'));
+  check('①c 桌宠页不再留指路提示（pre.52 用户要求删掉那句）',
+    !pets.includes('在左侧「智能大肥鱼」里配置') && !pets.includes('assistantHint'));
 }
 
 /* ② 保存后配置立刻生效（新结构） */
