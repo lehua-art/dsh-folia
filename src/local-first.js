@@ -1716,6 +1716,16 @@ function useDlCards(dl) {
      * 而不是静默回到「安装」——那正是"点了没反应"的另一种样子。
      */
     markOk: (id) => { setOkIds((m) => (m[key(id)] ? m : { ...m, [key(id)]: true })); },
+    // 卸载成功后必须把它忘掉：否则卡片会一直按"已安装"渲染（站点已删、徽标还在）。
+    clearOk: (id) => {
+      const k = key(id);
+      setOkIds((m) => {
+        if (!m[k]) return m;
+        const n = { ...m };
+        delete n[k];
+        return n;
+      });
+    },
     okOf: (id) => Boolean(okIds[key(id)]),
     subOf: (id) => (sub && key(sub.id) === key(id) ? sub : null),
     errOf: (id) => errs[key(id)] || null,

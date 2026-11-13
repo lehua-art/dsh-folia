@@ -522,7 +522,18 @@ function SkinsTabPanel() {
         if (kind === "remove") setNote({ ok: true, text: weT("已卸载：{name}", { name: label || "" }) });
     // 卸载成功后必须把这张卡片的失败/安装中状态清掉：
     // 真实事故 —— 卸完了，卡片还挂着上一轮「下载已完成但安装未落地 · 重试」，看着像没删掉。
-    if (kind === "remove" && cardId) cards.end(cardId);
+    if (kind === "remove" && cardId) {
+      cards.end(cardId);
+      // 卸载成功 = 这台机器上已经没有它了：把"曾经装好"的记忆也清掉，
+      // 否则站点卡片会继续渲染「已安装」（真实反馈：卸了两次，徽标还挂着）。
+      if (typeof cards.clearOk === "function") cards.clearOk(cardId);
+      // 卸载后立刻就地改状态：
+      // 否则等 load(true) 回来之前，卡片仍按旧的 installed=true 渲染 ⇒ "点了卸载，卡片闪一下又回来"。
+      setState((prev) => {
+        if (!prev || !Array.isArray(prev.site)) return prev;
+        return { ...prev, site: prev.site.map((x) => (x && x.id === cardId ? { ...x, installed: false } : x)) };
+      });
+    }
         if (kind === "repair") {
           setNote({
             ok: true,
