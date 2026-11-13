@@ -87,6 +87,7 @@
     "lib/media-state.js",
     "lib/media-selfheal.js",
     "lib/media-origin.js",
+    "lib/capabilities-catalog.js",
     "lib/inventory.js",
     "lib/serve.js",
     "lib/faststart.js",
