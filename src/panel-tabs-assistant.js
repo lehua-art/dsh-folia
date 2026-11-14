@@ -26,16 +26,10 @@ const CHAT_DEFAULTS = {
   petName: '',
   ownerName: '',
   // pre.53：朗读回答 = voice.muted 取反；音色 = voice.name（与 /pet-chat/config 同结构）。
-  voice: { name: 'zh-CN-XiaoxiaoNeural', muted: false },
+  // pre.54：默认**空串** = 宿主自动选本机第一个可用中文音色（这台是 Microsoft Huihui Desktop）；
+  // 不再写死 Edge neural（云端音色，不能随包分发，本机也没有本地模型）。
+  voice: { name: '', muted: false },
 };
-
-/** 固定可选的朗读音色（Edge neural；宿主 TTS 的 `preferredEngineForVoice` 会优先走 edge）。 */
-const ASSISTANT_VOICES = [
-  { id: 'zh-CN-XiaoxiaoNeural', label: '晓晓（女声，默认）' },
-  { id: 'zh-CN-XiaoyiNeural', label: '晓伊（女声，活泼）' },
-  { id: 'zh-CN-YunxiNeural', label: '云希（男声）' },
-  { id: 'zh-CN-YunjianNeural', label: '云健（男声，沉稳）' },
-];
 
 /**
  * 设置页：模型 Key / 名字 / 称呼 / 音色 / **朗读回答开关** / 保存。
@@ -47,6 +41,12 @@ const ASSISTANT_VOICES = [
  * 各调用点各写一遍「多解一层」就是 P1 那个"保存成功却显示保存失败"的来源 —— 统一到这里解。 */
 const unwrapPetChat = (resp) => (resp && resp.data && resp.data.data) || (resp && resp.data) || {};
 
+/** 本机音色里选默认：优先中文，其次第一个 usable。 */
+function assistantDefaultVoice(list) {
+  const items = (Array.isArray(list) ? list : []).filter((v) => v && v.usable === true);
+  return items.find((v) => /^zh/i.test(String(v.lang || ''))) || items[0] || null;
+}
+
 function PetChatSettings() {
   const [draft, setDraft] = React.useState(CHAT_DEFAULTS);
   const [status, setStatus] = React.useState({ ok: null, text: '' });
@@ -54,6 +54,9 @@ function PetChatSettings() {
   const [busy, setBusy] = React.useState(false);
   // 工作能力插件（聚合携带）的安装状态；只读展示，不加开关
   const [workPlugins, setWorkPlugins] = React.useState(null);
+  // pre.54：本机真实可用音色（/tts/voices）与可下载目录（/tts/catalog）。
+  const [voices, setVoices] = React.useState(null);
+  const [catalog, setCatalog] = React.useState(null);
   const update = React.useCallback((patch) => setDraft((prev) => ({ ...prev, ...patch })), []);
 
   const load = React.useCallback(async () => {
@@ -77,6 +80,30 @@ function PetChatSettings() {
       setWorkPlugins(unwrapPetChat(resp));
     })();
   }, []);
+  // pre.54：只列本机真实可用音色；默认选第一个可用中文音色。
+  React.useEffect(() => {
+    void (async () => {
+      const resp = await apiJson('/pet-chat/tts/voices', { parse: 'always' }).catch(() => null);
+      const doc = unwrapPetChat(resp);
+      const items = (doc && Array.isArray(doc.voices) ? doc.voices : []).filter((v) => v && v.usable === true);
+      setVoices(items);
+      const firstZh = assistantDefaultVoice(items);
+      if (firstZh) {
+        setDraft((prev) => {
+          const cur = prev.voice || {};
+          if (cur.name) return prev;
+          return { ...prev, voice: Object.assign({}, cur, { name: firstZh.id }) };
+        });
+      }
+    })();
+  }, []);
+  React.useEffect(() => {
+    void (async () => {
+      const resp = await apiJson('/pet-chat/tts/catalog', { parse: 'always' }).catch(() => null);
+      const doc = unwrapPetChat(resp);
+      if (doc && Array.isArray(doc.items)) setCatalog(doc.items);
+    })();
+  }, []);
 
   const save = async () => {
     setBusy(true);
@@ -84,6 +111,11 @@ function PetChatSettings() {
       // 填了 Key 就启用：面板不放"开启对话"开关，语义由 Key 的有无决定。
       // pre.53：voice 必须显式带上（宿主保存时会整体替换 voice 对象）。
       const voice = Object.assign({}, CHAT_DEFAULTS.voice, draft.voice || {});
+      // pre.54：空音色 ⇒ 落成当前本机默认（列表没加载出来时仍保持空串，由宿主自动选）。
+      if (!voice.name) {
+        const fallback = assistantDefaultVoice(voices);
+        if (fallback) voice.name = fallback.id;
+      }
       const body = {
         ...draft, voice,
         apiKey: draft.apiKey || '',
@@ -159,15 +191,51 @@ function PetChatSettings() {
     key: 'speak-hint', className: 'we-picker__hint', style: { margin: '0 0 4px' },
   }, weT('关闭后只显示字幕、不合成语音（省算力）；保存后立刻生效。')));
 
-  // 音色：voice.name。宿主保存时整体替换 voice 对象，所以 muted 在这里一并带上。
-  child.push(row('voice', '音色', React.createElement('select', {
-    className: 'we-picker__playlist-select',
-    disabled: busy,
-    value: voice.name || CHAT_DEFAULTS.voice.name,
-    onChange: (e) => update({ voice: Object.assign({}, voice, { name: e.target.value }) }),
-  },
-  ...ASSISTANT_VOICES.map((v) => React.createElement('option', { key: v.id, value: v.id }, weT(v.label))),
-  )));
+  // pre.54（B3③）：音色下拉只列**本机真实可用**（/tts/voices 的 usable=true）。
+  // 不再有 4 个硬编码 Edge neural；默认选第一个可用中文音色（这台是 Microsoft Huihui Desktop）。
+  const usableVoices = (Array.isArray(voices) ? voices : []).filter((v) => v && v.usable === true);
+  const defaultVoice = assistantDefaultVoice(usableVoices);
+  const currentVoiceName = voice.name || (defaultVoice ? defaultVoice.id : '');
+  const voiceKnown = usableVoices.some((v) => String(v.id) === currentVoiceName);
+  if (usableVoices.length || currentVoiceName) {
+    child.push(row('voice', '音色', React.createElement('select', {
+      className: 'we-picker__playlist-select',
+      disabled: busy || !usableVoices.length,
+      value: currentVoiceName,
+      onChange: (e) => update({ voice: Object.assign({}, voice, { name: e.target.value }) }),
+    },
+    // 旧配置里的音色不在本机（或读取失败）也保留一行，避免下拉显示为空；
+    // 真正合成时宿主会回落并在状态条提示。
+    !voiceKnown && currentVoiceName
+      ? React.createElement('option', { key: 'stale', value: currentVoiceName }, currentVoiceName + ' ' + weT('（本机未检测到，将回落）'))
+      : null,
+    ...usableVoices.map((v) => React.createElement('option', { key: v.id, value: v.id },
+      v.label + (v.lang ? ' · ' + v.lang : '') + ' ' + weT('（系统音色，离线）'))),
+    )));
+  } else {
+    child.push(React.createElement('div', {
+      key: 'voice-empty', className: 'we-picker__hint', style: { margin: '4px 0' },
+    }, voices === null ? weT('正在读取本机音色…') : weT('未检测到可用音色（系统 TTS 不可用）')));
+  }
+  child.push(React.createElement('div', {
+    key: 'voice-hint', className: 'we-picker__hint', style: { margin: '0 0 4px' },
+  }, weT('只列本机真实可用的系统音色（离线）；云端音色不随包分发。')));
+
+  // pre.54（任务 C 骨架）：可下载离线音色目录 —— 本版**只列目录，不谎称已支持**。
+  if (Array.isArray(catalog) && catalog.length) {
+    child.push(React.createElement('div', {
+      key: 'catalog-head', style: { marginTop: '12px', fontSize: '12px', fontWeight: 600 },
+    }, weT('可下载音色（即将支持）')));
+    catalog.forEach((item) => {
+      child.push(React.createElement('div', {
+        key: 'cat-' + item.id, className: 'we-picker__hint', style: { margin: '2px 0' },
+      }, (item.name || item.id) + ' · ' + (item.license || '') + ' · ' + (item.size || '')
+        + ' · ' + weT('即将支持')));
+    });
+    child.push(React.createElement('div', {
+      key: 'catalog-hint', className: 'we-picker__hint', style: { margin: '2px 0 0' },
+    }, weT('这些是开源离线方案，本版只接目录；合成接通后才会出现在上面的音色下拉里。')));
+  }
 
   child.push(React.createElement('div', { key: 'status', className: 'we-picker__hint', style: { margin: '6px 0', color: status.ok === false ? '#f87171' : undefined } },
     status.text || weT('未连接')));

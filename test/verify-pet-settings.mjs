@@ -79,6 +79,12 @@ const settings = { petChat: { enabled: false } };
     /petSpeakStop\(\)/.test(source) && /petChatRefreshVoice\(\)/.test(source));
   check('①f 桌宠页的音效标签已改名（不再被误读成朗读）',
     /weT\("桌宠音效"\)/.test(pets) && /weT\("音效音量"\)/.test(pets) && !/weT\("声音"\)/.test(pets));
+  // pre.54：4 个 Edge neural 不允许再硬编码进页面/包里；音色下拉必须读本机 /tts/voices。
+  check('①g 页面不再硬编码 Edge neural 音色，音色下拉读 /tts/voices 且只列 usable',
+    !/zh-CN-(Xiaoxiao|Xiaoyi|Yunxi|Yunjian)Neural/.test(source)
+      && /\/pet-chat\/tts\/voices/.test(source)
+      && /usable === true/.test(source)
+      && /assistantDefaultVoice/.test(source));
 }
 
 /* ② 保存后配置立刻生效（新结构） */
@@ -87,7 +93,7 @@ const settings = { petChat: { enabled: false } };
   const saved = await postJson(`${host.base}/config`, {
     enabled: true, provider: 'openai', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat',
     apiKey: 'sk-test-1234', petName: '小鲸', ownerName: '主人',
-    voice: { name: 'zh-CN-XiaoyiNeural', muted: false },
+    voice: { name: 'Microsoft Zira Desktop', muted: false },
     wake: { click: true, name: true, keyword: '小鲸' }, memoryEnabled: true,
   });
   const state = await getJson(`${host.base}/state`);
@@ -96,14 +102,14 @@ const settings = { petChat: { enabled: false } };
     saved.body.data.saved === true
       && state.body.enabled === true && state.body.provider === 'openai' && state.body.model === 'deepseek-chat'
       && config.body.data.petName === '小鲸' && config.body.data.ownerName === '主人'
-      && config.body.data.voice.name === 'zh-CN-XiaoyiNeural'
+      && config.body.data.voice.name === 'Microsoft Zira Desktop'
       && config.body.data.wake.keyword === '小鲸',
     `petName=${config.body.data.petName} · voice=${config.body.data.voice.name} · wake=${config.body.data.wake.keyword}`);
   // pre.53：朗读开关持久化（voice.muted），且 /state 立刻反映（客户端唤醒时读它）。
-  await postJson(`${host.base}/config`, { voice: { name: 'zh-CN-YunxiNeural', muted: true } });
+  await postJson(`${host.base}/config`, { voice: { name: 'Microsoft David Desktop', muted: true } });
   const mutedDoc = await getJson(`${host.base}/config`);
   const mutedState = await getJson(`${host.base}/state`);
-  await postJson(`${host.base}/config`, { voice: { name: 'zh-CN-YunxiNeural', muted: false } });
+  await postJson(`${host.base}/config`, { voice: { name: 'Microsoft David Desktop', muted: false } });
   const unmutedDoc = await getJson(`${host.base}/config`);
   check('②b 朗读开关（voice.muted）可保存，/state 立刻同步 true → false',
     mutedDoc.body.data.voice.muted === true && mutedState.body.voice.muted === true
@@ -210,16 +216,26 @@ const settings = { petChat: { enabled: false } };
 {
   const host = await startHost(settings);
   await postJson(`${host.base}/config`, {
-    enabled: true, apiKey: 'sk-new', petName: '新名字', voice: { name: 'zh-CN-YunxiNeural', muted: false },
+    enabled: true, apiKey: 'sk-new', petName: '新名字', voice: { name: 'Microsoft David Desktop', muted: false },
     // 故意混入旧键：必须被忽略，不能写进覆盖层
     persona: { name: '不该出现' }, voiceOut: { enabled: false, voiceURI: 'legacy' }, voiceEngine: 'system', maxTurns: 3,
   });
   const overlay = JSON.parse(readFileSync(join(HOME, 'pet-chat', 'settings.json'), 'utf8'));
   const legacyKeys = ['persona', 'voiceOut', 'voiceEngine', 'maxTurns', 'maxChars'].filter((key) => key in overlay);
   check('⑧ 写回只写新结构（覆盖层无旧键）',
-    legacyKeys.length === 0 && overlay.petName === '新名字' && overlay.voice.name === 'zh-CN-YunxiNeural',
+    legacyKeys.length === 0 && overlay.petName === '新名字' && overlay.voice.name === 'Microsoft David Desktop',
     `残留旧键=${legacyKeys.join('、') || '无'} · petName=${overlay.petName}`);
   await host.close();
+}
+
+/* ⑩ pre.54：旧 Edge neural 默认迁移成空串（= 本机自动选中文音色） */
+{
+  const { readPetChat } = await import('../lib/settings-schema.js');
+  const migrated = readPetChat({ voice: { name: 'zh-CN-XiaoxiaoNeural', muted: false } });
+  const fresh = readPetChat({});
+  check('⑩ 旧 neural 默认/新档默认都是空串（由宿主选本机第一个可用中文音色）',
+    migrated.voice.name === '' && fresh.voice.name === '',
+    `migrated='${migrated.voice.name}' · fresh='${fresh.voice.name}'`);
 }
 
 let failed = 0;

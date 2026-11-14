@@ -77,6 +77,15 @@ const petBubble = petBubbleCreate({
       return { left: rect.left, top: rect.top, width: rect.width, height: rect.height, scale };
     } catch { return null; }
   },
+  // 状态条可点：错误/提示 ⇒ 打开打字入口；在听/在想/在说 ⇒ 停止（与再点桌宠同一语义）。
+  onStatusClick: () => {
+    try {
+      const st = petBubble.statusElement && petBubble.statusElement.dataset
+        ? String(petBubble.statusElement.dataset.state || '') : '';
+      if (st === 'error' || st === 'info') petChatOpenTyping();
+      else petVoiceIn.stop();
+    } catch { /* 状态条点击是增强 */ }
+  },
 });
 
 /**
@@ -84,7 +93,8 @@ const petBubble = petBubbleCreate({
  * 然后轮询 /pet-chat/asr 把下载进度显示在气泡里。
  * 这样用户装完插件直接说话就行，不需要去 DSH 设置里找「语音输入」开关。
  */
-async function ensureAsrReady() {  petBubble.setState('think');
+async function ensureAsrReady() {
+  petBubble.setState('think');
   try {
     await apiPostJson('/pet-chat/asr', {}, { parse: 'always' });
   } catch { /* 触发失败也要继续轮询看状态 */ }
@@ -93,27 +103,23 @@ async function ensureAsrReady() {  petBubble.setState('think');
     const resp = await apiJson('/pet-chat/asr', { parse: 'always' }).catch(() => null);
     const doc = (resp && resp.data) || {};
     if (doc.ready) {
-      petBubble.show('语音准备好了，点我再说一次');
-      petBubble.hide(3000);
+      petBubble.status('info', '语音准备好了，点我再说一次', { delay: 3000 });
       return;
     }
     if (doc.available === false) {
-      petBubble.show('这个 DSH 版本没有语音转写服务，先打字吧');
-      petBubble.hide(3000);
+      petBubble.status('error', '这个 DSH 版本没有语音转写服务，先打字吧', { delay: 5000 });
       return;
     }
     if (doc.phase === 'failed') {
-      petBubble.show('语音模型下载失败，稍后再点我试试');
-      petBubble.hide(3000);
+      petBubble.status('error', '语音模型下载失败，稍后再点我试试', { delay: 5000 });
       return;
     }
     const pct = doc.totalBytes > 0 && doc.completedBytes >= 0
       ? Math.max(0, Math.min(100, Math.round((doc.completedBytes / doc.totalBytes) * 100)))
       : null;
-    petBubble.show(pct === null ? '语音模型准备中…' : `语音模型下载中 ${pct}%`);
+    petBubble.status('info', pct === null ? '语音模型准备中…' : `语音模型下载中 ${pct}%`, { delay: 0 });
   }
-  petBubble.show('语音模型还没下完，过一会儿再点我');
-  petBubble.hide(3000);
+  petBubble.status('info', '语音模型还没下完，过一会儿再点我', { delay: 5000 });
 }
 
 /**
@@ -157,12 +163,16 @@ const petTts = petTtsCreate({
   },
   onState: (kind) => { petBubble.setState(kind); },
   onIdle: () => { petBubble.hide(3000); },
+  onVoiceFallback: (actual) => {
+    // pre.54（B3④）：宿主回落到本机默认音色时明确提示，不静默换音色。
+    petBubble.status('info', actual
+      ? weT('所选音色不可用，已用系统默认：{name}', { name: actual })
+      : weT('所选音色不可用，已用系统默认音色'), { delay: 5000 });
+  },
   onError: (error) => {
-    // 失败只进气泡提示行（不弹窗）；不静默 —— 用户至少知道为什么没声音
+    // 失败只进**状态条**（不污染回答气泡、不弹窗）；不静默 —— 用户至少知道为什么没声音
     const hint = (error && error.hint) || '语音没出来';
-    petBubble.setState('idle');
-    petBubble.show(hint);
-    petBubble.hide(4000);
+    petBubble.status('error', hint, { delay: 5000 });
   },
 });
 
@@ -199,15 +209,13 @@ const petVoiceIn = petVoiceInputCreate({
         parse: 'none',
       });
     } catch {
-      petBubble.show('连不上宿主，稍后再试');
-      petBubble.hide(3000);
+      petBubble.status('error', '连不上宿主，稍后再试', { delay: 4000 });
       if (typeof onState === 'function') onState({ state: 'idle' });
       return;
     }
     const stream = res && res.response;
     if (!res || !res.ok || !stream || !stream.body) {
-      petBubble.show(res && res.status === 401 ? '模型 Key 无效，去设置里换一把' : '这次没答上来，再试一次');
-      petBubble.hide(3000);
+      petBubble.status('error', res && res.status === 401 ? '模型 Key 无效，去设置里换一把' : '这次没答上来，再试一次', { delay: 4000 });
       if (typeof onState === 'function') onState({ state: 'idle' });
       return;
     }
@@ -293,16 +301,15 @@ const petVoiceIn = petVoiceInputCreate({
       network: '网络不太顺，重试或直接打字',
     };
     const message = map[error && error.code] || '没听清，直接打字也行';
-    petBubble.show(message);
-    // asr-not-ready：自动触发模型下载并在气泡里显示进度，用户不用去 DSH 设置里找开关
+    // asr-not-ready：自动触发模型下载并在状态条里显示进度，用户不用去 DSH 设置里找开关
     if (error && error.code === 'asr-not-ready') {
+      petBubble.status('info', message, { delay: 0 });
       void ensureAsrReady();
       return;
     }
     // ⚠️ 失败**不要自动弹输入框**（用户会以为"点一下就变对话框"）。
     // 打字入口只从右键菜单「对话」进；这里只给一行提示 + 引导。
-    petBubble.show(`${message}（右键 → 对话）`);
-    petBubble.hide(4000);
+    petBubble.status('error', `${message}（右键 → 对话）`, { delay: 5000 });
   },
 });
 
@@ -358,7 +365,7 @@ function petChatWake() {
   // **任何一次唤醒都是 barge-in**：先把正在念的停掉，再决定是收起还是开麦。
   petSpeakStop();
   void petChatRefreshVoice();
-  if (petBubble.isVisible()) { petBubble.hide(0); petVoiceIn.stop(); return; }
+  if (petBubble.isVisible()) { petBubble.hide(0); petBubble.hideStatus(0); petVoiceIn.stop(); return; }
   petBubble.setState('listen');
   // 先看语音模型是否就绪；没就绪就**立刻**开始下载并在气泡里显示进度，
   // 不要等用户先撞一次 asr-not-ready 才被动触发（那之前会像"没反应"）。
@@ -371,7 +378,7 @@ function petChatWake() {
   })();
   void petVoiceIn.start().then((started) => {
     if (!started) return; // 失败分支已经由 onError 提示（回落打字）
-    petBubble.show('我在听…');
+    // 状态条已经由 setState('listen') 显示「🎤 在听」，这里不再往回答气泡里塞提示。
   });
 }
 

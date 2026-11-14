@@ -29,7 +29,7 @@ const SPEECH_STDERR = `[silencedetect @ 0000] silence_start: 0
 [silencedetect @ 0000] silence_start: 3.4 | silence_duration: 1.2`;
 
 /** 造一个录音器：devices 决定有没有麦克风，speech 决定 stderr。 */
-function recorder({ devices = DEVICES_STDERR, speech = SPEECH_STDERR, throws = false } = {}) {
+function recorder({ devices = DEVICES_STDERR, speech = SPEECH_STDERR, throws = false, stopped = false } = {}) {
   const calls = [];
   const api = recordMod.createVoiceRecorder({
     resolveFfmpeg: async () => 'ffmpeg.exe',
@@ -38,6 +38,7 @@ function recorder({ devices = DEVICES_STDERR, speech = SPEECH_STDERR, throws = f
       calls.push({ ff, args, timeout });
       if (throws) throw new Error('boom');
       if (args.includes('-list_devices')) return { code: 0, stderr: devices };
+      if (stopped) return { code: 1, stderr: '', stoppedByWatch: true, speechEnd: 1.4 };
       return { code: 0, stderr: speech };
     },
   });
@@ -77,6 +78,26 @@ function recorder({ devices = DEVICES_STDERR, speech = SPEECH_STDERR, throws = f
   const { api } = recorder({ speech: '[silencedetect @ 0000] silence_start: 0' });
   const result = await api.record();
   check('L4 全程静音 ⇒ no-speech', result.ok === false && result.code === 'no-speech', `code=${result.code}`);
+}
+
+/* L4b pre.54：SIGTERM 自动停机 code!=0，但 stoppedByWatch=true ⇒ 必须当成功 */
+{
+  const { api } = recorder({ stopped: true });
+  const result = await api.record();
+  check('L4b 自动停机（SIGTERM, code=1, stoppedByWatch）⇒ ok，speechEnd 用 result.speechEnd 兜底',
+    result.ok === true && result.speech && result.speech.auto === true
+      && Number(result.speech.speechEnd) === 1.4 && result.audioSeconds === 1.4,
+    JSON.stringify({ ok: result.ok, code: result.code, speech: result.speech, audioSeconds: result.audioSeconds }));
+}
+
+/* L4c pre.54：spawn 不能开管道（DSH 沙箱 EPERM 的根因）+ 停机必须走 SIGTERM */
+{
+  const src = readFileSync(join(ROOT, 'lib', 'voice', 'record.js'), 'utf8');
+  check('L4c record.js：stdio 不含 pipe，且自动停机用 kill(SIGTERM)',
+    /stdio:\s*\['ignore',\s*'ignore',/.test(src)
+      && !/stdio:\s*\[[^\]]*'pipe'/.test(src)
+      && /child\.kill\('SIGTERM'\)/.test(src),
+    'stdio=ignore / kill=SIGTERM');
 }
 
 /* L5 录音→转录→回答 全链路（前端用假 postRecord/postChat） */

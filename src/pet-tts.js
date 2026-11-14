@@ -98,6 +98,7 @@ function petTtsCreate(deps) {
   const onState = typeof options.onState === 'function' ? options.onState : () => {};
   const onError = typeof options.onError === 'function' ? options.onError : () => {};
   const onIdle = typeof options.onIdle === 'function' ? options.onIdle : () => {};
+  const onVoiceFallback = typeof options.onVoiceFallback === 'function' ? options.onVoiceFallback : () => {};
   const log = typeof options.log === 'function' ? options.log : () => {};
 
   let generation = 0;
@@ -106,6 +107,8 @@ function petTtsCreate(deps) {
   let playing = null;
   let prefetch = null;
   let disposed = false;
+  /** pre.54：音色回落只提示一次（每个实例），避免每句都弹状态条。 */
+  let voiceFallbackWarned = false;
 
   function revoke(url) {
     if (!url || !UrlApi || typeof UrlApi.revokeObjectURL !== 'function') return;
@@ -137,7 +140,19 @@ function petTtsCreate(deps) {
         } catch { /* 非 JSON 错误体 */ }
         return { error: { code: 'tts-failed', status: (res && res.status) || 0, hint: hint || '语音合成失败' } };
       }
+      // ⚠️ blob() 必须紧跟 apiFetch 同一个 try 调用窗（verify-api-client ①b 的判据）；
+      // 音色回落的响应头检查放在拿到 blob 之后，不隔断这层关系。
       blob = await res.response.blob();
+      try {
+        const headers = res.response.headers;
+        const fb = headers && typeof headers.get === 'function' ? headers.get('x-folia-tts-fallback') : '';
+        if (fb === '1' && !voiceFallbackWarned) {
+          voiceFallbackWarned = true;
+          let actual = '';
+          try { actual = decodeURIComponent(String(headers.get('x-folia-tts-voice') || '')); } catch { actual = ''; }
+          onVoiceFallback(actual || '');
+        }
+      } catch { /* 头读不到不影响播放 */ }
     } catch (error) {
       if (!res) return { error: { code: 'tts-network', hint: '连不上宿主，语音没出来' } };
       return { error: { code: 'tts-read-failed', hint: '读不到语音数据' } };

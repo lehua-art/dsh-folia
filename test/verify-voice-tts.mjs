@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { TTS_CATALOG } from '../lib/tts/catalog.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
@@ -145,9 +146,10 @@ const { registerPetChatRoutes, DEPS, OPTIONAL_DEPS } = petChatRoutes;
     runSapi: async () => ({ ok: false, error: 'voice-not-found: zh-CN-NoSuchNeural' }),
     runEdge: async () => ({ ok: false, error: 'voice-not-found: zh-CN-NoSuchNeural' }),
   });
-  check('② 明确指定的音色两条引擎都没有 ⇒ 失败 + attempts 两条（禁止默认音色静默成功）',
+  // pre.54：每个引擎先试用户音色、再试本引擎默认；两个引擎都没有才失败 ⇒ attempts 四条。
+  check('② 明确指定的音色两个引擎都没有（含各自默认）⇒ 失败 + attempts 四条',
     strict.ok === false && strict.code === 'tts-unavailable'
-      && strict.attempts.length === 2
+      && strict.attempts.length === 4
       && strict.attempts.every((item) => /voice-not-found/.test(item.error))
       && strict.requestedVoice === 'zh-CN-NoSuchNeural',
     `code=${strict.code} · attempts=${JSON.stringify(strict.attempts)}`);
@@ -180,8 +182,8 @@ if (process.platform !== 'win32') {
     `exit=${run.status} · engine=${doc && doc.engine} · bytes=${bytes} · riff=${riff}`
       + (run.status !== 0 ? ' · stderr=' + String(run.stderr || '').slice(0, 200) : ''));
 
-  // pre.46 修复 A 的真机面：明确指定一个不存在的音色 ⇒ 必须失败并回两条 attempts，
-  // 绝不静默用 Huihui 合成（这正是用户“设置里选了音色却听不到它”的根因）。
+  // pre.54（B3①）：明确指定一个不存在的音色 ⇒ **回落本机默认中文音色并成功**，
+  // 同时把 requestedVoice / actualVoice / fallback 带回（客户端据此提示“已用系统默认”）。
   const strictDir = mkdtempSync(join(TEST_HOME, 'strict-'));
   const strictReq = join(strictDir, 'req.json');
   const strictOut = join(strictDir, 'out.wav');
@@ -194,12 +196,15 @@ if (process.platform !== 'win32') {
   let strictDoc;
   try { strictDoc = JSON.parse(String(strictRun.stdout || '').trim().split('\n').pop()); } catch { strictDoc = null; }
   const strictBytes = (() => { try { return statSync(strictOut).size; } catch { return 0; } })();
-  check('③ 真机：明确指定不存在的音色 ⇒ exit 1 + 两条 voice-not-found + 不产出 WAV（不静默）',
-    strictRun.status === 1 && strictDoc && strictDoc.ok === false
-      && strictDoc.attempts.length === 2
-      && strictDoc.attempts.every((item) => /voice-not-found/.test(String(item.error || '')))
-      && strictBytes === 0,
-    `exit=${strictRun.status} · attempts=${JSON.stringify(strictDoc && strictDoc.attempts)} · bytes=${strictBytes}`);
+  check('③ 真机：不存在的音色 ⇒ 回落本机默认并成功（requestedVoice/actualVoice/fallback 都在）',
+    strictRun.status === 0 && strictDoc && strictDoc.ok === true
+      && strictDoc.requestedVoice === 'Microsoft DefinitlyNoSuchVoice Desktop'
+      && strictDoc.voice && strictDoc.voice !== strictDoc.requestedVoice
+      && strictDoc.fallback === true
+      && strictDoc.attempts.some((item) => /voice-not-found/.test(String(item.error || '')))
+      && strictBytes > 10240,
+    `exit=${strictRun.status} · voice=${strictDoc && strictDoc.voice} · fallback=${strictDoc && strictDoc.fallback}`
+      + ` · attempts=${JSON.stringify(strictDoc && strictDoc.attempts)} · bytes=${strictBytes}`);
 
   // pre.46 修复 A 的缓存面：同句在 sapi / edge 下必须写成两个缓存条目，第二次同引擎命中。
   {
@@ -274,11 +279,22 @@ function fakeTts() {
           ],
         };
       }
+      if (neural) {
+        // pre.54：请求了云端 neural 名 ⇒ 宿主回落本机默认 SAPI，并把 fallback 标记带回。
+        return {
+          ok: true, wav: makeWav(12000), engine: 'sapi',
+          voice: 'Microsoft Huihui Desktop', requestedVoice,
+          fallback: true, fallbackFrom: requestedVoice,
+          attempts: [{ engine: 'edge', voice: requestedVoice, error: 'voice-not-found: ' + requestedVoice }],
+          ms: 12, cached: false,
+        };
+      }
       return {
         ok: true, wav: makeWav(12000),
-        engine: neural ? 'edge' : 'sapi',
+        engine: 'sapi',
         voice: requestedVoice || 'Microsoft Huihui Desktop',
         requestedVoice,
+        fallback: false, fallbackFrom: '',
         attempts: [],
         ms: 12,
         cached: false,
@@ -286,13 +302,19 @@ function fakeTts() {
     },
     stop() { generation += 1; this.stopCalls += 1; return { ok: true, generation }; },
     status() { return { ok: true, ready: true, engines: ['sapi', 'edge'], generation }; },
+    async voices() {
+      return [
+        { engine: 'sapi', id: 'Microsoft Huihui Desktop', label: 'Microsoft Huihui Desktop', lang: 'zh-CN', gender: 'Female', usable: true },
+        { engine: 'sapi', id: 'Microsoft Zira Desktop', label: 'Microsoft Zira Desktop', lang: 'en-US', gender: 'Female', usable: false },
+      ];
+    },
     dispose() {},
   };
 }
 
 {
   const tts = fakeTts();
-  const host = await startHost({ petChat: { enabled: true, provider: 'ollama', voice: { name: 'zh-CN-XiaoxiaoNeural', muted: false } } }, tts);
+  const host = await startHost({ petChat: { enabled: true, provider: 'ollama', voice: { name: '', muted: false } } }, tts);
   try {
     const sapiVoice = encodeURIComponent('Microsoft Huihui Desktop');
     const ok = await fetch(`${host.base}/tts?text=${encodeURIComponent('测试')}&voice=${sapiVoice}&rate=0`);
@@ -304,43 +326,59 @@ function fakeTts() {
       `status=${ok.status} · bytes=${bytes.byteLength} · engine=${ok.headers.get('x-folia-tts-engine')}`
         + ` · requested=${decodeURIComponent(String(ok.headers.get('x-folia-tts-requested-voice') || ''))}`);
 
-    // pre.46 A：配置里的 neural 音色 ⇒ 响应头必须给出 requested / actual / engine / attempts。
-    const neural = await fetch(`${host.base}/tts?text=${encodeURIComponent('音色路由')}&rate=0`);
+    // pre.54 B3④：显式请求云端 neural 名 ⇒ 宿主回落本机默认，并回 requested/actual/fallback。
+    const neural = await fetch(`${host.base}/tts?text=${encodeURIComponent('音色路由')}&rate=0&voice=${encodeURIComponent('zh-CN-XiaoxiaoNeural')}`);
     await neural.arrayBuffer();
     const header = (name) => String(neural.headers.get(name) || '');
     let attemptsHeader = null;
     try { attemptsHeader = JSON.parse(decodeURIComponent(header('x-folia-tts-attempts'))); } catch { attemptsHeader = null; }
-    check('③ 配置 neural 音色 ⇒ X-Folia-TTS-Engine=edge、Voice/Requested=zh-CN-XiaoxiaoNeural、Attempts 可解析',
-      neural.status === 200 && header('x-folia-tts-engine') === 'edge'
-        && decodeURIComponent(header('x-folia-tts-voice')) === 'zh-CN-XiaoxiaoNeural'
+    check('③ 云端 neural 名 ⇒ 回落 SAPI，Voice/Requested 分开、Fallback=1、Attempts 可解析',
+      neural.status === 200 && header('x-folia-tts-engine') === 'sapi'
+        && decodeURIComponent(header('x-folia-tts-voice')) === 'Microsoft Huihui Desktop'
         && decodeURIComponent(header('x-folia-tts-requested-voice')) === 'zh-CN-XiaoxiaoNeural'
+        && header('x-folia-tts-fallback') === '1'
         && Array.isArray(attemptsHeader),
       `engine=${header('x-folia-tts-engine')} · actual=${decodeURIComponent(header('x-folia-tts-voice'))}`
-        + ` · requested=${decodeURIComponent(header('x-folia-tts-requested-voice'))} · attempts=${JSON.stringify(attemptsHeader)}`);
+        + ` · requested=${decodeURIComponent(header('x-folia-tts-requested-voice'))} · fallback=${header('x-folia-tts-fallback')}`);
 
     // 紧跟在一次成功合成之后取 state：它要给出“上一次实际用的音色/引擎”（failure 之后会被清空）。
     const state = await (await fetch(`${host.base}/tts/state`)).json();
-    check('④ GET /tts/state 回合成链、requested/actual/engine/attempts（不触发合成）',
+    check('④ GET /tts/state 回合成链、requested/actual/engine/fallback（不触发合成）',
       state.ok === true && Array.isArray(state.engines) && state.engines.includes('sapi')
         && state.engines.includes('edge') && state.voice && state.voice.muted === false
         && state.requestedVoice === 'zh-CN-XiaoxiaoNeural'
-        && state.actualVoice === 'zh-CN-XiaoxiaoNeural'
-        && state.engine === 'edge'
+        && state.actualVoice === 'Microsoft Huihui Desktop'
+        && state.engine === 'sapi' && state.fallback === true
         && Array.isArray(state.attempts),
       `engines=${(state.engines || []).join(',')} · requested=${state.requestedVoice}`
-        + ` · actual=${state.actualVoice} · engine=${state.engine}`);
+        + ` · actual=${state.actualVoice} · engine=${state.engine} · fallback=${state.fallback}`);
 
     const head = await fetch(`${host.base}/tts?text=${encodeURIComponent('测试')}`, { method: 'HEAD' });
     check('③ HEAD /pet-chat/tts 不合成、只回头（空体）',
       head.status === 200 && /audio\/wav/i.test(String(head.headers.get('content-type') || '')),
       `status=${head.status}`);
 
+    // pre.54（B3②/③）：本机音色清单 + 可下载目录。前端只认 usable=true。
+    const voicesDoc = await (await fetch(`${host.base}/tts/voices`)).json();
+    check('④ /tts/voices 回本机音色数组（含 usable，前端只列 true）',
+      voicesDoc.ok === true && Array.isArray(voicesDoc.voices)
+        && voicesDoc.voices.some((v) => v && v.id === 'Microsoft Huihui Desktop' && v.usable === true)
+        && voicesDoc.voices.some((v) => v && v.usable === false),
+      JSON.stringify(voicesDoc.voices));
+    const catalogDoc = await (await fetch(`${host.base}/tts/catalog`)).json();
+    check('④ /tts/catalog 列开源离线方案，且本版全部 available=false（不谎称已支持）',
+      catalogDoc.ok === true && Array.isArray(catalogDoc.items) && catalogDoc.items.length === TTS_CATALOG.length
+        && catalogDoc.items.every((it) => it.available === false && it.status === 'coming-soon')
+        && catalogDoc.items.some((it) => it.engine === 'piper')
+        && catalogDoc.items.every((it) => !/Neural$/.test(String(it.id || ''))),
+      JSON.stringify((catalogDoc.items || []).map((it) => it.id + ':' + it.available)));
+
     const empty = await fetch(`${host.base}/tts?text=`);
     const emptyDoc = await empty.json();
     check('③ 空 text ⇒ 400 bad-request（不触发合成）',
       empty.status === 400 && emptyDoc.code === 'bad-request', `status=${empty.status} code=${emptyDoc.code}`);
 
-    const fail = await fetch(`${host.base}/tts?text=${encodeURIComponent('失败文本')}`);
+    const fail = await fetch(`${host.base}/tts?text=${encodeURIComponent('失败文本')}&voice=${encodeURIComponent('zh-CN-XiaoxiaoNeural')}`);
     const failDoc = await fail.json();
     check('③ 合成失败 ⇒ 503 + tts-unavailable + attempts + requestedVoice（不静默）',
       fail.status === 503 && failDoc.code === 'tts-unavailable'
@@ -581,14 +619,23 @@ async function waitFor(fn, ms = 3000) {
     bubble.setState(state);
     seen.push(bubble.element.dataset.state);
   }
+  bubble.show('这是一句回答。');
+  bubble.status('error', '没找到麦克风 · 点此改用打字');
   const css = headChildren.map((node) => String(node.textContent || '')).join('\n');
-  check('⑦ 气泡三态：listen / think / speak 都落在 data-state 上',
+  check('⑦ 三态落在状态条上（bubble 的 data-state 同步保留给既有判据）',
     seen[0] === 'listen' && seen[1] === 'think' && seen[2] === 'speak' && seen[3] === 'idle',
     seen.join(' → '));
-  check('⑦ “说”时带简单波形（CSS 伪元素 + 动画；不弹窗、不加新组件）',
-    /we-pet-bubble\[data-state="speak"\]::after/.test(css)
-      && /@keyframes we-pet-bubble-wave/.test(css)
-      && /currentColor/.test(css),
+  check('⑦ pre.54 状态条与回答气泡是两个元素（提示不污染回答文本）',
+    bubble.statusElement && bubble.statusElement !== bubble.element
+      && bubble.text === '这是一句回答。'
+      && String(bubble.statusElement.textContent || '').includes('没找到麦克风'),
+    `answer=${bubble.text} · status=${bubble.statusElement && bubble.statusElement.textContent}`);
+  check('⑦ “说”时状态条带简单波形（CSS 伪元素 + 动画；回答气泡不再挂波形）',
+    /we-pet-status\[data-state="speak"\]::after/.test(css)
+      && /@keyframes we-pet-status-wave/.test(css)
+      && /we-pet-bubble\{[^}]*max-height:160px/.test(css)
+      && /border-radius:15px/.test(css)
+      && /transition:opacity 150ms/.test(css),
     `style 节点=${headChildren.length}`);
 }
 

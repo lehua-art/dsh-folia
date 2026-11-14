@@ -1,5 +1,45 @@
 # 变更记录（Changelog）
 
+### v4.26.0-pre.54（2026-11-14，**语音能用 + 音色库骨架 + 气泡重做**）
+
+> 合并交接 `pre54-55-merged-handoff.md`：pre.54（语音能用）+ pre.55（音色库/气泡）一个版本做完。
+> 硬约束：4 个 Edge neural **不打包**（云端音色，无本地模型/许可不允许再分发）；默认本机第一个
+> 可用中文音色（这台 `Microsoft Huihui Desktop`）；OneCore 503 先**不列**；提示/错误与回答分框；
+> 没接通的 Piper/sherpa/Melo **只写“即将支持”**。
+
+- **A 录音 no-device（保留工作区修复并补完）** — `lib/voice/record.js`
+  - `spawn` 的 `stdio` 改 `['ignore','ignore',fd]`（DSH 沙箱禁 pipe，pre.53 实测 EPERM ⇒ 恒 no-device）；
+  - 自动停机从写 stdin `q` 改为 `kill('SIGTERM')`（带 `child.pid` 守卫，过 `verify-child-kill`）；
+  - `record()`：`code!==0` 但 `stoppedByWatch===true` ⇒ 当成功；`speechEnd` 兜底；
+  - 真机探针：ffmpeg 已能启动（不再 `no-device`，安静环境返回 `no-speech`）；假引擎判据覆盖
+    `code=1 + stoppedByWatch → ok`。**真正对麦说 2 秒的 `{ok:true,text}` 需人工复测**（本机自动探针
+    无法让麦克风收到可识别语音，已如实标注，不写成“已验收”）。
+- **B 朗读出声 / 音色回落** — `lib/tts/tts-worker.cjs`、`lib/tts/tts.js`、`lib/settings-schema.js`
+  - 显式音色在某引擎不存在 ⇒ **同一引擎先用默认中文音色再试**，再换另一引擎；两个都没有才失败；
+    返回 `requestedVoice / actualVoice / engine / fallback / fallbackFrom / attempts`，
+    HTTP 头 `X-Folia-TTS-Fallback`，客户端状态条提示“所选音色不可用，已用系统默认”。
+  - 默认 `voice.name` 从云端 `zh-CN-XiaoxiaoNeural` 改为**空串**（宿主自动选本机第一个可用中文音色）；
+    旧档里的 neural 名读入时迁成空串。
+  - 新增 `GET /pet-chat/tts/voices`：枚举本机 SAPI 音色并**逐个试合成**（缓存 10 分钟，worker 内
+    2 秒左右）；本机实测 `Microsoft Huihui Desktop` usable=true，Zira/David usable=false（英文/未出声）。
+  - 真机合成：`voice='' → engine=sapi, voice=Microsoft Huihui Desktop, bytes=152120`；
+    不存在音色 → `fallback=true, voice=Huihui, attempts=[voice-not-found]`。
+- **C 音色库骨架（不谎称已支持）** — 新增 `lib/tts/catalog.js`、`GET /pet-chat/tts/catalog`
+  - 列 Piper（MIT）/sherpa-onnx（Apache-2.0）/MeloTTS（MIT）的名称、许可、体积与官方主页；
+    全部 `available:false, status:'coming-soon'`，**本版没有 Piper 合成，也没有下载按钮**。
+  - 页面只显示“可下载音色（即将支持）”；音色下拉只读 `/tts/voices` 的 `usable:true`。
+- **D/E 气泡重做** — `src/pet-bubble.js`、`src/pet-chat.js`
+  - **状态条与回答气泡分框**：`.we-pet-status` 独立、细、可点（3–6 秒淡出）；`.we-pet-bubble`
+    只放回答，关闭按钮/文字节点分离，长回答 `max-height:160px` 可滚，点击气泡收起。
+  - 三态落在状态条：🎤 在听（脉冲点）/ 💭 在想（省略号）/ 🔊 在说（四根音量条动画）；
+    错误/提示走 `status('error'|'info', …)`，不再塞进回答气泡。
+  - 样式：15px 圆角、半透明深色底 + 1px 轻描边、`max-width:320px`、13px/1.5、150ms 淡入淡出、
+    尾巴指向桌宠；`onVoiceFallback` 的提示不会被下一句“在说”立刻盖掉。
+- **F 下载音色**：catalog 已接；下载/合成未实现，界面**不显示下载按钮**、不写“已支持 Piper”。
+- **判据**：`verify-pet-voice` 10 通过（新增 L4b/L4c）；`verify-voice-tts` 37 通过（新增回落/voices/
+  catalog/气泡分框）；`verify-pet-settings` 17 通过（新增 ①g/⑩ 禁硬编码 + 迁移）；`verify-pet-bubble`
+  9 通过（新结构/滚动/圆角）；全量 `run-audit` **114 通过 / 51 退役 / 0 失败**。
+
 ### v4.26.0-pre.53（2026-11-13，**「朗读回答」开关收进智能大肥鱼页 + 桌宠页音效改名**）
 
 > 用户口径：「为什么不把 设置→桌宠：☑声音（不勾就不会出声）放到 设置→左侧「智能大肥鱼」里面」

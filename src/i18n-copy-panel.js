@@ -409,6 +409,23 @@ const WE_I18N_EN_PANEL = {
   // pre.49：桌宠页控制行最右侧的语音助手开关（点开才挂载设置块）。
   "智能大肥鱼": "Smart Chubby Fish",
   "桌宠语音助手": "Pet voice assistant",
+  // pre.54：气泡状态条三态 + 音色回落提示。
+  "在听": "Listening",
+  "在想": "Thinking",
+  "在说": "Speaking",
+  "所选音色不可用，已用系统默认：{name}": "Selected voice is unavailable — using the system default: {name}",
+  "所选音色不可用，已用系统默认音色": "Selected voice is unavailable — using the system default voice",
+  // pre.54：本机音色来源 / 可下载目录骨架。
+  "（系统音色，离线）": "(system voice, offline)",
+  "（本机未检测到，将回落）": "(not detected on this machine; will fall back)",
+  "只列本机真实可用的系统音色（离线）；云端音色不随包分发。":
+    "Only voices actually available on this machine are listed (offline); cloud voices are not bundled.",
+  "正在读取本机音色…": "Reading local voices…",
+  "未检测到可用音色（系统 TTS 不可用）": "No usable voice detected (system TTS unavailable)",
+  "可下载音色（即将支持）": "Downloadable voices (coming soon)",
+  "即将支持": "coming soon",
+  "这些是开源离线方案，本版只接目录；合成接通后才会出现在上面的音色下拉里。":
+    "These are open-source offline options; this version only wires the catalogue. They will appear in the voice list above once synthesis is connected.",
   // pre.53：朗读开关 + 音色（voice.muted / voice.name）；桌宠页的音效标签同步改名。
   "音色": "Voice",
   "🔊 朗读回答": "🔊 Read replies aloud",
@@ -416,10 +433,6 @@ const WE_I18N_EN_PANEL = {
     "When off, replies are shown as subtitles only (no speech synthesis); takes effect as soon as you save.",
   "填 Key、起名字、选音色，再决定要不要朗读。主动搭话与记忆是固定策略；停止/恢复对它说一声就行。":
     "Fill in the key, give it a name, pick a voice, then decide whether it should read replies aloud. Proactive chat and memory are fixed behaviours; just tell it to stop or resume.",
-  "晓晓（女声，默认）": "Xiaoxiao (female, default)",
-  "晓伊（女声，活泼）": "Xiaoyi (female, lively)",
-  "云希（男声）": "Yunxi (male)",
-  "云健（男声，沉稳）": "Yunjian (male, calm)",
   "已保存（朗读已关闭）": "Saved (read-aloud is off)",
   "桌宠音效": "Pet sound effects",
   "音效音量": "SFX volume",

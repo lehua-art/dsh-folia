@@ -64,7 +64,7 @@ const makeBubble = (anchorRef) => {
   const anchorRef = { value: { left: 100, top: 300, width: 80, height: 80, scale: 1 } };
   const { bubble } = makeBubble(anchorRef);
   bubble.show('你好');
-  const style = bubble.element.style;
+  const style = bubble.wrapElement.style;
   check('① 锚定：水平居中于桌宠、垂直贴在头顶',
     style.left === '140px' && style.top === '292px' && /translate\(-50%, -100%\)/.test(style.transform),
     `left=${style.left} top=${style.top} transform=${style.transform}`);
@@ -77,7 +77,7 @@ const makeBubble = (anchorRef) => {
   bubble.show('你好');
   anchorRef.value = { left: 400, top: 500, width: 120, height: 120, scale: 1.5 };
   bubble.place();
-  const style = bubble.element.style;
+  const style = bubble.wrapElement.style;
   check('② 跟随：锚点变化后位置与缩放都跟着变',
     style.left === '460px' && style.top === '492px' && /scale\(1\.5\)/.test(style.transform),
     `left=${style.left} top=${style.top} transform=${style.transform}`);
@@ -91,7 +91,7 @@ const makeBubble = (anchorRef) => {
   bubble.append('好');
   bubble.append('呀');
   check('③ 逐字：append 累加且元素文本同步',
-    bubble.text === '你好呀' && bubble.element.textContent === '你好呀',
+    bubble.text === '你好呀' && bubble.textElement.textContent === '你好呀',
     `text=${bubble.text}`);
 }
 
@@ -118,20 +118,20 @@ const makeBubble = (anchorRef) => {
   bubble.show('第二句');
   check('⑤ 隐藏后再点必能重开（关键回归）',
     hidden === false && bubble.isVisible() === true
-      && bubble.element.style.opacity === '1' && bubble.element.textContent === '第二句',
-    `隐藏=${!hidden} · 重开后=${bubble.isVisible()} text=${bubble.element.textContent}`);
+      && bubble.element.style.opacity === '1' && bubble.text === '第二句',
+    `隐藏=${!hidden} · 重开后=${bubble.isVisible()} text=${bubble.text}`);
 }
 
-/* ⑥ 超长：最多 6 行（CSS 行钳制），不把桌宠挡住 */
+/* ⑥ 超长：160px 内滚动、320px 宽上限、15px 圆角（样式在注入 CSS 里） */
 {
   const anchorRef = { value: { left: 0, top: 0, width: 10, height: 10, scale: 1 } };
   const { bubble } = makeBubble(anchorRef);
   bubble.show('长'.repeat(400));
-  const style = bubble.element.style;
-  check('⑥ 超长换行：最多 6 行（line-clamp）+ 不撑破宽度',
-    String(style.webkitLineClamp) === '6' && style.display === '-webkit-box'
-      && style.maxWidth === '260px' && String(style.overflow) === 'hidden',
-    `lineClamp=${style.webkitLineClamp} · maxWidth=${style.maxWidth}`);
+  check('⑥ 超长回答：max-height 160px 可滚、宽度 ≤320px、圆角 15px',
+    /max-height:160px/.test(source) && /overflow-y:auto/.test(source)
+      && /max-width:320px/.test(source) && /border-radius:15px/.test(source)
+      && bubble.BUBBLE_MAX_HEIGHT === 160 && bubble.BUBBLE_MAX_WIDTH === 320,
+    `maxHeight=${bubble.BUBBLE_MAX_HEIGHT} · maxWidth=${bubble.BUBBLE_MAX_WIDTH}`);
 }
 
 
@@ -143,7 +143,7 @@ const makeBubble = (anchorRef) => {
   anchorRef.value = { left: 300, top: 400, width: 80, height: 80, scale: 1 };
   const frame = rafQueue.find(Boolean);
   if (frame) frame();
-  const style = bubble.element.style;
+  const style = bubble.wrapElement.style;
   check('⑦ P3 跟随：锚点变化后下一帧位置更新（±1px）',
     Math.abs(Number(style.left.replace('px','')) - 340) <= 1 && Math.abs(Number(style.top.replace('px','')) - 392) <= 1,
     `left=${style.left} top=${style.top}`);
@@ -172,6 +172,19 @@ const makeBubble = (anchorRef) => {
   if (close) close.handlers ? close.handlers.click() : null;
   bubble.show('再开');
   check('⑨ P5 关闭按钮存在 + 重开', ok && bubble.isVisible() === true, `按钮=${ok} · 重开=${bubble.isVisible()}`);
+}
+
+/* ⑩ pre.54：状态条可独立出现（没有回答气泡时也要锚在桌宠头顶） */
+{
+  const anchorRef = { value: { left: 100, top: 300, width: 80, height: 80, scale: 1 } };
+  const { bubble } = makeBubble(anchorRef);
+  bubble.status('error', '没找到麦克风 · 点此改用打字', { delay: 0 });
+  const style = bubble.wrapElement.style;
+  check('⑩ 状态条独立出现时也锚定在桌宠头顶，且回答气泡保持为空',
+    style.left === '140px' && style.top === '292px'
+      && bubble.text === ''
+      && String(bubble.statusElement.textContent || '').includes('没找到麦克风'),
+    `left=${style.left} top=${style.top} status=${bubble.statusElement.textContent}`);
 }
 
 let failed = 0;
