@@ -93,33 +93,65 @@ const petBubble = petBubbleCreate({
  * 然后轮询 /pet-chat/asr 把下载进度显示在气泡里。
  * 这样用户装完插件直接说话就行，不需要去 DSH 设置里找「语音输入」开关。
  */
-async function ensureAsrReady() {
+function petAsrEta(seconds) {
+  const n = Number(seconds);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  if (n < 60) return `约 ${Math.max(1, Math.round(n))} 秒`;
+  return `约 ${Math.ceil(n / 60)} 分钟`;
+}
+
+/**
+ * ASR 自举：POST 只负责触发（立刻返回），随后轮询 `/asr` 显示百分比 + ETA + 重试。
+ * 下载完成前点桌宠不会再“看起来没反应”：状态条会一直显示下载进度。
+ * @param {() => boolean} [isCancelled] 用户再次点桌宠收起时放弃本轮等待
+ */
+async function ensureAsrReady(isCancelled) {
+  const cancelled = typeof isCancelled === 'function' ? isCancelled : () => false;
   petBubble.setState('think');
   try {
     await apiPostJson('/pet-chat/asr', {}, { parse: 'always' });
   } catch { /* 触发失败也要继续轮询看状态 */ }
-  for (let i = 0; i < 240; i += 1) {
-    await new Promise((resolve) => { setTimeout(resolve, 1500); });
+  for (let i = 0; i < 3600; i += 1) {
+    if (cancelled()) return false;
+    await new Promise((resolve) => { setTimeout(resolve, i === 0 ? 400 : 1200); });
+    if (cancelled()) return false;
     const resp = await apiJson('/pet-chat/asr', { parse: 'always' }).catch(() => null);
     const doc = (resp && resp.data) || {};
     if (doc.ready) {
-      petBubble.status('info', '语音准备好了，点我再说一次', { delay: 3000 });
-      return;
+      petBubble.status('info', '语音准备好了', { delay: 1500 });
+      return true;
     }
     if (doc.available === false) {
       petBubble.status('error', '这个 DSH 版本没有语音转写服务，先打字吧', { delay: 5000 });
-      return;
+      return false;
     }
     if (doc.phase === 'failed') {
-      petBubble.status('error', '语音模型下载失败，稍后再点我试试', { delay: 5000 });
-      return;
+      const why = String(doc.lastError || doc.message || '下载失败').slice(0, 80);
+      petBubble.status('error', `语音模型下载失败：${why} · 点桌宠重试`, { delay: 8000 });
+      return false;
     }
     const pct = doc.totalBytes > 0 && doc.completedBytes >= 0
       ? Math.max(0, Math.min(100, Math.round((doc.completedBytes / doc.totalBytes) * 100)))
       : null;
-    petBubble.status('info', pct === null ? '语音模型准备中…' : `语音模型下载中 ${pct}%`, { delay: 0 });
+    const eta = petAsrEta(doc.etaSeconds);
+    const attempt = Number(doc.attempt) > 0 && Number(doc.retries) > 1
+      ? ` · 第 ${Number(doc.attempt)}/${Number(doc.retries)} 次`
+      : '';
+    let line;
+    if (doc.phase === 'downloading' && pct !== null) {
+      line = `正在准备语音识别 ${pct}%${eta ? ' · ' + eta : ''}${attempt}`;
+    } else if (doc.phase === 'loading') {
+      line = '正在准备语音识别…';
+    } else {
+      line = '正在准备语音识别…';
+    }
+    if (doc.retryAt && Number(doc.retryAt) > Date.now()) {
+      line = '下载中断，正在自动重试…' + (pct !== null ? `（${pct}%）` : '');
+    }
+    petBubble.status('info', line, { delay: 0 });
   }
   petBubble.status('info', '语音模型还没下完，过一会儿再点我', { delay: 5000 });
+  return false;
 }
 
 /**
@@ -157,17 +189,18 @@ const petTts = petTtsCreate({
   Audio: typeof Audio === 'function' ? Audio : null,
   URL: typeof URL === 'function' ? URL : null,
   getVoice: () => petChatVoice,
-  onSentence: (text) => {
+  // 回答气泡只由 SSE 增量维护（完整回答、长文可滚）；逐句朗读只切“说”态，
+  // 不再把气泡内容替换成当前一句（否则长回答永远只剩最后一句）。
+  onSentence: () => {
     petBubble.setState('speak');
-    petBubble.show(text);
   },
   onState: (kind) => { petBubble.setState(kind); },
   onIdle: () => { petBubble.hide(3000); },
   onVoiceFallback: (actual) => {
     // pre.54（B3④）：宿主回落到本机默认音色时明确提示，不静默换音色。
     petBubble.status('info', actual
-      ? weT('所选音色不可用，已用系统默认：{name}', { name: actual })
-      : weT('所选音色不可用，已用系统默认音色'), { delay: 5000 });
+      ? weT('所选音色不可用，已自动换用：{name}', { name: actual })
+      : weT('所选音色不可用，已自动换用可用音色'), { delay: 5000 });
   },
   onError: (error) => {
     // 失败只进**状态条**（不污染回答气泡、不弹窗）；不静默 —— 用户至少知道为什么没声音
@@ -192,6 +225,8 @@ const petVoiceIn = petVoiceInputCreate({
   postChat: async (text, onState) => {
     // “想”态：模型还在回，先不给“说”的波形
     petBubble.setState('think');
+    // 新一轮回答从空气泡开始（否则会追加到上一轮回答的尾部）。
+    petBubble.clear();
     // ⚠️ apiFetch 的返回值里**已经带上了原始 Response**（字段 `response`）。
     //    上一版误写成 `res.body.getReader()`：res 是 { ok, status, data, response }，
     //    res.body 恒为 undefined ⇒ 抛 TypeError ⇒ 读流代码一行都跑不到
@@ -268,9 +303,9 @@ const petVoiceIn = petVoiceInputCreate({
             const cut = piece.indexOf('","emotion"');
             if (cut >= 0) { piece = piece.slice(0, cut); replyDone = true; }
             if (piece) {
-              // 朗读没开始时先照旧把文字逐字填进气泡；一开始播，气泡字幕就交给
-              // petTts 的 onSentence（逐句显示），避免两路同时写同一个气泡。
-              if (queuedSpeech === 0) petBubble.append(piece);
+              // 气泡始终显示**完整回答**（逐段追加，长文在 160px 内滚动）；
+              // 朗读只负责切句与“说”状态，不再改写气泡内容。
+              petBubble.append(piece);
               speakBuffer += piece;
               const split = petTtsSentences(speakBuffer);
               for (const sentence of split.sentences) enqueueSpeech(sentence);
@@ -360,26 +395,34 @@ function petChatSay(text) {
   if (!petSpeak(line)) petBubble.hide(3000);
 }
 
+/** 每次点桌宠递增；收起/重开时让旧的 ASR 等待自动作废。 */
+let petChatWakeSeq = 0;
+
 /** 点桌宠：气泡可见 ⇒ 立刻收起（同时停止录音与朗读）；否则唤醒并开始听。 */
 function petChatWake() {
   // **任何一次唤醒都是 barge-in**：先把正在念的停掉，再决定是收起还是开麦。
   petSpeakStop();
   void petChatRefreshVoice();
+  const seq = ++petChatWakeSeq;
   if (petBubble.isVisible()) { petBubble.hide(0); petBubble.hideStatus(0); petVoiceIn.stop(); return; }
-  petBubble.setState('listen');
   // 先看语音模型是否就绪；没就绪就**立刻**开始下载并在气泡里显示进度，
   // 不要等用户先撞一次 asr-not-ready 才被动触发（那之前会像"没反应"）。
   void (async () => {
     const resp = await apiJson('/pet-chat/asr', { parse: 'always' }).catch(() => null);
     const doc = (resp && resp.data) || {};
-    if (doc.ready) return;
-    if (doc.available === false) return; // 该 DSH 没转写服务，交给 record 的失败分支提示
-    await ensureAsrReady();
-  })();
-  void petVoiceIn.start().then((started) => {
+    if (!doc.ready) {
+      if (doc.available === false) {
+        petBubble.status('error', '这个 DSH 版本没有语音转写服务，先打字吧', { delay: 5000 });
+        return;
+      }
+      const ready = await ensureAsrReady(() => seq !== petChatWakeSeq);
+      if (!ready || seq !== petChatWakeSeq) return;
+    }
+    petBubble.setState('listen');
+    const started = await petVoiceIn.start();
     if (!started) return; // 失败分支已经由 onError 提示（回落打字）
     // 状态条已经由 setState('listen') 显示「🎤 在听」，这里不再往回答气泡里塞提示。
-  });
+  })();
 }
 
 /**

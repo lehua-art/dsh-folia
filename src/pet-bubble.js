@@ -149,6 +149,14 @@ function petBubbleCreate(deps) {
     return wrap;
   }
 
+  /** 长回答追加时保持在底部（用户往上翻时不强拉，交给浏览器滚动条）。 */
+  function followBottom() {
+    try {
+      if (!el) return;
+      if (Number(el.scrollHeight) > Number(el.clientHeight)) el.scrollTop = el.scrollHeight;
+    } catch { /* 假 DOM / 旧浏览器没有 scroll 属性 */ }
+  }
+
   function cancelFade() {
     if (fadeTimer != null) { clearTimer(fadeTimer); fadeTimer = null; }
   }
@@ -167,6 +175,7 @@ function petBubbleCreate(deps) {
     if (textEl) textEl.textContent = text;
     if (el) { el.dataset.visible = '1'; el.style.opacity = '1'; }
     visible = true;
+    followBottom();
     place();
     startFollow();
   }
@@ -179,8 +188,22 @@ function petBubbleCreate(deps) {
     if (textEl) textEl.textContent = text;
     if (el) { el.dataset.visible = '1'; el.style.opacity = '1'; }
     visible = true;
+    followBottom();
     place();
     startFollow();
+  }
+
+  /** 清空回答文本（新一轮回答开始前用；不改变状态条）。 */
+  function clear() {
+    if (!ensure()) return;
+    cancelFade();
+    text = '';
+    if (textEl) textEl.textContent = '';
+    if (el) {
+      el.style.opacity = '0';
+      if (el.dataset) el.dataset.visible = '0';
+    }
+    visible = false;
   }
 
   /** 隐藏回答气泡；带 delay 时先挂着，到点淡出（朗读结束后 +3s 用这个）。 */
@@ -280,7 +303,7 @@ function petBubbleCreate(deps) {
   }
 
   return {
-    show, append, hide, setState, status, hideStatus, place, isVisible, dispose,
+    show, append, clear, hide, setState, status, hideStatus, place, isVisible, dispose,
     get following() { return rafId != null; },
     get text() { return text; },
     get element() { return el; },
