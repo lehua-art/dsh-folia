@@ -93,33 +93,65 @@ const petBubble = petBubbleCreate({
  * 然后轮询 /pet-chat/asr 把下载进度显示在气泡里。
  * 这样用户装完插件直接说话就行，不需要去 DSH 设置里找「语音输入」开关。
  */
-async function ensureAsrReady() {
+function petAsrEta(seconds) {
+  const n = Number(seconds);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  if (n < 60) return `约 ${Math.max(1, Math.round(n))} 秒`;
+  return `约 ${Math.ceil(n / 60)} 分钟`;
+}
+
+/**
+ * ASR 自举：POST 只负责触发（立刻返回），随后轮询 `/asr` 显示百分比 + ETA + 重试。
+ * 下载完成前点桌宠不会再“看起来没反应”：状态条会一直显示下载进度。
+ * @param {() => boolean} [isCancelled] 用户再次点桌宠收起时放弃本轮等待
+ */
+async function ensureAsrReady(isCancelled) {
+  const cancelled = typeof isCancelled === 'function' ? isCancelled : () => false;
   petBubble.setState('think');
   try {
     await apiPostJson('/pet-chat/asr', {}, { parse: 'always' });
   } catch { /* 触发失败也要继续轮询看状态 */ }
-  for (let i = 0; i < 240; i += 1) {
-    await new Promise((resolve) => { setTimeout(resolve, 1500); });
+  for (let i = 0; i < 3600; i += 1) {
+    if (cancelled()) return false;
+    await new Promise((resolve) => { setTimeout(resolve, i === 0 ? 400 : 1200); });
+    if (cancelled()) return false;
     const resp = await apiJson('/pet-chat/asr', { parse: 'always' }).catch(() => null);
     const doc = (resp && resp.data) || {};
     if (doc.ready) {
-      petBubble.status('info', '语音准备好了，点我再说一次', { delay: 3000 });
-      return;
+      petBubble.status('info', '语音准备好了', { delay: 1500 });
+      return true;
     }
     if (doc.available === false) {
       petBubble.status('error', '这个 DSH 版本没有语音转写服务，先打字吧', { delay: 5000 });
-      return;
+      return false;
     }
     if (doc.phase === 'failed') {
-      petBubble.status('error', '语音模型下载失败，稍后再点我试试', { delay: 5000 });
-      return;
+      const why = String(doc.lastError || doc.message || '下载失败').slice(0, 80);
+      petBubble.status('error', `语音模型下载失败：${why} · 点桌宠重试`, { delay: 8000 });
+      return false;
     }
     const pct = doc.totalBytes > 0 && doc.completedBytes >= 0
       ? Math.max(0, Math.min(100, Math.round((doc.completedBytes / doc.totalBytes) * 100)))
       : null;
-    petBubble.status('info', pct === null ? '语音模型准备中…' : `语音模型下载中 ${pct}%`, { delay: 0 });
+    const eta = petAsrEta(doc.etaSeconds);
+    const attempt = Number(doc.attempt) > 0 && Number(doc.retries) > 1
+      ? ` · 第 ${Number(doc.attempt)}/${Number(doc.retries)} 次`
+      : '';
+    let line;
+    if (doc.phase === 'downloading' && pct !== null) {
+      line = `正在准备语音识别 ${pct}%${eta ? ' · ' + eta : ''}${attempt}`;
+    } else if (doc.phase === 'loading') {
+      line = '正在准备语音识别…';
+    } else {
+      line = '正在准备语音识别…';
+    }
+    if (doc.retryAt && Number(doc.retryAt) > Date.now()) {
+      line = '下载中断，正在自动重试…' + (pct !== null ? `（${pct}%）` : '');
+    }
+    petBubble.status('info', line, { delay: 0 });
   }
   petBubble.status('info', '语音模型还没下完，过一会儿再点我', { delay: 5000 });
+  return false;
 }
 
 /**
@@ -128,7 +160,7 @@ async function ensureAsrReady() {
  * 懒加载：挂载时与每次唤醒时各刷一次（设置面板改完立刻生效，不用重启）。
  * 读不到就保持“不静音”，宁可多念一句，也不要让用户以为朗读坏了。
  */
-let petChatVoice = { name: '', muted: false, rate: 0 };
+let petChatVoice = { name: '', muted: false, rate: 0, continuous: true };
 async function petChatRefreshVoice() {
   try {
     const resp = await apiJson('/pet-chat/state', { parse: 'always' });
@@ -138,10 +170,86 @@ async function petChatRefreshVoice() {
         name: String(doc.voice.name || ''),
         muted: doc.voice.muted === true,
         rate: Number.isFinite(Number(doc.voice.rate)) ? Number(doc.voice.rate) : 0,
+        continuous: doc.voice.continuous !== false,
       };
     }
   } catch { /* 读不到就用默认（不静音） */ }
+  petChatContinuousEnabled = petChatVoice.continuous !== false;
+  if (petChatContinuousEnabled === false) petChatContinuousStop('', true);
   return petChatVoice;
+}
+
+/* ── 连续对话（半双工）：朗读结束 → 0.6s 自动开麦；静默 2 轮 / 连续 8 轮退出 ── */
+const PET_CHAT_CONTINUOUS_DELAY_MS = 650;
+const PET_CHAT_CONTINUOUS_MAX_ROUNDS = 8;
+const PET_CHAT_CONTINUOUS_MAX_SILENT = 2;
+let petChatContinuousEnabled = true;
+let petChatContinuousActive = false;
+let petChatContinuousPaused = false;
+let petChatContinuousRounds = 0;
+let petChatContinuousSilent = 0;
+let petChatContinuousTimer = null;
+let petChatVoiceAbort = false;
+
+function petChatContinuousClearTimer() {
+  if (petChatContinuousTimer != null) {
+    clearTimeout(petChatContinuousTimer);
+    petChatContinuousTimer = null;
+  }
+}
+
+function petChatContinuousStart() {
+  if (petChatContinuousEnabled !== true) return false;
+  petChatContinuousClearTimer();
+  petChatContinuousActive = true;
+  petChatContinuousPaused = false;
+  if (petChatContinuousRounds === 0) petChatContinuousSilent = 0;
+  petBubble.setContinuous(true);
+  return true;
+}
+
+function petChatContinuousStop(reason, silent) {
+  petChatContinuousClearTimer();
+  petChatContinuousActive = false;
+  petChatContinuousPaused = true;
+  petChatContinuousRounds = 0;
+  petChatContinuousSilent = 0;
+  petBubble.setContinuous(false);
+  if (reason && silent !== true) petBubble.status('info', reason, { delay: 3500 });
+}
+
+/** 朗读结束或一次静默后，延迟 0.65s 自动开麦。 */
+function petChatContinuousArm(delayMs) {
+  if (!petChatContinuousEnabled || !petChatContinuousActive || petChatContinuousPaused) return;
+  if (petChatContinuousRounds >= PET_CHAT_CONTINUOUS_MAX_ROUNDS) {
+    petChatContinuousStop(weT('连续对话结束：已连续 {n} 轮', { n: PET_CHAT_CONTINUOUS_MAX_ROUNDS }));
+    return;
+  }
+  petChatContinuousClearTimer();
+  petChatShowContinuousListening();
+  petChatContinuousTimer = setTimeout(() => {
+    petChatContinuousTimer = null;
+    if (!petChatContinuousEnabled || !petChatContinuousActive || petChatContinuousPaused) return;
+    petChatVoiceAbort = false;
+    void petVoiceIn.start();
+  }, Math.max(500, Math.min(800, Number(delayMs) || PET_CHAT_CONTINUOUS_DELAY_MS)));
+}
+
+/** 一次语音轮次失败：静默累计 2 轮退出，其它错误立即停。 */
+function petChatContinuousVoiceError(code) {
+  if (!petChatContinuousActive || petChatContinuousPaused) return;
+  const silent = ['no-speech', 'unclear', 'too-quiet'].includes(String(code || ''));
+  if (!silent) {
+    petChatContinuousStop(weT('连续对话已停止：{e}', { e: code || '麦克风不可用' }));
+    return;
+  }
+  petChatContinuousSilent += 1;
+  if (petChatContinuousSilent >= PET_CHAT_CONTINUOUS_MAX_SILENT) {
+    petChatContinuousStop(weT('连续对话结束：连续 {n} 轮没听到', { n: PET_CHAT_CONTINUOUS_MAX_SILENT }));
+    return;
+  }
+  petBubble.status('info', weT('没听到，再说一次（{n}/{m}）', { n: petChatContinuousSilent, m: PET_CHAT_CONTINUOUS_MAX_SILENT }), { delay: 1800 });
+  petChatContinuousArm(500);
 }
 
 /**
@@ -157,17 +265,22 @@ const petTts = petTtsCreate({
   Audio: typeof Audio === 'function' ? Audio : null,
   URL: typeof URL === 'function' ? URL : null,
   getVoice: () => petChatVoice,
-  onSentence: (text) => {
+  // 回答气泡只由 SSE 增量维护（完整回答、长文可滚）；逐句朗读只切“说”态，
+  // 不再把气泡内容替换成当前一句（否则长回答永远只剩最后一句）。
+  onSentence: () => {
     petBubble.setState('speak');
-    petBubble.show(text);
   },
   onState: (kind) => { petBubble.setState(kind); },
-  onIdle: () => { petBubble.hide(3000); },
+  onIdle: () => {
+    petBubble.hide(3000);
+    // 一轮回答朗读完 → 自动进入下一轮听；停止/静音/已暂停时不进。
+    if (petChatContinuousActive && !petChatContinuousPaused) petChatContinuousArm();
+  },
   onVoiceFallback: (actual) => {
     // pre.54（B3④）：宿主回落到本机默认音色时明确提示，不静默换音色。
     petBubble.status('info', actual
-      ? weT('所选音色不可用，已用系统默认：{name}', { name: actual })
-      : weT('所选音色不可用，已用系统默认音色'), { delay: 5000 });
+      ? weT('所选音色不可用，已自动换用：{name}', { name: actual })
+      : weT('所选音色不可用，已自动换用可用音色'), { delay: 5000 });
   },
   onError: (error) => {
     // 失败只进**状态条**（不污染回答气泡、不弹窗）；不静默 —— 用户至少知道为什么没声音
@@ -190,8 +303,15 @@ const petVoiceIn = petVoiceInputCreate({
     return (res && res.data) || {};
   },
   postChat: async (text, onState) => {
+    if (petChatVoiceAbort) {
+      if (typeof onState === 'function') onState({ state: 'idle' });
+      return;
+    }
+    petChatContinuousClearTimer();
     // “想”态：模型还在回，先不给“说”的波形
     petBubble.setState('think');
+    // 新一轮回答从空气泡开始（否则会追加到上一轮回答的尾部）。
+    petBubble.clear();
     // ⚠️ apiFetch 的返回值里**已经带上了原始 Response**（字段 `response`）。
     //    上一版误写成 `res.body.getReader()`：res 是 { ok, status, data, response }，
     //    res.body 恒为 undefined ⇒ 抛 TypeError ⇒ 读流代码一行都跑不到
@@ -268,9 +388,9 @@ const petVoiceIn = petVoiceInputCreate({
             const cut = piece.indexOf('","emotion"');
             if (cut >= 0) { piece = piece.slice(0, cut); replyDone = true; }
             if (piece) {
-              // 朗读没开始时先照旧把文字逐字填进气泡；一开始播，气泡字幕就交给
-              // petTts 的 onSentence（逐句显示），避免两路同时写同一个气泡。
-              if (queuedSpeech === 0) petBubble.append(piece);
+              // 气泡始终显示**完整回答**（逐段追加，长文在 160px 内滚动）；
+              // 朗读只负责切句与“说”状态，不再改写气泡内容。
+              petBubble.append(piece);
               speakBuffer += piece;
               const split = petTtsSentences(speakBuffer);
               for (const sentence of split.sentences) enqueueSpeech(sentence);
@@ -283,6 +403,17 @@ const petVoiceIn = petVoiceInputCreate({
     // 最后一段没有句末标点也要念（比如“我也在”）
     enqueueSpeech(speakBuffer);
     if (typeof onState === 'function') onState({ state: 'idle' });
+    // 本轮成功：进入/继续连续对话；有朗读时等 onIdle 再开麦，没朗读时直接起计时。
+    if (petChatContinuousEnabled) {
+      if (!petChatContinuousActive) {
+        petChatContinuousRounds = 0;
+        petChatContinuousSilent = 0;
+        petChatContinuousStart();
+      }
+      petChatContinuousRounds += 1;
+      petChatContinuousSilent = 0;
+      if (!queuedSpeech) petChatContinuousArm();
+    }
     // 没有任何一句进入朗读（静音 / 合成不可用）⇒ 沿用旧行为：整段文字 3 秒后淡出。
     // 有朗读时由 petTts 的 onIdle 在念完后淡出（按句字幕不会被提前清掉）。
     if (!queuedSpeech) petBubble.hide(3000);
@@ -293,14 +424,22 @@ const petVoiceIn = petVoiceInputCreate({
     // 失败一律回落打字：只给一行提示，不弹错误框
     const map = {
       'no-device': '没找到麦克风，先打字吧',
+      'no-signal': '麦克风没收到声音：检查静音或输入设备',
+      'too-quiet': '太小声了，离麦克风近一点（30–50cm）再说一次',
       'ffmpeg-missing': '缺少 ffmpeg，先打字吧',
       'unsupported-platform': '这个系统不支持桌面录音，用浏览器打开 DSH 才能语音',
       'asr-not-ready': '语音模型还没下载，我来准备一下…',
+      unclear: '没听清，再说一次或直接打字',
       timeout: '这次没听清，再说一次或直接打字',
       'no-speech': '没听到声音，再说一次或直接打字',
       network: '网络不太顺，重试或直接打字',
     };
     const message = map[error && error.code] || '没听清，直接打字也行';
+    // 连续对话里：静默/太小声累计 2 轮才退出；其它设备错误立即停。
+    if (petChatContinuousActive) {
+      petChatContinuousVoiceError(error && error.code);
+      return;
+    }
     // asr-not-ready：自动触发模型下载并在状态条里显示进度，用户不用去 DSH 设置里找开关
     if (error && error.code === 'asr-not-ready') {
       petBubble.status('info', message, { delay: 0 });
@@ -335,6 +474,7 @@ function petChatOpenTyping(extra = {}) {
     box.remove();
     // 新的一轮 = 先掐掉上一轮还在念的（与录音入口同一条 barge-in 纪律）
     petSpeakStop();
+    petChatVoiceAbort = false;
     // 打字说的文本**不上气泡**（P4 同理：气泡只显示助手的回答）。
     // 这里只把状态切成"思考中"，等 SSE 的 delta 逐字填进来。
     petBubble.setState('think');
@@ -360,26 +500,53 @@ function petChatSay(text) {
   if (!petSpeak(line)) petBubble.hide(3000);
 }
 
-/** 点桌宠：气泡可见 ⇒ 立刻收起（同时停止录音与朗读）；否则唤醒并开始听。 */
+/** 每次点桌宠递增；收起/重开时让旧的 ASR 等待自动作废。 */
+let petChatWakeSeq = 0;
+
+/** 点桌宠：连续对话中 ⇒ 暂停；气泡可见 ⇒ 收起；否则唤醒并开始听。 */
 function petChatWake() {
   // **任何一次唤醒都是 barge-in**：先把正在念的停掉，再决定是收起还是开麦。
   petSpeakStop();
   void petChatRefreshVoice();
+  const seq = ++petChatWakeSeq;
+  if (petChatContinuousActive || petChatContinuousTimer != null) {
+    petChatVoiceAbort = true;
+    petChatContinuousStop(weT('连续对话已暂停，点桌宠继续'), false);
+    petBubble.hide(0);
+    petBubble.hideStatus(0);
+    petVoiceIn.stop();
+    return;
+  }
   if (petBubble.isVisible()) { petBubble.hide(0); petBubble.hideStatus(0); petVoiceIn.stop(); return; }
-  petBubble.setState('listen');
+  petChatContinuousPaused = false;
+  petChatVoiceAbort = false;
+  petChatContinuousClearTimer();
   // 先看语音模型是否就绪；没就绪就**立刻**开始下载并在气泡里显示进度，
   // 不要等用户先撞一次 asr-not-ready 才被动触发（那之前会像"没反应"）。
   void (async () => {
     const resp = await apiJson('/pet-chat/asr', { parse: 'always' }).catch(() => null);
     const doc = (resp && resp.data) || {};
-    if (doc.ready) return;
-    if (doc.available === false) return; // 该 DSH 没转写服务，交给 record 的失败分支提示
-    await ensureAsrReady();
-  })();
-  void petVoiceIn.start().then((started) => {
+    if (!doc.ready) {
+      if (doc.available === false) {
+        petBubble.status('error', '这个 DSH 版本没有语音转写服务，先打字吧', { delay: 5000 });
+        return;
+      }
+      const ready = await ensureAsrReady(() => seq !== petChatWakeSeq);
+      if (!ready || seq !== petChatWakeSeq) return;
+    }
+    if (seq !== petChatWakeSeq) return;
+    petChatVoiceAbort = false;
+    petBubble.setState('listen');
+    const started = await petVoiceIn.start();
     if (!started) return; // 失败分支已经由 onError 提示（回落打字）
     // 状态条已经由 setState('listen') 显示「🎤 在听」，这里不再往回答气泡里塞提示。
-  });
+  })();
+}
+
+/** 连续对话等待/开麦时的状态条：独立成函数，确保补丁位置在 ASR 就绪判断之后。 */
+function petChatShowContinuousListening() {
+  petBubble.setContinuous(true);
+  petBubble.setState('listen');
 }
 
 /**
