@@ -206,6 +206,8 @@ function PetChatSettings() {
   const [voiceCfg, setVoiceCfg] = React.useState({ sapiEnabled: false, enabledEngine: 'edge', continuous: true });
   const [setupBusy, setSetupBusy] = React.useState(false);
   const [setupReport, setSetupReport] = React.useState(null);
+  // pre.62：录音组件（ffmpeg）供给状态；下载中时轮询 /voice/diagnose 显示百分比。
+  const [ffmpeg, setFfmpeg] = React.useState(null);
   const [enabledEngine, setEnabledEngine] = React.useState('edge');
   const [checkedEngine, setCheckedEngine] = React.useState('edge');
   const [enableBusy, setEnableBusy] = React.useState('');
@@ -276,6 +278,13 @@ function PetChatSettings() {
     }
   }, []);
 
+  const loadFfmpeg = React.useCallback(async () => {
+    const resp = await apiJson('/pet-chat/voice/diagnose?light=1', { parse: 'always' }).catch(() => null);
+    const doc = unwrapPetChat(resp);
+    const st = doc && doc.steps && doc.steps.ffmpeg;
+    if (st && st.phase) setFfmpeg(st);
+  }, []);
+
   const loadProviders = React.useCallback(async () => {
     const resp = await apiJson('/pet-chat/voice/providers', { parse: 'always' }).catch(() => null);
     const doc = unwrapPetChat(resp);
@@ -318,7 +327,15 @@ function PetChatSettings() {
 
   React.useEffect(() => { void load(); }, [load]);
   React.useEffect(() => { void loadVoices(); }, [loadVoices]);
+  React.useEffect(() => { void loadFfmpeg(); }, [loadFfmpeg]);
   React.useEffect(() => { void loadProviders(); }, [loadProviders]);
+  // 下载期间 800ms 刷一次进度；ready/failed/idle 不再轮询。
+  React.useEffect(() => {
+    const phase = ffmpeg && ffmpeg.phase;
+    if (phase !== 'preparing' && phase !== 'download') return undefined;
+    const timer = setInterval(() => { void loadFfmpeg(); }, 800);
+    return () => clearInterval(timer);
+  }, [ffmpeg && ffmpeg.phase, loadFfmpeg]);
   React.useEffect(() => {
     void (async () => {
       const resp = await apiJson('/pet-chat/work-plugins', { parse: 'always' }).catch(() => null);
@@ -535,7 +552,9 @@ function PetChatSettings() {
   const runSetup = async () => {
     setSetupBusy(true);
     setSetupReport(null);
-    setNote({ ok: true, text: weT('正在检测麦克风、预热语音识别与合成…（首次会下载模型）') });
+    setNote({ ok: true, text: weT('正在准备录音组件、检测麦克风、预热语音识别与合成…（首次会下载）') });
+    // setup 是长请求（ffmpeg 70MB / ASR 模型）：并行轮询 diagnose 把 ffmpeg 进度显示出来。
+    const progressTimer = setInterval(() => { void loadFfmpeg(); }, 800);
     try {
       const resp = await apiPostJson('/pet-chat/voice/setup', {
         sapiEnabled: voiceCfg.sapiEnabled === true,
@@ -543,17 +562,22 @@ function PetChatSettings() {
       }, { parse: 'always' });
       const doc = unwrapPetChat(resp);
       setSetupReport(doc && Array.isArray(doc.steps) ? doc : null);
+      if (doc && doc.ffmpeg) setFfmpeg(doc.ffmpeg);
       if (doc && doc.voice) {
         setDraft((prev) => ({ ...prev, voice: Object.assign({}, prev.voice || {}, { name: doc.voice, sapiEnabled: voiceCfg.sapiEnabled === true }) }));
       }
       await loadVoices();
+      await loadFfmpeg();
       setNote({
         ok: Boolean(doc && doc.ok),
-        text: doc && doc.ok ? weT('一键启用完成：能听、能说。') : weT('一键启用有未通过项，见下面的三步报告。'),
+        text: doc && doc.ok ? weT('一键启用完成：能听、能说。') : weT('一键启用有未通过项，见下面的报告。'),
       });
     } catch (e) {
       setNote({ ok: false, text: weT('一键启用失败：{msg}', { msg: (e && e.message) || '' }) });
-    } finally { setSetupBusy(false); }
+    } finally {
+      clearInterval(progressTimer);
+      setSetupBusy(false);
+    }
   };
 
   const row = (key, label, node) => React.createElement('label', {
@@ -573,6 +597,27 @@ function PetChatSettings() {
     || ['openai', 'azure', 'elevenlabs'].includes(v.engine));
 
   const child = [];
+  const ffmpegPhase = (ffmpeg && ffmpeg.phase) || 'idle';
+  const ffmpegPct = Math.max(0, Math.min(100, Number(ffmpeg && ffmpeg.percent) || 0));
+  const ffmpegReady = ffmpegPhase === 'ready' || Boolean(ffmpeg && ffmpeg.ok === true);
+  const ffmpegErr = String((ffmpeg && ffmpeg.error) || '').slice(0, 80) || '未知错误';
+  const ffmpegText = ffmpegReady
+    ? weT('语音运行环境：ffmpeg 已就绪')
+    : (ffmpegPhase === 'failed'
+      ? weT('语音运行环境：准备失败（{err}）', { err: ffmpegErr })
+      : (ffmpegPhase === 'preparing' || ffmpegPhase === 'download'
+        ? weT('正在准备录音组件 {pct}%', { pct: ffmpegPct })
+        : weT('语音运行环境：尚未准备')));
+  const ffmpegRow = (key) => React.createElement('div', {
+    key, className: 'we-picker__hint', style: { display: 'flex', gap: '6px', alignItems: 'center', margin: '4px 0', color: ffmpegPhase === 'failed' ? '#f87171' : undefined },
+  },
+  React.createElement('span', null, ffmpegText),
+  !ffmpegReady && !setupBusy
+    ? React.createElement('button', {
+      type: 'button', className: 'we-picker__btn', style: { fontSize: '11px', padding: '1px 8px' },
+      onClick: runSetup,
+    }, weT('重试'))
+    : null);
   child.push(React.createElement('div', { key: 'title', style: { fontWeight: 600, margin: '14px 0 4px', fontSize: '13px' } }, weT('智能大肥鱼')));
   child.push(React.createElement('div', { key: 'hint', className: 'we-picker__hint', style: { margin: '0 0 6px' } },
     weT('填 Key、起名字、选音色，再决定要不要朗读。主动搭话与记忆是固定策略；停止/恢复对它说一声就行。')));
@@ -617,6 +662,7 @@ function PetChatSettings() {
       })),
       React.createElement('div', { key: 'assistant-note', className: 'we-picker__hint', style: { margin: '6px 0' } },
         weT('填完 Key 后去「朗读与音色」点一次「一键启用语音」，麦克风、音色和识别模型会自动准备好。')),
+      ffmpegRow('ffmpeg-env'),
     ));
     child.push(React.createElement(MicTestBlock, { key: 'mic-test' }));
   }
@@ -648,12 +694,13 @@ function PetChatSettings() {
       key: 'continuous-hint', className: 'we-picker__hint', style: { margin: '0 0 6px' },
     }, weT('默认开启：朗读结束后约 0.6 秒自动开麦；静默 2 轮或连续 8 轮自动退出，点桌宠可暂停。')));
 
+    voicePage.push(ffmpegRow('ffmpeg-voice'));
     voicePage.push(React.createElement('div', { key: 'setup', style: { display: 'flex', gap: '8px', alignItems: 'center', margin: '6px 0' } },
       React.createElement('button', {
         type: 'button', className: 'we-picker__btn', disabled: setupBusy || busy, onClick: runSetup,
       }, setupBusy ? weT('正在启用…') : weT('一键启用语音')),
       React.createElement('span', { className: 'we-picker__hint', style: { fontSize: '11px' } },
-        weT('自动选麦克风、选音色、预热 ASR/TTS。'))));
+        weT('自动准备 ffmpeg、选麦克风、选音色、预热 ASR/TTS。'))));
     if (setupReport && Array.isArray(setupReport.steps)) {
       voicePage.push(React.createElement('div', {
         key: 'setup-report', style: {

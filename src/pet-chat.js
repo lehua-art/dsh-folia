@@ -299,8 +299,21 @@ const petVoiceIn = petVoiceInputCreate({
   // barge-in：**一开录就先停朗读**（判据 verify-voice-tts 断言这个顺序）
   onBeforeRecord: () => { petSpeakStop(); },
   postRecord: async () => {
-    const res = await apiPostJson('/pet-chat/record', { language: 'zh' }, { parse: 'always' });
-    return (res && res.data) || {};
+    // pre.62：ffmpeg 不在包里，首次点麦可能在下载。宿主回 ffmpeg-preparing+percent；
+    // 这里在状态条显示进度并自动重试 /record（下载在宿主后台继续），不显示“没听到声音”。
+    for (let attempt = 0; attempt < 180; attempt += 1) {
+      const res = await apiPostJson('/pet-chat/record', { language: 'zh' }, { parse: 'always' });
+      const doc = (res && res.data) || {};
+      if (doc.code === 'ffmpeg-preparing') {
+        const pct = Math.max(0, Math.min(100, Number(doc.percent) || 0));
+        petBubble.status('info', weT('正在准备录音组件 {pct}%', { pct }), { delay: 0 });
+        await new Promise((resolve) => { setTimeout(resolve, 1000); });
+        continue;
+      }
+      petBubble.hideStatus(0);
+      return doc;
+    }
+    return { ok: false, code: 'ffmpeg-preparing', hint: weT('录音组件还在准备，稍后再点我') };
   },
   postChat: async (text, onState) => {
     if (petChatVoiceAbort) {
@@ -427,6 +440,8 @@ const petVoiceIn = petVoiceInputCreate({
       'no-signal': '麦克风没收到声音：检查静音或输入设备',
       'too-quiet': '太小声了，离麦克风近一点（30–50cm）再说一次',
       'ffmpeg-missing': '缺少 ffmpeg，先打字吧',
+      'ffmpeg-preparing': '录音组件还在准备，稍后再点我',
+      'ffmpeg-failed': '录音组件准备失败，去「智能大肥鱼 → 朗读与音色」点重试',
       'unsupported-platform': '这个系统不支持桌面录音，用浏览器打开 DSH 才能语音',
       'asr-not-ready': '语音模型还没下载，我来准备一下…',
       unclear: '没听清，再说一次或直接打字',

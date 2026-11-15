@@ -189,6 +189,17 @@ try {
       && Array.isArray(diagnose.body.providers) && diagnose.body.providers.length === 6
       && typeof diagnose.body.microphone.selected === 'string',
     `mic=${diagnose.body.microphone && diagnose.body.microphone.selected} · asr=${diagnose.body.asr && diagnose.body.asr.phase}`);
+  check('④ pre.62 /voice/diagnose 的 ffmpeg 带 phase/percent/path（下载进度可读）',
+    diagnose.body.steps && diagnose.body.steps.ffmpeg
+      && diagnose.body.steps.ffmpeg.phase === 'ready'
+      && diagnose.body.steps.ffmpeg.percent === 100
+      && Boolean(diagnose.body.steps.ffmpeg.path),
+    JSON.stringify(diagnose.body.steps && diagnose.body.steps.ffmpeg));
+  const light = await getJson('/voice/diagnose?light=1');
+  check('④ pre.62 diagnose?light=1 只回 ffmpeg 进度（下载轮询不枚举麦克风/合成音色）',
+    light.status === 200 && light.body.ffmpeg && light.body.ffmpeg.phase === 'ready'
+      && light.body.steps && light.body.steps.ffmpeg && !light.body.steps.tts,
+    JSON.stringify(light.body));
 
   const ttsAudio = await fetch(base + '/tts?text=' + encodeURIComponent('你好'));
   const bytes = new Uint8Array(await ttsAudio.arrayBuffer());
@@ -199,12 +210,75 @@ try {
 
   const setup = await postJson('/voice/setup', { dryRun: true, allowDownload: false });
   const labels = (setup.body.steps || []).map((step) => step.label);
-  check('⑤ /voice/setup 回三步报告（听得见 / 说得出 / 失败项）',
-    setup.status === 200 && eq(labels, ['听得见', '说得出', '失败项'])
+  check('⑤ /voice/setup 回四步报告（语音组件 / 听得见 / 说得出 / 失败项）',
+    setup.status === 200 && eq(labels, ['语音组件', '听得见', '说得出', '失败项'])
+      && setup.body.ffmpeg && setup.body.ffmpeg.phase === 'ready'
       && setup.body.spoke === true && Array.isArray(setup.body.failed),
-    JSON.stringify({ labels, heard: setup.body.heard, spoke: setup.body.spoke, failed: setup.body.failed }));
+    JSON.stringify({ labels, ffmpeg: setup.body.ffmpeg, heard: setup.body.heard, spoke: setup.body.spoke, failed: setup.body.failed }));
 } finally {
   server.close();
+}
+
+/* ⑤a pre.62：defaultResolveFfmpeg 缺文件时真的调注入的 ensure（不是只看 PATH） */
+{
+  const homeBefore = process.env.USERPROFILE;
+  const appBefore = process.env.APPDATA;
+  const envBefore = process.env.DSH_FOLIA_FFMPEG;
+  const tmp = mkdtempSync(join(tmpdir(), 'folia-ffmpeg-empty-'));
+  process.env.USERPROFILE = tmp;
+  process.env.APPDATA = tmp;
+  delete process.env.DSH_FOLIA_FFMPEG;
+  const { setFfmpegProvisioner, defaultResolveFfmpeg } = await import('../lib/voice/record.js');
+  let ensureCalls = 0;
+  setFfmpegProvisioner({
+    ensure: async () => { ensureCalls += 1; return { ok: true, phase: 'ready', path: 'C:\\fake\\ffmpeg.exe', percent: 100 }; },
+    status: () => ({ ok: true, phase: 'ready', path: 'C:\\fake\\ffmpeg.exe', percent: 100 }),
+  });
+  try {
+    const got = await defaultResolveFfmpeg();
+    check('⑤a defaultResolveFfmpeg 本地/PATH 都没有 ⇒ 触发 ensure 并返回下载路径',
+      ensureCalls === 1 && got === 'C:\\fake\\ffmpeg.exe', `calls=${ensureCalls} got=${got}`);
+  } finally {
+    setFfmpegProvisioner(null);
+    if (homeBefore === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = homeBefore;
+    if (appBefore === undefined) delete process.env.APPDATA; else process.env.APPDATA = appBefore;
+    if (envBefore === undefined) delete process.env.DSH_FOLIA_FFMPEG; else process.env.DSH_FOLIA_FFMPEG = envBefore;
+  }
+}
+
+/* ⑤b pre.62：ffmpeg 未就绪时 /record 立即回 202 + ffmpeg-preparing + percent，不拖到下载完 */
+{
+  const routes2 = [];
+  const host2 = { register: (route) => { routes2.push(route); return () => {}; }, status: () => ({}) };
+  registerPetChatRoutes(host2, {
+    disposers: [], base: '/folia', log: () => {},
+    readSettings: () => ({ petChat: { voice: { name: '', muted: false, sapiEnabled: false } } }),
+    speechToText: undefined, tts: fakeTts,
+    ffmpegEnsure: async () => ({ ok: false, phase: 'download', percent: 42 }),
+    ffmpegStatus: () => ({ ok: false, phase: 'download', percent: 42, downloaded: 42, total: 100 }),
+  });
+  const route2 = routes2.find((item) => String(item.path).endsWith('/pet-chat'));
+  const server2 = createServer((req, res) => route2.handler(req, res));
+  await new Promise((resolveP) => server2.listen(0, '127.0.0.1', resolveP));
+  const base2 = `http://127.0.0.1:${server2.address().port}/folia/pet-chat`;
+  try {
+    const rec = await fetch(base2 + '/record', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    });
+    const doc = await rec.json();
+    check('⑤b ffmpeg 未就绪 ⇒ /record 202 + ffmpeg-preparing + percent（客户端显示进度并自动重试）',
+      rec.status === 202 && doc.ok === false && doc.code === 'ffmpeg-preparing' && doc.percent === 42,
+      JSON.stringify({ status: rec.status, code: doc.code, percent: doc.percent }));
+    const chatSrc = readFileSync(join(ROOT, 'src', 'pet-chat.js'), 'utf8');
+    check('⑤c 客户端收到 ffmpeg-preparing 时走「正在准备录音组件 x%」并自动重试 /record',
+      /doc\.code === 'ffmpeg-preparing'/.test(chatSrc)
+        && /正在准备录音组件 \{pct\}%/.test(chatSrc)
+        && /continue;/.test(chatSrc));
+  } finally {
+    server2.close();
+    const { setFfmpegProvisioner } = await import('../lib/voice/record.js');
+    setFfmpegProvisioner(null);
+  }
 }
 
 /* ⑥ 设置页三分页 + 六张需 Key 渠道卡 */
@@ -224,10 +298,12 @@ try {
     panel.includes("weT('优点')") && panel.includes("weT('怎么用')")
       && panel.includes('assistantVoiceCard') && panel.includes('status:'),
     'assistantVoiceCard');
-  check('⑥ 一键启用按钮 + 三步报告渲染都在',
+  check('⑥ 一键启用按钮 + 四步报告渲染都在',
     panel.includes("weT('一键启用语音')") && panel.includes('setupReport')
-      && panel.includes("weT('🔊 朗读回答')"),
-    'one-click + report');
+      && panel.includes("weT('🔊 朗读回答')")
+      && panel.includes('语音运行环境')
+      && panel.includes('正在准备录音组件 {pct}%'),
+    'one-click + report + ffmpeg progress');
 }
 
 /* ⑦ SIGTERM 后的 speechEnd 兜底 */

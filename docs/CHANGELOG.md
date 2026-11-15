@@ -1,5 +1,43 @@
 # 变更记录（Changelog）
 
+### v4.26.0-pre.62（2026-11-15，**语音运行环境自动准备：ffmpeg 不进包、首次使用懒下载**）
+
+> 用户口径：ffmpeg 不打包（体积/许可/三平台），改首次使用自动下载；先站点镜像、再上游；
+> sha256 校验；`/record` 前先 ensure 并回 `ffmpeg-preparing+percent`；`/voice/setup` 加 ffmpeg 步骤；
+> 界面显示「正在准备录音组件 x%」，不要显示“没听到声音”。
+
+- **`lib/media/transcode.js`**
+  - 新增共享 `ffmpegState`（`phase/percent/downloaded/total/error/path/source`）与
+    `ensureFfmpeg()` / `ffmpegStatus()`；下载进度写进同一份状态。
+  - 下载顺序：**站点镜像 zip（`folia-5ve.pages.dev/media/ffmpeg/v1/ffmpeg-win64.zip` + `.sha256`，
+    tar 解压、校验 PE 头）→ npmmirror → GitHub**；镜像 404/校验失败/解压失败静默回落，
+    不阻断上游。三方任一 sha256 不匹配都丢弃，不执行未校验二进制。
+  - 本地已有 `~/.dsh-folia/ffmpeg/ffmpeg.exe` ⇒ 直接 ready，不重复下载；并发 ensure 去重，
+    `/record` 每秒重试不会把 percent 重置成 0。
+- **`lib/voice/record.js`**
+  - `defaultResolveFfmpeg` 本地/PATH 都没有时调用注入的 `ensure`（`ensure:false` 只做只读探测）。
+  - 新增 `setFfmpegProvisioner` / `ffmpegProvisionStatus` / `ensureFfmpegStatus` / `ensureFfmpegNow`；
+    真实下载由内核供给器完成，单测/独立脚本没有注入时退回本地路径。
+- **`lib/routes/pet-chat.js` + `lib/index.js` + `lib/route-registry.js`**
+  - 内核把 `transcodeKit.ensureFfmpeg/ffmpegStatus` 注入 pet-chat。
+  - `POST /record`：ffmpeg 未就绪 ⇒ **202 + `{code:'ffmpeg-preparing', phase, percent}`**；
+    客户端显示「正在准备录音组件 x%」并每秒重试 `/record`，就绪后自动录；失败码 `ffmpeg-failed`。
+  - `GET /voice/diagnose` 的 `steps.ffmpeg` 带 `phase/percent/downloaded/total/error/path`；
+    `?light=1` 只回 ffmpeg（下载轮询不做麦克风枚举/音色合成）。
+  - `POST /voice/setup` 增加第 0 步「语音组件」：就绪 / 下载中 x% / 失败（可重试）；ffmpeg 未就绪时
+    「听得见」明确 `ok:false`，不再假装能听。
+- **`src/panel-tabs-assistant.js` / `src/pet-chat.js` / `src/i18n-copy-panel.js`**
+  - 助手页与「朗读与音色」页各一行「语音运行环境」：已就绪 / 正在准备 x% / 失败（原因 + 重试）。
+  - 点桌宠若还在下载：状态条显示「正在准备录音组件 x%」，不再落成“没听到声音”。
+  - 一键启用报告从三步变四步（语音组件 / 听得见 / 说得出 / 失败项）。
+- **实测**
+  - 空目录真实下载：`preparing → 0..99% → ready`，30.9s，81,114,624 B，
+    源 `registry.npmmirror.com/.../ffmpeg-win32-x64`；站点镜像本地 zip 用例解压后 26,214,400 B 可用。
+  - 空目录 `/record` 首次：`202 {"code":"ffmpeg-preparing","percent":0,"phase":"preparing"}`；
+    `/voice/diagnose?light=1` 随后 `ready, 100%, downloaded=81114624`。
+  - 判据：`voice-setup-check` 34 通过；`verify-pet-voice` / `verify-voice-tts` / `verify-pet-settings`
+    全绿；全量 `run-audit` 以实测为准（目标 0 失败）。
+
 ### v4.26.0-pre.54（2026-11-14，**语音能用 + 音色库骨架 + 气泡重做**）
 
 > 合并交接 `pre54-55-merged-handoff.md`：pre.54（语音能用）+ pre.55（音色库/气泡）一个版本做完。
