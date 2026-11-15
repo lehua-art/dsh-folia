@@ -68,8 +68,8 @@ function recorder({ devices = DEVICES_STDERR, speech = SPEECH_STDERR, throws = f
   await api.record({ maxMs: 15000 });
   const recordCall = calls.find((item) => item.args.includes('-af'));
   const tIndex = recordCall.args.indexOf('-t');
-  check('L3 15s 上限（-t 与 maxMs 一致）',
-    Boolean(recordCall) && Number(recordCall.args[tIndex + 1]) >= 15 && recordCall.timeout > 15000,
+check('L3 上限：-t 不超过 maxMs+2（窗口固定，不 kill 避免 0 字节）',
+  Boolean(recordCall) && Number(recordCall.args[tIndex + 1]) > 0 && Number(recordCall.args[tIndex + 1]) <= 17,
     `-t=${recordCall && recordCall.args[tIndex + 1]} · timeout=${recordCall && recordCall.timeout}`);
 }
 
@@ -77,7 +77,7 @@ function recorder({ devices = DEVICES_STDERR, speech = SPEECH_STDERR, throws = f
 {
   const { api } = recorder({ speech: '[silencedetect @ 0000] silence_start: 0' });
   const result = await api.record();
-  check('L4 全程静音 ⇒ no-speech', result.ok === false && result.code === 'no-speech', `code=${result.code}`);
+  check('L4 全程静音：录制成功（交给路由判空）', result.ok === true && Boolean(result.audioPath), `ok=${result.ok}`);
 }
 
 /* L4b pre.54：SIGTERM 自动停机 code!=0，但 stoppedByWatch=true ⇒ 必须当成功 */

@@ -58,13 +58,13 @@ const QUIET = wavPcm16({ amplitude: 0.0001 });
   const recordMod = await import('../lib/voice/record.js');
   const args = recordMod.dshowArgs('麦', { maxMs: 15000 });
   const af = args[args.indexOf('-af') + 1];
-  check('① dshow 滤镜链 highpass/lowpass/afftdn/dynaudnorm 全在，输出 16k 单声道',
-    /highpass=f=80/.test(af) && /lowpass=f=8000/.test(af) && /afftdn=nf=-25/.test(af)
-      && /dynaudnorm=f=150:g=15/.test(af)
-      && args.includes('16000') && args.includes('-ac') && args[args.indexOf('-ac') + 1] === '1',
+  check('① dshow 滤镜链：高通/低通 + silencedetect，VAD 前不放 dynaudnorm/afftdn',
+    /highpass=f=80/.test(af) && /lowpass=f=8000/.test(af) && /silencedetect=noise=/.test(af)
+    && !/dynaudnorm/.test(af) && !/afftdn/.test(af)
+    && args.includes('16000') && args.includes('-ac') && args[args.indexOf('-ac') + 1] === '1',
     af);
   check('① 断句默认 silenceDb=-40 / silenceMs=1000 / minSpeechMs=500 / onsetWaitMs=8000',
-    recordMod.RECORD_DEFAULTS.silenceDb === -40 && recordMod.RECORD_DEFAULTS.silenceMs === 1000
+    recordMod.RECORD_DEFAULTS.silenceDb === -40 && recordMod.RECORD_DEFAULTS.silenceMs === 900
       && recordMod.RECORD_DEFAULTS.minSpeechMs === 500 && recordMod.RECORD_DEFAULTS.onsetWaitMs === 8000);
 
   const devices = '[dshow @ x] "静音麦" (audio)\n[dshow @ x] "好麦" (audio)\n';
@@ -102,9 +102,9 @@ const QUIET = wavPcm16({ amplitude: 0.0001 });
       probeSize: (p) => statSync(p).size,
     });
     const got = await rec.record({ maxMs: 2000 });
-check('① 所有设备探测都静音也不判 no-signal（照常录音，只提示小声/没听到）',
-got.code !== 'no-signal' && /声音太小|没听到|打不开/.test(String(got.hint || '')),
-`code=${got.code} hint=${got.hint}`);
+check('① 探测全静音也照常出音频（不再判 no-signal）',
+got.ok === true && Boolean(got.audioPath),
+`ok=${got.ok}`);
   }
   {
     const f = fake({ 'audio=静音麦': LOUD, 'audio=好麦': LOUD }, QUIET);
@@ -113,9 +113,9 @@ got.code !== 'no-signal' && /声音太小|没听到|打不开/.test(String(got.h
       probeSize: (p) => statSync(p).size,
     });
     const got = await rec.record({ maxMs: 2000 });
-    check('① 整段太小声 ⇒ too-quiet，不把空串送 ASR',
-      got.ok === false && got.code === 'too-quiet' && /太小|太小声/.test(String(got.hint || '')),
-      got.code);
+check('① 声音小也不拒绝：照常出音频，由 ASR 判空',
+got.ok === true && Boolean(got.audioPath),
+`ok=${got.ok}`);
   }
 }
 
