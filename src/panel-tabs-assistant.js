@@ -618,6 +618,7 @@ function PetChatSettings() {
       React.createElement('div', { key: 'assistant-note', className: 'we-picker__hint', style: { margin: '6px 0' } },
         weT('填完 Key 后去「朗读与音色」点一次「一键启用语音」，麦克风、音色和识别模型会自动准备好。')),
     ));
+    child.push(React.createElement(MicTestBlock, { key: 'mic-test' }));
   }
 
   if (tab === 'voice') {
@@ -947,6 +948,44 @@ function PetChatSettings() {
   ));
 
   return React.createElement('div', { id: 'we-pet-chat-settings', style: { ...PET_STYLE.card, marginTop: '10px' } }, child);
+}
+
+/**
+ * 麦克风测试：录 3 秒 → 直接播回给用户。
+ * 用途：让用户自己确认“到底是没说话，还是插件没录到”。
+ */
+function MicTestBlock() {
+  const [state, setState] = React.useState({ text: '', busy: false, ok: null });
+  const run = async () => {
+    setState({ text: weT('正在录音 3 秒…对着麦说话'), busy: true, ok: null });
+    try {
+      const resp = await apiFetch('/pet-chat/voice/mic-test', { parse: false, cache: 'no-store' });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        setState({ text: weT('没录到：') + (body.hint || body.code || resp.status), busy: false, ok: false });
+        return;
+      }
+      const blob = await resp.blob();
+      const bytes = Number(resp.headers.get('X-Folia-Mic-Bytes') || blob.size || 0);
+      const rms = resp.headers.get('X-Folia-Mic-Rms') || '';
+      const url = URL.createObjectURL(blob);
+      try {
+        const audio = new Audio(url);
+        audio.onended = () => { try { URL.revokeObjectURL(url); } catch { /* ignore */ } };
+        await audio.play();
+      } catch { /* 播放被拒就保留 URL，不影响结论 */ }
+      setState({ text: weT('录到 {kb}KB，正在播回你的声音（RMS {rms}）', { kb: Math.round(bytes / 1024), rms }), busy: false, ok: true });
+    } catch (error) {
+      setState({ text: weT('测试失败：') + String((error && error.message) || error), busy: false, ok: false });
+    }
+  };
+  return React.createElement('div', { style: { marginTop: '10px', padding: '8px', border: '1px solid rgba(255,255,255,.10)', borderRadius: '8px' } },
+    React.createElement('div', { style: { fontSize: '12px', fontWeight: 600, marginBottom: '4px' } }, weT('麦克风测试')),
+    React.createElement('div', { className: 'we-picker__hint', style: { marginBottom: '6px' } }, weT('点一下录 3 秒，会直接播回你刚说的话。')),
+    React.createElement('button', { type: 'button', className: 'we-picker__btn', disabled: state.busy, onClick: run },
+      state.busy ? weT('录音中…') : weT('测试麦克风')),
+    state.text ? React.createElement('div', { className: 'we-picker__hint', style: { marginTop: '4px', color: state.ok === false ? '#f87171' : undefined } }, state.text) : null,
+  );
 }
 
 /**

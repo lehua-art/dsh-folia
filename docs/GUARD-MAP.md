@@ -5,7 +5,7 @@
 > 口径：只统计守卫**代码**里真正碰到的模块（先剥注释），并区分"直接读源文件"与"隔着产物 `lib/client.js`"。
 > 写法：字面量路径 / `join(...)` 拼接 / 唯一 basename / 产物配方 / **前缀族读法** `scopeFiles|scopeText(<前缀>)` / **经共享族助手读**（`import { panelText } from './tools/src-scope.mjs'` + 真调用；族口径封在那个库里，见 DEV-GUIDE §4.6「同时是守卫的库」）/ **真源定位读**（`locate('符号')` / `locateFile('文件名')`，`test/tools/source-locator.mjs`：符号唯一声明在哪就是读了哪个模块）。
 
-模块面 220 个 · 守卫 157 个
+模块面 220 个 · 守卫 158 个
 
 ## 守卫 → 模块
 
@@ -85,6 +85,7 @@
 | `verify-media-probe.mjs` | `lib/media/mp4-probe.js` |  |
 | `verify-media-selfheal.mjs` | `lib/download-queue.js` `lib/media-selfheal.js` `lib/media-verify.js` `lib/media/transcode.js` `lib/settings-schema.js` `lib/variant-pick.js` `src/client.js` `src/live-layer.js` `src/local-first.js` `src/video-layer.js` | ✅ |
 | `verify-media-state.mjs` | `lib/download-queue.js` `lib/media-selfheal.js` `lib/media-state.js` `lib/media-verify.js` `lib/routes/cache.js` `lib/routes/downloads.js` `lib/routes/inventory.js` `lib/routes/site-media.js` `src/client.js` `src/local-first.js` `src/media-prep.js` `src/media-state.js` `src/video-switch.js` | ✅ |
+| `verify-mic-test.mjs` | `lib/routes/pet-chat.js` `lib/voice/record.js` `src/i18n-copy-panel.js` `src/panel-tabs-assistant.js` |  |
 | `verify-module-layout.mjs` | `lib/index.js` `lib/settings-schema.js` `src/client.js` | ✅ |
 | `verify-mp4-vfs.mjs` | `lib/faststart.js` `lib/host-boot.js` `lib/kernel/host-session.js` `lib/mp4-vfs.js` |  |
 | `verify-no-auto-enqueue.mjs` | `lib/download-queue.js` `lib/media-state.js` `lib/routes/downloads.js` `src/local-first.js` `src/wallpaper-progress.js` |  |
@@ -267,7 +268,7 @@
 | `lib/routes/media-derived.js` | 1 | `verify-transcode-state` |
 | `lib/routes/modules.js` | 0 | **（无）** |
 | `lib/routes/occlusion.js` | 1 | `verify-occlusion-hub` |
-| `lib/routes/pet-chat.js` | 5 | `verify-capabilities` `verify-pet-chat` `verify-pet-settings` `verify-pet-voice` `verify-voice-tts` |
+| `lib/routes/pet-chat.js` | 6 | `verify-capabilities` `verify-mic-test` `verify-pet-chat` `verify-pet-settings` `verify-pet-voice` `verify-voice-tts` |
 | `lib/routes/pets.js` | 5 | `verify-download-first` `verify-downloads` `verify-features` `verify-hash-source` `verify-site-v1-sync` |
 | `lib/routes/presets.js` | 1 | `verify-presets` |
 | `lib/routes/props.js` | 1 | `verify-scene` |
@@ -297,7 +298,7 @@
 | `lib/upload-dir.js` | 5 | `verify-asset-paths` `verify-avatar-interval-and-rotation` `verify-cache-dir` `verify-scene-live` `verify-upload-store` |
 | `lib/upload-store.js` | 3 | `verify-avatar-interval-and-rotation` `verify-scene-live` `verify-upload-store` |
 | `lib/variant-pick.js` | 10 | `verify-download-chain` `verify-hash-source` `verify-install-flow` `verify-media-selfheal` `verify-queue-priority` `verify-site-v1-sync` `verify-variant-hash` `verify-variants` `verify-wallpaper-chain` `verify-wallpaper-core` |
-| `lib/voice/record.js` | 1 | `verify-pet-voice` |
+| `lib/voice/record.js` | 2 | `verify-mic-test` `verify-pet-voice` |
 | `lib/wallpaper-scan.js` | 1 | `verify-wallpaper-scan` |
 | `lib/we-assets.js` | 2 | `verify-asset-paths` `verify-scene-live` |
 | `lib/we-focus-guard.js` | 1 | `verify-scene-live` |
@@ -333,7 +334,7 @@
 | `src/i18n-copy-font.js` | 2 | `verify-about` `verify-presets` |
 | `src/i18n-copy-glass.js` | 2 | `verify-about` `verify-presets` |
 | `src/i18n-copy-live.js` | 2 | `verify-about` `verify-presets` |
-| `src/i18n-copy-panel.js` | 8 | `verify-about` `verify-cache-manager` `verify-capabilities` `verify-downloads` `verify-hash-source` `verify-install-flow` `verify-presets` `verify-variant-hash` |
+| `src/i18n-copy-panel.js` | 9 | `verify-about` `verify-cache-manager` `verify-capabilities` `verify-downloads` `verify-hash-source` `verify-install-flow` `verify-mic-test` `verify-presets` `verify-variant-hash` |
 | `src/i18n-copy-pet-link.js` | 2 | `verify-about` `verify-presets` |
 | `src/i18n-copy-picker.js` | 2 | `verify-about` `verify-presets` |
 | `src/i18n-copy.js` | 3 | `verify-about` `verify-i18n` `verify-presets` |
@@ -353,7 +354,7 @@
 | `src/occlusion.js` | 1 | `verify-occlusion-client` |
 | `src/panel-tabs-advanced.js` | 13 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-cache-manager` `verify-client` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-local-media-heal` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs-appearance.js` | 12 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-subpackage-toggle-roundtrip` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
-| `src/panel-tabs-assistant.js` | 13 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-panel-interactions` `verify-pet-settings` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
+| `src/panel-tabs-assistant.js` | 14 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-mic-test` `verify-panel-interactions` `verify-pet-settings` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs-boot.js` | 15 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-downloads` `verify-first-click-feedback` `verify-fontset` `verify-glass-surfaces` `verify-panel-interactions` `verify-scene-live` `verify-stall-heal` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs-effects.js` | 12 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-download-first` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs-mascot.js` | 11 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |

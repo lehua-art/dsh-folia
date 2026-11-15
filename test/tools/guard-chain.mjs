@@ -139,6 +139,7 @@ export function compositionDiff(chains) {
  * 判据见 `test/verify-guard-chain.mjs` ⑤（正判据与负对照走 `offChainDiff` 同一个函数）。
  */
 export const OFF_CHAIN_WHY = {
+  'verify-mic-test.mjs': '麦克风专项结构判据，由 run-audit 直接覆盖；不进 PR 链以避免依赖真麦克风',
   'verify-pet-link.mjs': '快捷汇总入口 npm run verify:pet-link；其离线用例已逐项接入默认 verify 链，不重复运行汇总器。',
   'verify-pet-hotplug-integration.mjs': '真实 Cordis 正式桥接生命周期入口；需要宿主 peer 模块，独立运行，不下载或修改官方 pet。',
   'verify-pet-sidebar-glass-browser-case.mjs': '用例模块由链上的 verify-glass-runtime-browser.mjs 导入并执行，使用其 CDP 会话，不是独立命令。',

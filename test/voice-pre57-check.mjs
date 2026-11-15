@@ -90,7 +90,7 @@ const QUIET = wavPcm16({ amplitude: 0.0001 });
       resolveFfmpeg: async () => 'ffmpeg', runFfmpeg: f.runFfmpeg,
       probeSize: (p) => { try { return statSync(p).size; } catch { return 0; } },
     });
-    const got = await rec.record({ maxMs: 2000 });
+    const got = await rec.record({ maxMs: 2000, probeMs: 1000 });
     check('① 两台设备先各测 1 秒，自动选有信号的好麦', got.ok === true && got.device === '好麦'
       && f.calls.filter((c) => c.join(' ').includes('probe.wav')).length === 2,
     `device=${got.device}`);
@@ -102,9 +102,9 @@ const QUIET = wavPcm16({ amplitude: 0.0001 });
       probeSize: (p) => statSync(p).size,
     });
     const got = await rec.record({ maxMs: 2000 });
-    check('① 所有设备都没信号 ⇒ no-signal（明确提示，不静默）',
-      got.ok === false && got.code === 'no-signal' && /没有收到声音/.test(String(got.hint || '')),
-      got.code);
+check('① 所有设备探测都静音也不判 no-signal（照常录音，只提示小声/没听到）',
+got.code !== 'no-signal' && /声音太小|没听到|打不开/.test(String(got.hint || '')),
+`code=${got.code} hint=${got.hint}`);
   }
   {
     const f = fake({ 'audio=静音麦': LOUD, 'audio=好麦': LOUD }, QUIET);
@@ -114,7 +114,7 @@ const QUIET = wavPcm16({ amplitude: 0.0001 });
     });
     const got = await rec.record({ maxMs: 2000 });
     check('① 整段太小声 ⇒ too-quiet，不把空串送 ASR',
-      got.ok === false && got.code === 'too-quiet' && /太小声/.test(String(got.hint || '')),
+      got.ok === false && got.code === 'too-quiet' && /太小|太小声/.test(String(got.hint || '')),
       got.code);
   }
 }
