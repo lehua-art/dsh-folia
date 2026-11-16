@@ -455,6 +455,9 @@ const VERIFY_STEPS = [
   // 门 2：桌宠对话的九条判据（SSE 逐字 / 无模型兜底 / 401 / 超时 / 上下文 8 条 /
   // 超长 / 限频 / 情绪兜底 / key 不外泄）。模型端点是自建的，不依赖 Ollama 或站点。
   step('test/verify-pet-chat.mjs'),
+  // v2 大脑（25 条）：意图规则/模型兜底 / 事件记忆 30 天+最近 8 条 / 环境串 / 情绪与语速 /
+  // 主动事件与每日上限 / 壁纸动作回读 / 失败不谎报 / 危险动作确认。
+  step('test/verify-pet-chat-brain.mjs'),
   // 桌宠对话设置区（6 条）：控件齐全 / 保存生效 / 切 Ollama / 测试失败原因 / 记忆清空 / 关对话不弹气泡
   step('test/verify-pet-settings.mjs'),
   // G1 入口加载冒烟：最小 fake ctx 真跑 apply（不抛错 / 基础路由在 / 语音未就绪不崩）

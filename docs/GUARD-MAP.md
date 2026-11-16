@@ -5,7 +5,7 @@
 > 口径：只统计守卫**代码**里真正碰到的模块（先剥注释），并区分"直接读源文件"与"隔着产物 `lib/client.js`"。
 > 写法：字面量路径 / `join(...)` 拼接 / 唯一 basename / 产物配方 / **前缀族读法** `scopeFiles|scopeText(<前缀>)` / **经共享族助手读**（`import { panelText } from './tools/src-scope.mjs'` + 真调用；族口径封在那个库里，见 DEV-GUIDE §4.6「同时是守卫的库」）/ **真源定位读**（`locate('符号')` / `locateFile('文件名')`，`test/tools/source-locator.mjs`：符号唯一声明在哪就是读了哪个模块）。
 
-模块面 220 个 · 守卫 158 个
+模块面 222 个 · 守卫 159 个
 
 ## 守卫 → 模块
 
@@ -98,6 +98,7 @@
 | `verify-panel-defensive.mjs` | `lib/routes/kernel.js` `lib/routes/skins.js` `src/panel-tabs-skins.js` `src/quick-panel.js` |  |
 | `verify-panel-interactions.mjs` | `lib/routes/skins.js` `src/client.js` `src/features.js` `src/panel-tabs-assistant.js` `src/panel-tabs-boot.js` `src/panel-tabs-pets.js` `src/panel-tabs-skins.js` `src/quick-panel.js` | ✅ |
 | `verify-pet-bubble.mjs` | `src/pet-bubble.js` |  |
+| `verify-pet-chat-brain.mjs` | `lib/pet-chat-brain.js` `lib/pet-chat-memory.js` `lib/pet-chat-proactive.js` `lib/pet-chat-tools.js` `lib/routes/pet-chat.js` `src/pet-chat.js` |  |
 | `verify-pet-chat.mjs` | `lib/pet-chat-memory.js` `lib/pet-chat-proactive.js` `lib/routes/pet-chat.js` `lib/settings-schema.js` `src/pet-chat.js` |  |
 | `verify-pet-hotplug-client.mjs` | `lib/components/pet-link/src/official-pet.js` `lib/components/pet-link/src/pet-link.js` |  |
 | `verify-pet-hotplug-host.mjs` | `lib/components/pet-link/src/official-pet.js` `lib/subpackage-boot.js` |  |
@@ -252,8 +253,10 @@
 | `lib/occlusion/index.js` | 1 | `verify-occlusion-hub` |
 | `lib/occlusion/rects.js` | 1 | `verify-occlusion-hub` |
 | `lib/occlusion/x11.js` | 1 | `verify-occlusion-hub` |
-| `lib/pet-chat-memory.js` | 1 | `verify-pet-chat` |
-| `lib/pet-chat-proactive.js` | 1 | `verify-pet-chat` |
+| `lib/pet-chat-brain.js` | 1 | `verify-pet-chat-brain` |
+| `lib/pet-chat-memory.js` | 2 | `verify-pet-chat-brain` `verify-pet-chat` |
+| `lib/pet-chat-proactive.js` | 2 | `verify-pet-chat-brain` `verify-pet-chat` |
+| `lib/pet-chat-tools.js` | 1 | `verify-pet-chat-brain` |
 | `lib/pkg-read.js` | 4 | `verify-package-files` `verify-package-publish` `verify-scene-probe` `verify-scene` |
 | `lib/route-registry.js` | 3 | `verify-cache-manager` `verify-inject-contracts` `verify-route-registry` |
 | `lib/routes/boot.js` | 5 | `verify-download-first` `verify-downloads` `verify-features` `verify-hash-source` `verify-site-v1-sync` |
@@ -268,7 +271,7 @@
 | `lib/routes/media-derived.js` | 1 | `verify-transcode-state` |
 | `lib/routes/modules.js` | 0 | **（无）** |
 | `lib/routes/occlusion.js` | 1 | `verify-occlusion-hub` |
-| `lib/routes/pet-chat.js` | 6 | `verify-capabilities` `verify-mic-test` `verify-pet-chat` `verify-pet-settings` `verify-pet-voice` `verify-voice-tts` |
+| `lib/routes/pet-chat.js` | 7 | `verify-capabilities` `verify-mic-test` `verify-pet-chat-brain` `verify-pet-chat` `verify-pet-settings` `verify-pet-voice` `verify-voice-tts` |
 | `lib/routes/pets.js` | 5 | `verify-download-first` `verify-downloads` `verify-features` `verify-hash-source` `verify-site-v1-sync` |
 | `lib/routes/presets.js` | 1 | `verify-presets` |
 | `lib/routes/props.js` | 1 | `verify-scene` |
@@ -365,7 +368,7 @@
 | `src/panel-tabs.js` | 14 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-api-client` `verify-client` `verify-component-visibility` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-subpackage-toggle-roundtrip` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/persistence.js` | 4 | `verify-adapter` `verify-client` `verify-presets` `verify-settings-namespaces` |
 | `src/pet-bubble.js` | 2 | `verify-pet-bubble` `verify-voice-tts` |
-| `src/pet-chat.js` | 4 | `verify-pet-chat` `verify-pet-settings` `verify-pet-voice` `verify-voice-tts` |
+| `src/pet-chat.js` | 5 | `verify-pet-chat-brain` `verify-pet-chat` `verify-pet-settings` `verify-pet-voice` `verify-voice-tts` |
 | `src/pet-layer.js` | 1 | `verify-features` |
 | `src/pet-tts.js` | 1 | `verify-voice-tts` |
 | `src/pet-voice-input.js` | 2 | `verify-pet-voice` `verify-voice-tts` |

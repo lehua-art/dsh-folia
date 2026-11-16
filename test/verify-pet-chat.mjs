@@ -476,7 +476,11 @@ const resetMem = () => { try { rmSync(MEMORY_FILE, { force: true }); } catch { /
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '记住我喜欢原神' }),
   });
   await readSse(response);
-  const lastSystem = String((model.seen[model.seen.length - 1].body.messages || [])[0].content || '');
+  // v2：显式记忆走 action 通道（工具落盘后直接回执），不再额外调一次模型；
+  // 这里只断言“照常记”，模型调用有无都不影响结论。
+  const lastSystem = model.seen.length
+    ? String((model.seen[model.seen.length - 1].body.messages || [])[0].content || '')
+    : '';
   // 注意：记忆是**这一轮**从用户话里提取的，注入要到下一轮才看得到 —— 这里只断言"照常记"
   check('B④ 记忆常开：旧档写 memoryEnabled=false 也照常记',
     readMem() !== null,

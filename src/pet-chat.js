@@ -319,6 +319,253 @@ function petChatContinuousVoiceError(code) {
   petChatContinuousArm(500);
 }
 
+/* ── v2 大脑（前端侧）：情绪语速 / 环境快照 / 动作回执 / 主动触发 ─────────── */
+
+/** 本轮回答的语速覆盖（宿主 meta 事件给 -1 = 夜间/疲惫 -10%）。 */
+let petChatSpeechRate = 0;
+/** 上一轮情绪（排障/测试可读；不参与 UI）。 */
+let petChatMood = 'neutral';
+/** 一轮对话进行中：主动搭话不得插嘴（模型在生成、气泡在更新）。 */
+let petChatTurnBusy = false;
+let petChatTurnBusyTimer = null;
+/** 壁纸变化观察：id / 变化时刻 / 标题。 */
+let petChatWallpaperId = '';
+let petChatWallpaperChangedAt = 0;
+let petChatWallpaperPendingTitle = '';
+let petChatWallpaperTimer = null;
+/** 连续工作：第一次用户消息 / 最近一条 / 今天是否已提醒。 */
+let petChatWorkStart = 0;
+let petChatWorkLastAt = 0;
+let petChatWorkNotifiedDay = '';
+let petChatWorkTimer = null;
+let petChatGreetingTimer = null;
+
+function petChatDayKey(date) {
+  const d = date instanceof Date ? date : new Date(date || Date.now());
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+function petChatTurnBegin() {
+  petChatTurnBusy = true;
+  if (petChatTurnBusyTimer != null) clearTimeout(petChatTurnBusyTimer);
+  // 兜底：任何异常路径都不该永久把主动搭话挡住
+  petChatTurnBusyTimer = setTimeout(() => { petChatTurnBusy = false; petChatTurnBusyTimer = null; }, 30000);
+}
+
+function petChatTurnEnd() {
+  petChatTurnBusy = false;
+  if (petChatTurnBusyTimer != null) { clearTimeout(petChatTurnBusyTimer); petChatTurnBusyTimer = null; }
+}
+
+/** 现在能不能主动说一句：朗读中 / 录音中 / 一轮回答中 / 页面隐藏都不插嘴。 */
+function petChatProactiveAllowed() {
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return false;
+  if (petChatTurnBusy) return false;
+  try { if (petTts.isSpeaking()) return false; } catch { /* 实例尚未就绪时按可说话处理 */ }
+  try { if (petVoiceIn.isActive && petVoiceIn.isActive()) return false; } catch { /* ignore */ }
+  return true;
+}
+
+/** 宿主主动 tick：命中就念一句（事件触发 / 早晚问候共用）。 */
+async function petChatProactiveTick(event, extra) {
+  if (!petChatProactiveAllowed()) return null;
+  let speaking = false;
+  let listening = false;
+  try { speaking = petTts.isSpeaking(); } catch { speaking = false; }
+  try { listening = Boolean(petVoiceIn.isActive && petVoiceIn.isActive()); } catch { listening = false; }
+  try {
+    const resp = await apiPostJson('/pet-chat/proactive/tick', {
+      event,
+      ...(extra || {}),
+      speaking,
+      listening,
+    }, { parse: 'always' });
+    const doc = (resp && resp.data) || {};
+    if (!doc.ok || !doc.line) return null;
+    petChatSay(String(doc.line));
+    return String(doc.line);
+  } catch {
+    return null;
+  }
+}
+
+/** 当前壁纸（前端 selection 是唯一真源；拿不到就返回空）。 */
+function petChatCurrentWallpaper() {
+  try {
+    const id = String((typeof selection !== 'undefined' && selection && selection.id) || '');
+    const list = (typeof selection !== 'undefined' && selection && selection.inventory
+      && Array.isArray(selection.inventory.wallpapers)) ? selection.inventory.wallpapers : [];
+    const hit = list.find((item) => item && String(item.id) === id) || null;
+    return { id, title: String((hit && hit.title) || '') };
+  } catch {
+    return { id: '', title: '' };
+  }
+}
+
+/** 环境快照：壁纸名 + 正在播放（音量/桌宠由宿主读自己的配置）。 */
+async function petChatEnvSnapshot() {
+  const wallpaper = petChatCurrentWallpaper();
+  let playing = null;
+  try {
+    const resp = await Promise.race([
+      apiJson('/now-playing', { parse: 'always' }),
+      new Promise((resolve) => { setTimeout(() => resolve(null), 700); }),
+    ]);
+    const media = resp && resp.data && resp.data.media ? resp.data.media : null;
+    if (media && media.title) playing = { title: media.title, artist: media.artist || '' };
+  } catch { /* 没在播放 / 媒体桥没起：宿主环境行会写“无” */ }
+  return { wallpaper, playing };
+}
+
+function petChatLuminance(item) {
+  const color = String((item && item.schemeColor) || '').replace('#', '');
+  if (/^[0-9a-f]{6}$/i.test(color)) {
+    const r = parseInt(color.slice(0, 2), 16);
+    const g = parseInt(color.slice(2, 4), 16);
+    const b = parseInt(color.slice(4, 6), 16);
+    return r * 0.299 + g * 0.587 + b * 0.114;
+  }
+  return 999;
+}
+
+function petChatIsDarkWallpaper(item) {
+  return petChatLuminance(item) < 105 || /暗|黑|夜|深色|dark/i.test(String((item && item.title) || ''));
+}
+
+/**
+ * 客户端执行壁纸动作（宿主只发 action，不重写前端的 `applySelection`）。
+ * 失败返回 `{ok:false,error}`，由宿主统一说人话 —— 这里只负责把真实结果回执回去。
+ */
+async function petChatApplyAction(tool, args) {
+  if (tool !== 'wallpaper_switch') return { ok: false, error: 'unsupported' };
+  const input = args || {};
+  let list;
+  try {
+    list = (selection.inventory && Array.isArray(selection.inventory.wallpapers))
+      ? selection.inventory.wallpapers.slice() : [];
+  } catch { list = []; }
+  if (!list.length) {
+    petBubble.status('error', weT('没有可用的壁纸'), { delay: 4000 });
+    return { ok: false, error: 'no-wallpaper' };
+  }
+  const currentId = String((selection && selection.id) || '');
+  const playable = list.filter((item) => item && item.playable !== false);
+  const pool = playable.length ? playable : list;
+  let target;
+  const mode = String(input.mode || 'next');
+  if (mode === 'byName') {
+    const name = String(input.name || '').trim().toLowerCase();
+    target = name
+      ? list.find((item) => String((item && item.title) || '').toLowerCase().includes(name))
+      : null;
+    if (!target) {
+      petBubble.status('error', weT('没找到叫「{name}」的壁纸', { name: String(input.name || '') }), { delay: 4000 });
+      return { ok: false, error: 'no-match' };
+    }
+  } else if (mode === 'dark') {
+    const dark = list.filter((item) => petChatIsDarkWallpaper(item));
+    if (dark.length) target = dark[Math.floor(Math.random() * dark.length)];
+    else {
+      // 没有明确“暗色”的条目 ⇒ 选主题色最暗的那张，而不是随便挑一张亮图。
+      const sorted = list.slice().sort((a, b) => petChatLuminance(a) - petChatLuminance(b));
+      target = sorted[0] || null;
+    }
+  } else if (mode === 'random') {
+    const source = pool.filter((item) => String(item.id) !== currentId);
+    target = (source.length ? source : pool)[Math.floor(Math.random() * (source.length ? source.length : pool.length))];
+  } else {
+    const index = pool.findIndex((item) => String(item.id) === currentId);
+    target = pool[(index >= 0 ? index + 1 : 0) % pool.length];
+  }
+  if (!target) return { ok: false, error: 'no-target' };
+  petBubble.status('info', weT('正在换壁纸…'), { delay: 0 });
+  try {
+    applySelection(String(target.id), { fromManual: true });
+  } catch {
+    petBubble.hideStatus(0);
+    return { ok: false, error: 'apply-failed' };
+  }
+  await new Promise((resolve) => { setTimeout(resolve, 700); });
+  if (String((selection && selection.id) || '') !== String(target.id)) {
+    petBubble.status('error', weT('壁纸切换没生效'), { delay: 4000 });
+    return { ok: false, error: 'not-applied', targetId: String(target.id), title: String(target.title || '') };
+  }
+  petBubble.hideStatus(0);
+  return { ok: true, targetId: String(target.id), title: String(target.title || '') };
+}
+
+/** SSE action → 执行 → POST 回执。宿主据此**回读设置**再决定说不说成功。 */
+async function petChatHandleAction(payload) {
+  const id = String((payload && payload.id) || '');
+  if (!id) return;
+  let result;
+  try {
+    result = await petChatApplyAction(String(payload.tool || ''), payload.args || {});
+  } catch {
+    result = { ok: false, error: 'action-failed' };
+  }
+  try {
+    await apiPostJson('/pet-chat/tool-result', {
+      id,
+      ok: result.ok === true,
+      targetId: result.targetId || '',
+      title: result.title || '',
+      error: result.error || '',
+    }, { parse: 'always' });
+  } catch { /* 回执失败由宿主超时判失败，不会谎报成功 */ }
+}
+
+/** 每 4 秒看一次壁纸是否变化；变化满 30 秒且不忙时点评一句。 */
+function petChatWatchWallpaper() {
+  if (typeof setInterval !== 'function') return null;
+  const initial = petChatCurrentWallpaper();
+  petChatWallpaperId = initial.id;
+  return setInterval(() => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    const cur = petChatCurrentWallpaper();
+    if (!petChatWallpaperId) { petChatWallpaperId = cur.id; return; }
+    if (cur.id && cur.id !== petChatWallpaperId) {
+      petChatWallpaperId = cur.id;
+      petChatWallpaperChangedAt = Date.now();
+      petChatWallpaperPendingTitle = cur.title;
+    }
+    if (!petChatWallpaperChangedAt) return;
+    if (Date.now() - petChatWallpaperChangedAt < 30000) return;
+    if (!petChatProactiveAllowed()) return; // 正在朗读/录音/回答：等下一拍，不插嘴
+    const sinceMs = Date.now() - petChatWallpaperChangedAt;
+    petChatWallpaperChangedAt = 0;
+    void petChatProactiveTick('wallpaper', { wallpaperTitle: petChatWallpaperPendingTitle, sinceMs });
+  }, 4000);
+}
+
+/** 连续工作 ≥45 分钟（用户消息累计；10 分钟没消息视为中断）。 */
+function petChatWatchWork() {
+  if (typeof setInterval !== 'function') return null;
+  return setInterval(() => {
+    if (!petChatWorkStart) return;
+    const now = Date.now();
+    if (now - petChatWorkLastAt > 10 * 60 * 1000) { petChatWorkStart = 0; return; }
+    if (now - petChatWorkStart < 45 * 60 * 1000) return;
+    const day = petChatDayKey(now);
+    if (petChatWorkNotifiedDay === day) return;
+    if (!petChatProactiveAllowed()) return;
+    petChatWorkNotifiedDay = day;
+    petChatWorkStart = 0;
+    void petChatProactiveTick('work', { activeMinutes: 45 });
+  }, 60000);
+}
+
+/** 早晚问候：挂载后 3 秒试一次；宿主按 8–10 / 22 点后自行判定，每天只一次。 */
+function petChatMaybeGreet() {
+  if (typeof setTimeout !== 'function') return null;
+  return setTimeout(() => {
+    if (!petChatProactiveAllowed()) return;
+    void petChatProactiveTick('greeting', {});
+    void petChatProactiveTick('night', {});
+  }, 3500);
+}
+
+
 /**
  * 朗读实例（P1）：宿主负责合成兜底，这里负责切句、排队、播、停、字幕同步。
  * 回调全部接到气泡：说 → `speak` 态 + 当前句；停/念完 → `idle` + 3 秒后淡出。
@@ -387,11 +634,19 @@ const petVoiceIn = petVoiceInputCreate({
       if (typeof onState === 'function') onState({ state: 'idle' });
       return;
     }
+    petChatTurnBegin();
+    petChatSpeechRate = 0;
+    petChatMood = 'neutral';
+    const workNow = Date.now();
+    if (!petChatWorkStart || workNow - petChatWorkLastAt > 10 * 60 * 1000) petChatWorkStart = workNow;
+    petChatWorkLastAt = workNow;
     petChatContinuousClearTimer();
     // “想”态：模型还在回，先不给“说”的波形
     petBubble.setState('think');
     // 新一轮回答从空气泡开始（否则会追加到上一轮回答的尾部）。
     petBubble.clear();
+    // v2 环境感知：壁纸名 / 正在播放由前端补（宿主不认识 selection 与媒体桥实例）。
+    const context = await petChatEnvSnapshot();
     // ⚠️ apiFetch 的返回值里**已经带上了原始 Response**（字段 `response`）。
     //    上一版误写成 `res.body.getReader()`：res 是 { ok, status, data, response }，
     //    res.body 恒为 undefined ⇒ 抛 TypeError ⇒ 读流代码一行都跑不到
@@ -402,7 +657,7 @@ const petVoiceIn = petVoiceInputCreate({
       res = await apiFetch('/pet-chat/chat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, context }),
         // ⚠️ 必须 parse:'none'。默认路径会 await response.json()，
         //    那会把 SSE 流**整个消费掉**（等到生成结束、再解析失败），
         //    之后 res.response.body 已 used ⇒ getReader() 抛错 ⇒ 气泡一个字都不出。
@@ -411,12 +666,14 @@ const petVoiceIn = petVoiceInputCreate({
     } catch {
       petBubble.status('error', '连不上宿主，稍后再试', { delay: 4000 });
       if (typeof onState === 'function') onState({ state: 'idle' });
+      petChatTurnEnd();
       return;
     }
     const stream = res && res.response;
     if (!res || !res.ok || !stream || !stream.body) {
       petBubble.status('error', res && res.status === 401 ? '模型 Key 无效，去设置里换一把' : '这次没答上来，再试一次', { delay: 4000 });
       if (typeof onState === 'function') onState({ state: 'idle' });
+      petChatTurnEnd();
       return;
     }
     let rawReply = '';
@@ -432,7 +689,8 @@ const petVoiceIn = petVoiceInputCreate({
     const enqueueSpeech = (piece) => {
       const line = String(piece || '').trim();
       if (!line) return;
-      if (petSpeak(line)) queuedSpeech += 1;
+      // v2：本轮语速由宿主 meta 给（夜间/疲惫 -1 = -10%）；队列里每句都带自己的 rate。
+      if (petSpeak(line, { rate: petChatSpeechRate })) queuedSpeech += 1;
     };
     const reader = stream.body.getReader();
     const decoder = new TextDecoder();
@@ -446,13 +704,33 @@ const petVoiceIn = petVoiceInputCreate({
         if (cut < 0) break;
         const frame = buffer.slice(0, cut);
         buffer = buffer.slice(cut + 2);
-        const line = frame.split('\n').find((item) => item.startsWith('data:'));
-        if (!line) continue;
+        let eventName = 'message';
+        let dataLine = '';
+        for (const row of frame.split('\n')) {
+          if (row.startsWith('event:')) eventName = row.slice(6).trim();
+          else if (row.startsWith('data:')) dataLine = row.slice(5).trim();
+        }
+        if (!dataLine) continue;
         let payload;
-        try { payload = JSON.parse(line.slice(5).trim()); } catch { payload = null; }
+        try { payload = JSON.parse(dataLine); } catch { payload = null; }
+        if (!payload) continue;
+        if (eventName === 'meta') {
+          petChatMood = String(payload.mood || 'neutral');
+          petChatSpeechRate = Number.isFinite(Number(payload.rate)) ? Number(payload.rate) : 0;
+          continue;
+        }
+        if (eventName === 'action') {
+          // 不 await：继续读流，宿主在收到 /tool-result 后才发后续 delta/done。
+          void petChatHandleAction(payload);
+          continue;
+        }
+        if (eventName === 'done') {
+          if (Number.isFinite(Number(payload.rate))) petChatSpeechRate = Number(payload.rate);
+          continue;
+        }
         // 防兜底：模型偶尔仍会输出 {"reply":"…","emotion":"…"} 信封，
         // 这里只把 reply 的正文喂给气泡（不显示大括号/字段名/emotion）。
-        if (payload && typeof payload.t === 'string') {
+        if (typeof payload.t === 'string') {
           rawReply += payload.t;
           let piece = payload.t;
           if (!replyStarted) {
@@ -498,6 +776,7 @@ const petVoiceIn = petVoiceInputCreate({
     // 没有任何一句进入朗读（静音 / 合成不可用）⇒ 沿用旧行为：整段文字 3 秒后淡出。
     // 有朗读时由 petTts 的 onIdle 在念完后淡出（按句字幕不会被提前清掉）。
     if (!queuedSpeech) petBubble.hide(3000);
+    petChatTurnEnd();
   },
   // P4：用户自己的话**不进**气泡（那是回声）；只显示 assistant 的 SSE delta
   onText: () => {},
@@ -704,6 +983,11 @@ function mountPetChat() {
   document.addEventListener('keydown', onKeyDown, true);
   void petChatRefreshVoice().then(() => petChatPublishContinuousState()).catch(() => {});
   petChatEventsStart();
+  // v2 主动发起：壁纸变化 → 30 秒后点评；连续工作 45 分钟 → 休息提醒；挂载后试早晚问候。
+  // 三条都受“正在朗读 / 正在听 / 一轮回答中 / 页面隐藏”约束（见 petChatProactiveAllowed）。
+  petChatWallpaperTimer = petChatWatchWallpaper();
+  petChatWorkTimer = petChatWatchWork();
+  petChatGreetingTimer = petChatMaybeGreet();
   // 对外通道：`speak(text)` 供待办/提醒直接调用（不打开任何窗口）
   try {
     window.__dshFoliaPet = {
@@ -720,6 +1004,12 @@ function mountPetChat() {
     document.removeEventListener('click', onDocumentClick, true);
     document.removeEventListener('keydown', onKeyDown, true);
     document.removeEventListener('visibilitychange', onVisibility);
+    if (petChatWallpaperTimer != null) clearInterval(petChatWallpaperTimer);
+    if (petChatWorkTimer != null) clearInterval(petChatWorkTimer);
+    if (petChatGreetingTimer != null) clearTimeout(petChatGreetingTimer);
+    petChatWallpaperTimer = null;
+    petChatWorkTimer = null;
+    petChatGreetingTimer = null;
     petChatEventsStop();
     petSpeakStop();
     try { if (window.__dshFoliaPet) delete window.__dshFoliaPet; } catch { /* ignore */ }

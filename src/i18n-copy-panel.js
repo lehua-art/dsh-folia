@@ -424,6 +424,11 @@ const WE_I18N_EN_PANEL = {
   "连续对话已停止：{e}": "Continuous conversation stopped: {e}",
   "连续对话结束：连续 {n} 轮没听到": "Continuous conversation ended: no speech for {n} rounds",
   "没听到，再说一次（{n}/{m}）": "Didn't hear that — try again ({n}/{m})",
+  // pre.64：大脑 v2（壁纸动作的客户端执行反馈）
+  "正在换壁纸…": "Switching wallpaper…",
+  "没找到叫「{name}」的壁纸": "No wallpaper named '{name}' was found",
+  "没有可用的壁纸": "No wallpapers available",
+  "壁纸切换没生效": "The wallpaper change did not take effect",
   "所选音色不可用，已用系统默认：{name}": "Selected voice is unavailable — using the system default: {name}",
   "所选音色不可用，已用系统默认音色": "Selected voice is unavailable — using the system default voice",
   // pre.54：本机音色来源 / 可下载目录骨架。
