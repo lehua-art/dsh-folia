@@ -232,6 +232,25 @@ function PetChatSettings() {
     hasKey: false, maskedKey: '', lastError: '',
   });
   const update = React.useCallback((patch) => setDraft((prev) => ({ ...prev, ...patch })), []);
+  /** pre.63：把设置页的连续对话开关同步给右键菜单（同一 voice.continuous）。 */
+  const publishContinuous = React.useCallback((enabled) => {
+    try {
+      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+        window.dispatchEvent(new CustomEvent('we-pet-continuous-state', { detail: { enabled: enabled === true } }));
+      }
+    } catch { /* 菜单同步是增强 */ }
+  }, []);
+  React.useEffect(() => {
+    const onState = (event) => {
+      const detail = (event && event.detail) || {};
+      if (typeof detail.enabled === 'boolean') {
+        setVoiceCfg((prev) => ({ ...prev, continuous: detail.enabled }));
+      }
+    };
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return undefined;
+    window.addEventListener('we-pet-continuous-state', onState);
+    return () => window.removeEventListener('we-pet-continuous-state', onState);
+  }, []);
 
   const load = React.useCallback(async () => {
     try {
@@ -244,6 +263,7 @@ function PetChatSettings() {
         voice.continuous = voice.continuous !== false;
         setDraft({ ...CHAT_DEFAULTS, ...doc, voice, apiKey: '' });
         setVoiceCfg({ sapiEnabled: voice.sapiEnabled, enabledEngine: voice.enabledEngine, continuous: voice.continuous });
+        publishContinuous(voice.continuous !== false);
         setEnabledEngine(voice.enabledEngine);
         setCheckedEngine(voice.enabledEngine);
         setStatus(doc.hasApiKey
@@ -251,7 +271,7 @@ function PetChatSettings() {
           : { ok: null, text: weT('还没有填 API Key') });
       }
     } catch { /* 首次加载失败不打扰 */ }
-  }, []);
+  }, [publishContinuous]);
 
   const loadVoices = React.useCallback(async () => {
     const resp = await apiJson('/pet-chat/tts/voices', { parse: 'always' }).catch(() => null);
@@ -687,7 +707,16 @@ function PetChatSettings() {
     },
     React.createElement('input', {
       type: 'checkbox', checked: continuousOn, disabled: busy,
-      onChange: (e) => setVoiceCfg((prev) => ({ ...prev, continuous: e.target.checked })),
+      onChange: (e) => {
+        const on = e.target.checked;
+        setVoiceCfg((prev) => ({ ...prev, continuous: on }));
+        publishContinuous(on);
+        try {
+          if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+            window.dispatchEvent(new CustomEvent('we-pet-continuous', { detail: { action: 'set', enabled: on } }));
+          }
+        } catch { /* ignore */ }
+      },
     }),
     weT('☑ 连续对话')));
     voicePage.push(React.createElement('div', {

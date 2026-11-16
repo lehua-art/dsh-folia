@@ -4,7 +4,7 @@
  * 录音在宿主侧（ffmpeg dshow），所以判据不碰麦克风：注入假的 runFfmpeg，
  * 用它吐出来的 silencedetect stderr 驱动"静音自动结束/15s 上限"。
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -90,17 +90,64 @@ check('L3 上限：-t 不超过 maxMs+2（窗口固定，不 kill 避免 0 字�
     JSON.stringify({ ok: result.ok, code: result.code, speech: result.speech, audioSeconds: result.audioSeconds }));
 }
 
-/* L4c pre.54：spawn 不能开管道（DSH 沙箱 EPERM 的根因）+ 停机必须走 SIGTERM */
+/* L4c pre.54/pre.63：stdin/stderr 不能开管道（DSH 沙箱 EPERM）；流式只允许 stdout pipe */
 {
   const src = readFileSync(join(ROOT, 'lib', 'voice', 'record.js'), 'utf8');
-  check('L4c record.js：stdio 不含 pipe，且自动停机用 kill(SIGTERM)',
+  check('L4c record.js：stdin/stderr 不开 pipe，流式仅 stdout pipe；停机用 kill(SIGTERM)',
     /stdio:\s*\['ignore',\s*'ignore',/.test(src)
-      && !/stdio:\s*\[[^\]]*'pipe'/.test(src)
+      && /stdio:\s*\['ignore',\s*'pipe',/.test(src)
+      && !/stdio:\s*\['pipe'/.test(src)
+      && !/'pipe',\s*'pipe'/.test(src)
       && /child\.kill\('SIGTERM'\)/.test(src),
-    'stdio=ignore / kill=SIGTERM');
+    'stdin=ignore / stdout=pipe / kill=SIGTERM');
 }
 
-/* L5 录音→转录→回答 全链路（前端用假 postRecord/postChat） */
+/* L4d pre.63：流式 VAD —— 开口后静音 700ms 结束（0.7s，不再等固定 6s） */
+{
+  const sr = 16000;
+  const frame = 640;
+  const makePcm = (seconds, amp) => {
+    const bytes = Math.round(sr * seconds) * 2;
+    const b = Buffer.alloc(bytes);
+    for (let i = 0; i < bytes / 2; i += 1) b.writeInt16LE(Math.round(Math.sin(i * 0.3) * amp * 32767), i * 2);
+    return b;
+  };
+  const vad = recordMod.createPcmVad({ sampleRate: sr, silenceMs: 700, noOnsetMs: 8000 });
+  let state = { done: false };
+  for (const chunk of [makePcm(0.4, 0.001), makePcm(0.8, 0.2), makePcm(1.0, 0.001)]) {
+    for (let i = 0; i < chunk.length && !state.done; i += frame) state = vad.push(chunk.subarray(i, i + frame));
+  }
+  const vr = vad.result();
+  check('L4d RMS VAD：0.8s 人声 + 0.7s 静音 ⇒ 立刻结束，speechEnd 不含尾部静音',
+    state.done === true && state.reason === 'silence' && vr.speechEnd === 1.2
+      && vr.endSilenceMs === 700 && vr.onsetMs > 0,
+    JSON.stringify({ state, vr }));
+
+  // record() 的流式路径：假的 runFfmpegStream 直接给 PCM，不碰真麦克风。
+  const pcm = Buffer.concat([makePcm(0.3, 0.001), makePcm(0.6, 0.2), makePcm(0.8, 0.001)]);
+  const api = recordMod.createVoiceRecorder({
+    resolveFfmpeg: async () => 'ffmpeg.exe',
+    runFfmpeg: async (ff, args) => {
+      if (args.includes('-list_devices')) return { code: 0, stderr: '[dshow @ x] "麦克风 (Test)" (audio)\n' };
+      return { code: 0, stderr: '' };
+    },
+    runFfmpegStream: async () => ({
+      ok: true, pcm, speechEnd: 0.9, onsetMs: 300, endSilenceMs: 800,
+      reason: 'silence', noOnset: false, unsupported: false,
+    }),
+    probeSize: (p) => { try { return statSync(p).size; } catch { return 0; } },
+  });
+  const got = await api.record({ maxMs: 15000 });
+  check('L4e record() 走流式：内存 PCM 补 WAV 头落盘，speech.stream=true',
+    got.ok === true && got.speech && got.speech.stream === true
+      && got.speech.speechEnd === 0.9 && got.bytes > 44 && got.audioSeconds === 0.9,
+    JSON.stringify({ ok: got.ok, bytes: got.bytes, speech: got.speech, audioSeconds: got.audioSeconds }));
+  const streamArgs = recordMod.streamArgs('麦克风', {});
+  check('L4f 流式参数：16k/单声道/pcm_s16le/s16le stdout，不含文件输出',
+    streamArgs.includes('pcm_s16le') && streamArgs.includes('s16le') && streamArgs[streamArgs.length - 1] === '-'
+      && streamArgs[streamArgs.indexOf('-ar') + 1] === '16000' && streamArgs[streamArgs.indexOf('-ac') + 1] === '1',
+    JSON.stringify(streamArgs));
+}
 {
   const voice = load('src/pet-voice-input.js', ['petVoiceInputCreate']).petVoiceInputCreate;
   const events = { text: [], error: [], state: [] };

@@ -276,10 +276,10 @@ got.ok === true && Boolean(got.audioPath),
     // 真实触发点：petTts 的 onIdle（朗读播完）→ 连续对话计时。
     state.ttsDeps.onIdle();
     const pending = timers.filter((t) => !t.cleared);
-    check('④ 朗读结束 → 0.5–0.8s 自动开麦，状态条显示「连续对话中·点桌宠暂停」',
+    check('④ 朗读结束 → 0.5–0.8s 自动开麦，状态条显示「连续对话中 · 右键可关闭」',
       api.active === true && bubble.continuous === true && bubble.lastState === 'listen'
         && pending.length === 1 && pending[0].ms >= 500 && pending[0].ms <= 800
-        && /连续对话中·点桌宠暂停/.test(readFileSync(join(ROOT, 'src', 'pet-bubble.js'), 'utf8')),
+        && /连续对话中 · 右键可关闭/.test(readFileSync(join(ROOT, 'src', 'pet-bubble.js'), 'utf8')),
       `delay=${pending[0] && pending[0].ms} state=${bubble.lastState}`);
     pending[0].fn();
     check('④ 计时到点只开一次麦', state.starts === 1, `starts=${state.starts}`);
@@ -306,6 +306,18 @@ got.ok === true && Boolean(got.audioPath),
       /continuous: true/.test(source) && /continuous !== false/.test(source)
         && /if \(petChatContinuousActive \|\| petChatContinuousTimer != null\)/.test(source)
         && /连续对话已暂停/.test(source));
+
+    const layerSrc = readFileSync(join(ROOT, 'src', 'pet-layer.js'), 'utf8');
+    check('④ pre.63 右键菜单：连续对话勾选 + 暂停听/继续听 + 与 pet-chat 事件同步',
+      /☑ /.test(layerSrc) && /☐ /.test(layerSrc)
+        && /weT\("连续对话"\)/.test(layerSrc)
+        && /weT\("暂停听"\)/.test(layerSrc) && /weT\("继续听"\)/.test(layerSrc)
+        && /we-pet-continuous-state/.test(layerSrc)
+        && /new CustomEvent\("we-pet-continuous"/.test(layerSrc));
+    check('④ pre.63 页面隐藏自动暂停，菜单/设置共用 voice.continuous',
+      /visibilitychange/.test(source) && /页面隐藏，连续对话已暂停/.test(source)
+        && /we-pet-continuous/.test(source) && /petChatSetContinuousEnabled/.test(source)
+        && /voice\/config/.test(source));
   }
 }
 

@@ -1,5 +1,36 @@
 # 变更记录（Changelog）
 
+### v4.26.0-pre.63（2026-11-16，**说完就停（流式 RMS VAD）+ 右键连续对话**）
+
+> 用户口径：① 录音结束要快，说 2 秒不该再等 4 秒；② 右键菜单要有「连续对话」勾选与暂停/继续，
+> 开启后点一次桌宠即免点击循环。禁止再用 kill 后的 WAV 文件做输入。
+
+- **流式录音（`lib/voice/record.js`）**
+  - 新增 `streamArgs`：`dshow → 16k/mono/pcm_s16le → s16le stdout`；`defaultRunFfmpegStream`
+    只对 **stdout** 开 pipe（stdin/stderr 仍 ignore/文件），PCM 在内存。
+  - 新增纯函数 `createPcmVad` / `pcm16Rms` / `pcm16Wav`：20ms 一帧，前 300ms 估噪声底，
+    阈值 `max(0.006, 噪声×3)`；连续 3 帧开口；开口后静音 **700ms**（600–800 可调）结束；
+    8s 没开口 = no-onset；15s 上限。
+  - 停止：VAD 判定后 `kill(SIGTERM)`（PCM 已在内存，不再依赖 ffmpeg 补 WAV 头）；
+    用 `pcm16Wav` 给内存 PCM 补 44 字节头写 `input.wav` 交现有 ASR。
+  - **兜底**：stdout pipe 不可用（spawn/无数据）⇒ `unsupported=true`，本进程回退 pre.62 的
+    固定 6 秒窗口；旧路径/旧判据不变。
+  - 真机探针：本机 dshow → stdout 收到 207,968 B（约 6.5s），无 onset 时 6.9s 退出；
+    pipe 可用、不产生 0 字节文件。
+- **连续对话（`src/pet-layer.js` / `src/pet-chat.js` / `src/panel-tabs-assistant.js`）**
+  - 右键菜单新增「☑ 连续对话」勾选项；开启时再显示「暂停听 / 继续听」。勾选态/暂停态由
+    pet-chat 通过 `we-pet-continuous-state` 同步，点击通过 `we-pet-continuous` 下发。
+  - 开启后点一次桌宠：听 → 转写 → 回答 → 朗读结束 → 延迟 450–650ms 自动再听；静默 2 轮、
+    连续 8 轮、页面 `visibilitychange=hidden` 自动暂停；点桌宠/右键暂停立即停。
+  - 「暂停听」保留 `voice.continuous=true`，点桌宠或「继续听」恢复；「关闭连续对话」写
+    `voice.continuous=false`，回到单轮模式。
+  - 与设置页「朗读与音色 → ☑ 连续对话」共用 `voice.continuous`：设置页变更即发命令并持久化，
+    菜单变更也回写 `/pet-chat/voice/config`，`/pet-chat/state` 同步给客户端。
+  - 朗读期间不自动打断（无回声消除；点桌宠才停朗读并开麦），保留现有半双工纪律。
+- **判据**：`verify-pet-voice` 13 通过（新增 L4d/L4e/L4f：VAD 700ms、流式落 WAV、s16le 参数）；
+  `voice-pre57-check` 21 通过（连续状态机 + 菜单/页面隐藏/同字段）；`voice-setup-check` 35 通过
+  （`voice.continuous` 持久化与 `/state` 同步）；全量 `run-audit` 以实测为准（目标 0 失败）。
+
 ### v4.26.0-pre.62（2026-11-15，**语音运行环境自动准备：ffmpeg 不进包、首次使用懒下载**）
 
 > 用户口径：ffmpeg 不打包（体积/许可/三平台），改首次使用自动下载；先站点镜像、再上游；

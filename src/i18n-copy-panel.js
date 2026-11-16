@@ -413,6 +413,17 @@ const WE_I18N_EN_PANEL = {
   "在听": "Listening",
   "在想": "Thinking",
   "在说": "Speaking",
+  // pre.63：连续对话（右键菜单 + 设置页同一 voice.continuous）
+  "连续对话": "Continuous conversation",
+  "暂停听": "Pause listening",
+  "继续听": "Resume listening",
+  "连续对话中 · 右键可关闭": "Continuous conversation · right-click to turn off",
+  "⏸ 连续对话已暂停（点桌宠继续）": "⏸ Continuous conversation paused (click the pet to resume)",
+  "页面隐藏，连续对话已暂停": "Page hidden — continuous conversation paused",
+  "连续对话结束：已连续 {n} 轮": "Continuous conversation ended after {n} rounds",
+  "连续对话已停止：{e}": "Continuous conversation stopped: {e}",
+  "连续对话结束：连续 {n} 轮没听到": "Continuous conversation ended: no speech for {n} rounds",
+  "没听到，再说一次（{n}/{m}）": "Didn't hear that — try again ({n}/{m})",
   "所选音色不可用，已用系统默认：{name}": "Selected voice is unavailable — using the system default: {name}",
   "所选音色不可用，已用系统默认音色": "Selected voice is unavailable — using the system default voice",
   // pre.54：本机音色来源 / 可下载目录骨架。

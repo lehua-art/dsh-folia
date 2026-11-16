@@ -167,6 +167,14 @@ try {
     voicesSapi.body.voices.some((v) => v.engine === 'sapi'),
     JSON.stringify(voicesSapi.body.voices.map((v) => v.engine)));
   await postJson('/voice/config', { sapiEnabled: false });
+  const contOff = await postJson('/voice/config', { continuous: false });
+  const contRead = await getJson('/voice/config');
+  const stateCont = await getJson('/state');
+  await postJson('/voice/config', { continuous: true });
+  check('④ pre.63 voice.continuous 可保存，/state 同步（菜单与设置页同一字段）',
+    contOff.body.data.continuous === false && contRead.body.data.continuous === false
+      && stateCont.body.voice.continuous === false,
+    JSON.stringify({ off: contOff.body.data.continuous, read: contRead.body.data.continuous, state: stateCont.body.voice.continuous }));
 
   // v0.2：Edge neural 名必须能在配置里存活（settings-schema 的旧迁移会清空它，
   // 所以宿主读取 voice 时以覆盖层原始对象为准）。

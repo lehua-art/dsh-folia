@@ -272,7 +272,7 @@ function petBubbleCreate(deps) {
       return;
     }
     const labels = {
-      listen: '🎤 ' + (continuous ? tr('连续对话中·点桌宠暂停') : tr('在听')),
+      listen: '🎤 ' + (continuous ? tr('连续对话中 · 右键可关闭') : tr('在听')),
       think: '💭 ' + tr('在想'),
       speak: '🔊 ' + tr('在说'),
     };
@@ -294,11 +294,11 @@ function petBubbleCreate(deps) {
 
   function isVisible() { return visible; }
 
-  /** 连续对话模式：把「在听」换成一语中的状态条，提醒用户点桌宠可暂停。 */
+  /** 连续对话模式：把「在听」换成一语中的状态条，提醒右键可关闭。 */
   function setContinuous(active) {
     continuous = active === true;
     if (continuous && statusEl && statusEl.dataset && String(statusEl.dataset.state || '') === 'listen') {
-      statusEl.textContent = '🎤 ' + tr('连续对话中·点桌宠暂停');
+      statusEl.textContent = '🎤 ' + tr('连续对话中 · 右键可关闭');
     }
   }
 

@@ -176,6 +176,7 @@ async function petChatRefreshVoice() {
   } catch { /* 读不到就用默认（不静音） */ }
   petChatContinuousEnabled = petChatVoice.continuous !== false;
   if (petChatContinuousEnabled === false) petChatContinuousStop('', true);
+  petChatPublishContinuousState();
   return petChatVoice;
 }
 
@@ -198,6 +199,21 @@ function petChatContinuousClearTimer() {
   }
 }
 
+/** pre.63：把连续对话状态推给右键菜单（pet-layer 监听）。 */
+function petChatPublishContinuousState() {
+  try {
+    if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+    window.dispatchEvent(new CustomEvent('we-pet-continuous-state', {
+      detail: {
+        enabled: petChatContinuousEnabled === true,
+        active: petChatContinuousActive === true,
+        paused: petChatContinuousPaused === true,
+        rounds: petChatContinuousRounds,
+      },
+    }));
+  } catch { /* 右键菜单是增强，事件失败不影响对话 */ }
+}
+
 function petChatContinuousStart() {
   if (petChatContinuousEnabled !== true) return false;
   petChatContinuousClearTimer();
@@ -205,6 +221,7 @@ function petChatContinuousStart() {
   petChatContinuousPaused = false;
   if (petChatContinuousRounds === 0) petChatContinuousSilent = 0;
   petBubble.setContinuous(true);
+  petChatPublishContinuousState();
   return true;
 }
 
@@ -215,7 +232,57 @@ function petChatContinuousStop(reason, silent) {
   petChatContinuousRounds = 0;
   petChatContinuousSilent = 0;
   petBubble.setContinuous(false);
+  petChatPublishContinuousState();
   if (reason && silent !== true) petBubble.status('info', reason, { delay: 3500 });
+}
+
+/** 右键「暂停听」：立即停掉自动续听与当前录音，但保留 enabled 字段。 */
+function petChatContinuousPause(reason) {
+  if (!petChatContinuousEnabled) return false;
+  petChatVoiceAbort = true;
+  try { petVoiceIn.stop(); } catch { /* ignore */ }
+  petChatContinuousStop(reason || weT('⏸ 连续对话已暂停（点桌宠继续）'), false);
+  return true;
+}
+
+/** 右键「继续听」：恢复免点击循环，并立刻开下一轮（不用再点桌宠）。 */
+function petChatContinuousResume() {
+  if (!petChatContinuousEnabled) return false;
+  petChatVoiceAbort = false;
+  petChatContinuousPaused = false;
+  petChatContinuousStart();
+  petChatContinuousArm(450);
+  return true;
+}
+
+/** 开关（菜单/设置页共用 voice.continuous）：持久化 + 广播给菜单。 */
+function petChatSetContinuousEnabled(enabled) {
+  const next = enabled === true;
+  petChatContinuousEnabled = next;
+  if (!next) {
+    petChatVoiceAbort = true;
+    try { petVoiceIn.stop(); } catch { /* ignore */ }
+    petChatContinuousStop('', true);
+  } else {
+    petChatContinuousPaused = false;
+    petChatVoiceAbort = false;
+    petChatPublishContinuousState();
+  }
+  try {
+    void apiPostJson('/pet-chat/voice/config', { continuous: next }, { parse: 'always' })
+      .then(() => petChatRefreshVoice())
+      .catch(() => { /* 设置页下次保存会再写 */ });
+  } catch { /* ignore */ }
+  return next;
+}
+
+/** 右键菜单事件：toggle / pause / resume。 */
+function petChatOnContinuousCommand(event) {
+  const action = String((event && event.detail && event.detail.action) || '');
+  if (action === 'toggle') petChatSetContinuousEnabled(!petChatContinuousEnabled);
+  else if (action === 'set') petChatSetContinuousEnabled(event.detail.enabled === true);
+  else if (action === 'pause') petChatContinuousPause();
+  else if (action === 'resume') petChatContinuousResume();
 }
 
 /** 朗读结束或一次静默后，延迟 0.65s 自动开麦。 */
@@ -425,6 +492,7 @@ const petVoiceIn = petVoiceInputCreate({
       }
       petChatContinuousRounds += 1;
       petChatContinuousSilent = 0;
+      petChatPublishContinuousState();
       if (!queuedSpeech) petChatContinuousArm();
     }
     // 没有任何一句进入朗读（静音 / 合成不可用）⇒ 沿用旧行为：整段文字 3 秒后淡出。
@@ -526,7 +594,7 @@ function petChatWake() {
   const seq = ++petChatWakeSeq;
   if (petChatContinuousActive || petChatContinuousTimer != null) {
     petChatVoiceAbort = true;
-    petChatContinuousStop(weT('连续对话已暂停，点桌宠继续'), false);
+    petChatContinuousStop(weT('⏸ 连续对话已暂停（点桌宠继续）'), false);
     petBubble.hide(0);
     petBubble.hideStatus(0);
     petVoiceIn.stop();
@@ -621,9 +689,20 @@ function mountPetChat() {
 
   window.addEventListener('we-pet-talk', onTalkEvent);
   window.addEventListener('we-pet-speak', onSpeakEvent);
+  // pre.63：右键菜单的连续对话开关/暂停/继续（与设置页共用 voice.continuous）。
+  const onContinuousEvent = (event) => { petChatOnContinuousCommand(event); };
+  window.addEventListener('we-pet-continuous', onContinuousEvent);
+  // 页面隐藏：自动暂停连续对话（不偷偷在后台开麦）。
+  const onVisibility = () => {
+    if (typeof document === 'undefined' || document.visibilityState !== 'hidden') return;
+    if (petChatContinuousActive && !petChatContinuousPaused) {
+      petChatContinuousPause(weT('页面隐藏，连续对话已暂停'));
+    }
+  };
+  document.addEventListener('visibilitychange', onVisibility);
   document.addEventListener('click', onDocumentClick, true);
   document.addEventListener('keydown', onKeyDown, true);
-  void petChatRefreshVoice();
+  void petChatRefreshVoice().then(() => petChatPublishContinuousState()).catch(() => {});
   petChatEventsStart();
   // 对外通道：`speak(text)` 供待办/提醒直接调用（不打开任何窗口）
   try {
@@ -637,8 +716,10 @@ function mountPetChat() {
   return () => {
     window.removeEventListener('we-pet-talk', onTalkEvent);
     window.removeEventListener('we-pet-speak', onSpeakEvent);
+    window.removeEventListener('we-pet-continuous', onContinuousEvent);
     document.removeEventListener('click', onDocumentClick, true);
     document.removeEventListener('keydown', onKeyDown, true);
+    document.removeEventListener('visibilitychange', onVisibility);
     petChatEventsStop();
     petSpeakStop();
     try { if (window.__dshFoliaPet) delete window.__dshFoliaPet; } catch { /* ignore */ }

@@ -197,6 +197,15 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
   let walkLeft = 0;
   /** 单击轮换到第几号轨道。 */
   let clickIdx = 0;
+  /** pre.63：右键菜单的连续对话状态（由 pet-chat 通过事件同步）。 */
+  let continuousEnabled = true;
+  let continuousPaused = false;
+  const onContinuousState = (event) => {
+    const detail = (event && event.detail) || {};
+    if (typeof detail.enabled === 'boolean') continuousEnabled = detail.enabled;
+    if (typeof detail.paused === 'boolean') continuousPaused = detail.paused;
+    if (menu) closeMenu();
+  };
 
   let scaleCur = Number(scale) > 0 ? Number(scale) : 1;
   const cw = Math.max(1, Number(pet.cell && pet.cell.width) || 192);
@@ -416,6 +425,9 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
    * 菜单条目 = 9 条动作各一条（点一下立刻试演）+ 声音/大小/复位/隐藏。
    */
   let menu = null;
+  if (typeof window !== "undefined" && window.addEventListener) {
+    window.addEventListener("we-pet-continuous-state", onContinuousState);
+  }
   function closeMenu() {
     if (menu && menu.parentNode) menu.parentNode.removeChild(menu);
     menu = null;
@@ -458,6 +470,33 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
     const hr = document.createElement("div");
     hr.style.cssText = "height:1px;margin:6px 0;background:rgba(255,255,255,0.14)";
     menu.appendChild(hr);
+    // pre.63：连续对话（与设置页 voice.continuous 同一字段，由 pet-chat 同步状态/持久化）
+    const sendContinuous = (action) => {
+      try {
+        window.dispatchEvent(new CustomEvent("we-pet-continuous", { detail: { action } }));
+      } catch { /* 没装 pet-chat 时无副作用 */ }
+    };
+    menu.appendChild(buildMenuItem(
+      (continuousEnabled ? "☑ " : "☐ ") + weT("连续对话"),
+      () => {
+        continuousEnabled = !continuousEnabled;
+        sendContinuous("toggle");
+        closeMenu();
+      },
+    ));
+    if (continuousEnabled) {
+      menu.appendChild(buildMenuItem(
+        continuousPaused ? weT("继续听") : weT("暂停听"),
+        () => {
+          sendContinuous(continuousPaused ? "resume" : "pause");
+          continuousPaused = !continuousPaused;
+          closeMenu();
+        },
+      ));
+    }
+    const hr2 = document.createElement("div");
+    hr2.style.cssText = "height:1px;margin:6px 0;background:rgba(255,255,255,0.14)";
+    menu.appendChild(hr2);
     // 「对话」：打开桌宠对话的输入条（由 pet-chat 特性监听该事件；没装该特性时点了无副作用）
     menu.appendChild(buildMenuItem(weT("对话"), () => {
       try { window.dispatchEvent(new CustomEvent("we-pet-talk")); } catch { /* ignore */ }
@@ -527,6 +566,7 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
     if (typeof window !== "undefined") {
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("we-pet-continuous-state", onContinuousState);
     }
   }
 
