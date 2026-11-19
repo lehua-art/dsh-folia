@@ -46,7 +46,6 @@ function check(name, ok, detail) {
 }
 const wait = (ms) => new Promise((resolveP) => { setTimeout(resolveP, ms); });
 const MEMORY_FILE = join(TEST_HOME, 'pet-chat', 'memory.json');
-const readMem = () => (existsSync(MEMORY_FILE) ? JSON.parse(readFileSync(MEMORY_FILE, 'utf8')) : null);
 
 /* ── 台架：假宿主 + 假模型端点 ─────────────────────────────────────────── */
 
@@ -236,28 +235,31 @@ const doneEvent = (events) => events.find((e) => e.event === 'done') || { data: 
   await model.close();
 }
 
-/* ── B 长期记忆事件 ─────────────────────────────────────────────────────── */
+/* ── B 长期记忆（persona 事件流；旧 memory.json 不再参与）────────────────── */
 {
-  try { rmSync(MEMORY_FILE, { force: true }); } catch { /* ignore */ }
+  const { getActivePersona } = await import('../lib/persona-store.js');
+  const { listEvents } = await import('../lib/persona-memory.js');
   const model = await startModel();
   const settings = { petChat: { enabled: true, provider: 'ollama', baseUrl: model.base, model: 'fake' } };
   const host = await startHost(settings);
   const events = await chat(host, '记住我喜欢深色壁纸');
   const done = doneEvent(events);
-  const mem = readMem();
-  check('B1 「记住我喜欢深色壁纸」→ memory.json 有 likes 与 events',
-    done.data.tool === 'memory_note' && done.data.verified === true
-      && mem && mem.likes.includes('深色壁纸') && mem.events.length >= 1,
-    `likes=${JSON.stringify(mem && mem.likes)} · events=${JSON.stringify(mem && mem.events)}`);
+  const persona = getActivePersona();
+  const stored = listEvents(persona.id);
+  check('B1 「记住我喜欢深色壁纸」→ 写当前 persona 的事件流',
+    done.data.intent === 'memory' && done.data.verified === true
+      && stored.items.some((item) => item.text.includes('深色壁纸')),
+    `events=${JSON.stringify(stored.items.map((item) => item.text))}`);
 
   await wait(1100);
   const chatEvents = await chat(host, '我喜欢什么');
   const lastSystem = String(model.seen[model.seen.length - 1].body.messages[0].content || '');
-  check('B2 下一轮 system 注入长期记忆（重启后同一条读写路径）',
-    lastSystem.includes('喜欢=深色壁纸') && chatEvents.some((e) => e.event === 'delta'),
-    `system 含记忆=${lastSystem.includes('喜欢=深色壁纸')}`);
+  check('B2 下一轮 system 注入该 persona 的召回记忆',
+    lastSystem.includes('深色壁纸') && chatEvents.some((e) => e.event === 'delta'),
+    `system 含记忆=${lastSystem.includes('深色壁纸')}`);
   await host.close();
   await model.close();
+  try { rmSync(MEMORY_FILE, { force: true }); } catch { /* ignore */ }
 }
 
 /* ── C 环境：时间查询不编造 ─────────────────────────────────────────────── */
@@ -353,8 +355,8 @@ const doneEvent = (events) => events.find((e) => e.event === 'done') || { data: 
       && /petChatHandleAction/.test(clientSrc)
       && /applySelection\(String\(target\.id\)/.test(clientSrc)
       && /\/pet-chat\/tool-result/.test(clientSrc)
-      && /body: JSON\.stringify\(\{ text, context \}\)/.test(clientSrc)
-      && /rate: petChatSpeechRate/.test(clientSrc),
+      && /body: JSON\.stringify\(\{[\s\S]{0,160}inputMode: petChatInputMode/.test(clientSrc)
+      && /rate: petChatSpeechRate \+/.test(clientSrc),
     'action/context/rate 四处锚点');
   await host.close();
   await model.close();

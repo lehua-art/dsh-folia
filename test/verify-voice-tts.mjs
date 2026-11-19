@@ -448,7 +448,7 @@ function fakeTts() {
   const wakeBody = wakeIdx >= 0 ? clientSrc.slice(wakeIdx, wakeIdx + 500) : '';
   check('⑤ petChatWake 先 petSpeakStop()（点一下就打断），挂载提供 onBeforeRecord',
     /petSpeakStop\(\);\s*\n\s*void petChatRefreshVoice\(\)/.test(wakeBody)
-      && /onBeforeRecord: \(\) => \{ petSpeakStop\(\); \}/.test(clientSrc),
+      && /onBeforeRecord: \(\) => \{[^}]*petSpeakStop\(\); \}/.test(clientSrc),
     'wake 第一行 = petSpeakStop()');
   check('⑤ 打字入口也先 petSpeakStop()（新的一轮不叠音）',
     /const send = \(\) => \{[\s\S]{0,400}petSpeakStop\(\);[\s\S]{0,200}petVoiceIn\.postChat/.test(clientSrc));

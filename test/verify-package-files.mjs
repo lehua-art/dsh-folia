@@ -411,7 +411,8 @@ async function main() {
     // 4.26.0-pre.46 抬到 **143/156**：卡片「下载完成但没落地」自愈
     // （`test/verify-stall-heal.mjs`：挂载补收尾 + 0/3/8s 三次退避 + healing 卡片态）。
     // 4.26.0-pre.64 抬到 **144/157**：桌宠大脑 v2（意图/事件记忆/环境/情绪/主动/回读校验）。
-    const CHAIN_FLOOR = { verify: 144, docs: 6, smoke: 6, all: 157 };
+    // 4.26.0-pre.65 抬到 **145/158**：人设系统（多 Persona / CCv2 卡 / 成长 / 记忆检索）。
+    const CHAIN_FLOOR = { verify: 145, docs: 6, smoke: 6, all: 158 };
     /** 地板表与 GROUPS 的对齐体检：键名必须与**组名**逐一对齐（纯函数 ⇒ 负对照可直接喂）。 */
     const floorGaps = (groups, floors) => groups.map(([, g]) => g).filter((g) => !Number.isInteger(floors[g]));
     const problems = floorGaps(GROUPS, CHAIN_FLOOR).map((g) => '地板表缺组 ' + g

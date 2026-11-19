@@ -19,7 +19,7 @@
 process.env.FOLIA_ASR_ROOT = process.env.FOLIA_ASR_ROOT || (process.platform === 'win32' ? 'C:/Windows/Temp/folia-asr-none' : '/tmp/folia-asr-none');
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -192,12 +192,13 @@ const ollamaLines = (...pieces) => pieces.map((piece) => JSON.stringify({ messag
   const model = await startModel(() => ({ lines: ollamaLines('好') }));
   const host = await startHost({ petChat: { enabled: true, provider: 'ollama', baseUrl: model.base } });
   const response = await fetch(`${host.base}/chat`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '你好' }),
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '你好', inputMode: 'text' }),
   });
   await readSse(response);
   const system = String((model.seen[0].body.messages || [])[0].content || '');
-  check('A3 人设默认值进 system prompt',
-    system.includes('Folia') && system.includes('元气、短句、偶尔颜文字、不说教') && system.includes('被夸会害羞'),
+  check('A3 persona system prompt：身份/工具/无固定字数（旧“颜文字”文案已去掉）',
+    system.includes('你是「助手」') && system.includes('不要使用表情符号') && system.includes('【工具】')
+      && !/最多 \d+ 字|颜文字/.test(system),
     `system 长度=${system.length}`);
   await host.close();
   await model.close();
@@ -370,149 +371,58 @@ const ollamaLines = (...pieces) => pieces.map((piece) => JSON.stringify({ messag
   await model.close();
 }
 
-/* ── B 块：长期偏好记忆（5 条）────────────────────────────────────────── */
-// 直接引用记忆模块（既做纯函数判据，也让 guard-map 认得这个文件的覆盖来源）
-const { parseExplicitMemory, MEMORY_LIMITS } = await import('../lib/pet-chat-memory.js');
-const MEMORY_FILE = join(TEST_HOME, 'pet-chat', 'memory.json');
-const readMem = () => (existsSync(MEMORY_FILE) ? JSON.parse(readFileSync(MEMORY_FILE, 'utf8')) : null);
-const resetMem = () => { try { rmSync(MEMORY_FILE, { force: true }); } catch { /* ignore */ } };
+/* ── B 块：persona 记忆（旧 memory.json 不再参与）──────────────────────── */
+const { listEvents } = await import('../lib/persona-memory.js');
+const { getActivePersona } = await import('../lib/persona-store.js');
+const LEGACY_MEMORY_FILE = join(TEST_HOME, 'pet-chat', 'memory.json');
 
-/* B① 显式「记住X」⇒ 落盘 + 下一轮 system prompt 含它 */
+/* B① 显式「记住X」⇒ 写 persona 事件流，并可在下一轮召回 */
 {
-  resetMem();
+  rmSync(LEGACY_MEMORY_FILE, { force: true });
   const model = await startModel(() => ({ lines: ollamaLines('好') }));
   const host = await startHost({ petChat: { enabled: true, provider: 'ollama', baseUrl: model.base } });
   const send = async (text) => {
     const response = await fetch(`${host.base}/chat`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }),
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, inputMode: 'text' }),
     });
     await readSse(response);
-    await new Promise((r) => setTimeout(r, 1100)); // 限频 1/s
+    await new Promise((r) => setTimeout(r, 1100));
   };
   await send('记住我喜欢原神');
-  const mem = readMem();
-  const parsedNick = parseExplicitMemory('记住我叫你小鲸');
-  const parsedLike = parseExplicitMemory('记住我喜欢原神');
-  assert.equal(parsedNick && parsedNick.field, 'nickname', '「记住我叫你X」应识别为称呼');
-  assert.equal(parsedLike && parsedLike.value, '原神', '「记住我喜欢X」应识别为喜欢');
-  assert.equal(MEMORY_LIMITS.likes, 20, '上限常量在模块里（likes ≤ 20）');
+  const persona = getActivePersona();
+  const events = listEvents(persona.id);
   await send('今天桌面有点乱');
   const lastSystem = String((model.seen[model.seen.length - 1].body.messages || [])[0].content || '');
-  check('B① 显式「记住X」⇒ 落盘且下一轮 system prompt 含它',
-    mem && mem.likes.includes('原神') && lastSystem.includes('喜欢=原神'),
-    `文件=${JSON.stringify(mem && mem.likes)} · prompt 含记忆=${lastSystem.includes('关于主人')}`);
+  check('B① 显式「记住X」⇒ 写当前人设事件流且下一轮 prompt 可召回',
+    events.items.some((item) => item.text.includes('原神')) && lastSystem.includes('原神'),
+    `events=${JSON.stringify(events.items.map((item) => item.text))} · prompt 含原神=${lastSystem.includes('原神')}`);
+  check('B② 旧 memory.json 没有被创建/写入（决策 ④）',
+    !existsSync(LEGACY_MEMORY_FILE),
+    `旧文件=${existsSync(LEGACY_MEMORY_FILE) ? '存在' : '不存在'}`);
   await host.close();
   await model.close();
 }
 
-/* B② 第 N 轮触发摘要 ⇒ 合并去重，不覆盖显式项 */
+/* B③ 老 memory.json 有内容也不读、不删 */
 {
-  resetMem();
-  const SUMMARY = { nickname: '不该覆盖', likes: ['原神', '星空'], dislikes: ['广告'], style: '简短', notes: ['夜里更活跃'] };
-  const model = await startModel((index, body) => {
-    const first = String((body && body.messages && body.messages[0] && body.messages[0].content) || '');
-    if (first.startsWith('[memory-summary]')) return { json: { message: { content: JSON.stringify(SUMMARY) } } };
-    return { lines: ollamaLines('嗯') };
-  });
-  const host = await startHost({ petChat: { enabled: true, provider: 'ollama', baseUrl: model.base, memoryEveryTurns: 3 } });
-  for (let i = 1; i <= 3; i += 1) {
-    const response = await fetch(`${host.base}/chat`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '随便聊聊' + i }),
-    });
-    // eslint-disable-next-line no-await-in-loop -- 逐轮串行，第 3 轮触发摘要
-    await readSse(response);
-    // eslint-disable-next-line no-await-in-loop -- 限频 1/s
-    await new Promise((r) => setTimeout(r, 1100));
-  }
-  // 再跑 3 轮：同一份摘要再来一次，去重后条数不该增长
-  for (let i = 4; i <= 6; i += 1) {
-    const response = await fetch(`${host.base}/chat`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '继续聊' + i }),
-    });
-    // eslint-disable-next-line no-await-in-loop -- 同上
-    await readSse(response);
-    // eslint-disable-next-line no-await-in-loop -- 限频 1/s
-    await new Promise((r) => setTimeout(r, 1100));
-  }
-  const mem = readMem();
-  check('B② 第 3/6 轮触发摘要 ⇒ 合并去重（同一份摘要不重复）',
-    mem && mem.likes.length === 2 && mem.likes.includes('原神') && mem.likes.includes('星空')
-      && mem.nickname === '' && mem.notes.length === 1,
-    `likes=${JSON.stringify(mem && mem.likes)} · nickname=${JSON.stringify(mem && mem.nickname)} · notes=${JSON.stringify(mem && mem.notes)}`);
-  await host.close();
-  await model.close();
-}
-
-/* B③ 清空 ⇒ 文件没了、prompt 不再含记忆 */
-{
-  resetMem();
+  mkdirSync(dirname(LEGACY_MEMORY_FILE), { recursive: true });
+  writeFileSync(LEGACY_MEMORY_FILE, JSON.stringify({ nickname: '旧档', likes: ['旧记忆秘密'], dislikes: [], style: '', notes: [], updatedAt: Date.now() }));
+  const beforeFile = readFileSync(LEGACY_MEMORY_FILE, 'utf8');
   const model = await startModel(() => ({ lines: ollamaLines('好') }));
   const host = await startHost({ petChat: { enabled: true, provider: 'ollama', baseUrl: model.base } });
-  const send = async (text) => {
-    const response = await fetch(`${host.base}/chat`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }),
-    });
-    await readSse(response);
-    await new Promise((r) => setTimeout(r, 1100));
-  };
-  await send('记住我喜欢原神');
-  const before = readMem();
-  await fetch(`${host.base}/reset`, { method: 'POST' });
-  await send('清空之后');
-  const lastSystem = String((model.seen[model.seen.length - 1].body.messages || [])[0].content || '');
-  check('B③ 清空 ⇒ 文件没了、prompt 不再含记忆',
-    Boolean(before && before.likes.length) && readMem() === null && !lastSystem.includes('关于主人'),
-    `清空前=${JSON.stringify(before && before.likes)} · 清空后文件=${readMem() === null ? '不存在' : '仍存在'} · prompt 含记忆=${lastSystem.includes('关于主人')}`);
-  await host.close();
-  await model.close();
-}
-
-/* B④ v0.1 零配置：记忆常开 —— 旧档写 memoryEnabled=false 也照常记、照常注入 */
-{
-  resetMem();
-  const model = await startModel(() => ({ lines: ollamaLines('好') }));
-  const host = await startHost({ petChat: { enabled: true, provider: 'ollama', baseUrl: model.base, memoryEnabled: false } });
   const response = await fetch(`${host.base}/chat`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '记住我喜欢原神' }),
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '你记得我喜欢什么吗', inputMode: 'text' }),
   });
   await readSse(response);
-  // v2：显式记忆走 action 通道（工具落盘后直接回执），不再额外调一次模型；
-  // 这里只断言“照常记”，模型调用有无都不影响结论。
-  const lastSystem = model.seen.length
-    ? String((model.seen[model.seen.length - 1].body.messages || [])[0].content || '')
-    : '';
-  // 注意：记忆是**这一轮**从用户话里提取的，注入要到下一轮才看得到 —— 这里只断言"照常记"
-  check('B④ 记忆常开：旧档写 memoryEnabled=false 也照常记',
-    readMem() !== null,
-    `文件=${readMem() === null ? '不存在' : '有'} · 本轮 prompt 含记忆=${lastSystem.includes('关于主人')}`);
+  const lastSystem = String((model.seen[model.seen.length - 1].body.messages || [])[0].content || '');
+  check('B③ 老 memory.json 不参与 prompt，且文件原样保留',
+    !lastSystem.includes('旧记忆秘密') && readFileSync(LEGACY_MEMORY_FILE, 'utf8') === beforeFile,
+    `prompt 含旧=${lastSystem.includes('旧记忆秘密')} · 文件未变=${readFileSync(LEGACY_MEMORY_FILE, 'utf8') === beforeFile}`);
   await host.close();
   await model.close();
+  rmSync(LEGACY_MEMORY_FILE, { force: true });
 }
 
-/* B⑤ 隐私：memory.json 里不含聊天原文 */
-{
-  resetMem();
-  const model = await startModel(() => ({ lines: ollamaLines('好') }));
-  const host = await startHost({ petChat: { enabled: true, provider: 'ollama', baseUrl: model.base } });
-  const secrets = ['我今天在写一个特别长的项目报告', '记住我喜欢原神'];
-  for (const text of secrets) {
-    const response = await fetch(`${host.base}/chat`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }),
-    });
-    // eslint-disable-next-line no-await-in-loop -- 逐句串行
-    await readSse(response);
-    // eslint-disable-next-line no-await-in-loop -- 限频 1/s
-    await new Promise((r) => setTimeout(r, 1100));
-  }
-  const raw = existsSync(MEMORY_FILE) ? readFileSync(MEMORY_FILE, 'utf8') : '';
-  const leaked = secrets.some((text) => raw.includes(text));
-  check('B⑤ 隐私：memory.json 不含聊天原文',
-    raw.length > 0 && !leaked && raw.includes('原神'),
-    `文件 ${raw.length} 字节 · 含原文=${leaked} · 含结论=${raw.includes('原神')}`);
-  await host.close();
-  await model.close();
-  resetMem();
-}
 /* ── D 块：语音转写（6 条判据）────────────────────────────────────────── */
 /** 造一段合法的 16kHz 单声道 PCM16 WAV（seconds 秒）。 */
 function makeWav(seconds) {

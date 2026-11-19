@@ -161,10 +161,15 @@ async function ensureAsrReady(isCancelled) {
  * 读不到就保持“不静音”，宁可多念一句，也不要让用户以为朗读坏了。
  */
 let petChatVoice = { name: '', muted: false, rate: 0, continuous: true };
+/** pre.65：本轮输入方式决定长度策略（语音 1–3 句；文字可长）。 */
+let petChatInputMode = 'text';
+/** 当前 active persona（只用于提示/排障；宿主以 index.active 为准，避免切换后发旧 id）。 */
+let petChatPersonaId = '';
 async function petChatRefreshVoice() {
   try {
     const resp = await apiJson('/pet-chat/state', { parse: 'always' });
     const doc = (resp && resp.data) || {};
+    if (doc.persona && doc.persona.id) petChatPersonaId = String(doc.persona.id);
     if (doc.voice && typeof doc.voice === 'object') {
       petChatVoice = {
         name: String(doc.voice.name || ''),
@@ -611,7 +616,7 @@ function petSpeakStop() { return petTts.stop(); }
 /** 语音输入（v0.1）：前端不碰麦克风 —— 宿主用 ffmpeg 录，这里只发请求、收文本。 */
 const petVoiceIn = petVoiceInputCreate({
   // barge-in：**一开录就先停朗读**（判据 verify-voice-tts 断言这个顺序）
-  onBeforeRecord: () => { petSpeakStop(); },
+  onBeforeRecord: () => { petChatInputMode = 'voice'; petSpeakStop(); },
   postRecord: async () => {
     // pre.62：ffmpeg 不在包里，首次点麦可能在下载。宿主回 ffmpeg-preparing+percent；
     // 这里在状态条显示进度并自动重试 /record（下载在宿主后台继续），不显示“没听到声音”。
@@ -657,7 +662,12 @@ const petVoiceIn = petVoiceInputCreate({
       res = await apiFetch('/pet-chat/chat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text, context }),
+        body: JSON.stringify({
+          text,
+          context,
+          // pre.65：显式输入方式让宿主做“语音 1–3 句 / 文字可长”的长度策略。
+          inputMode: petChatInputMode === 'voice' ? 'voice' : 'text',
+        }),
         // ⚠️ 必须 parse:'none'。默认路径会 await response.json()，
         //    那会把 SSE 流**整个消费掉**（等到生成结束、再解析失败），
         //    之后 res.response.body 已 used ⇒ getReader() 抛错 ⇒ 气泡一个字都不出。
@@ -689,8 +699,8 @@ const petVoiceIn = petVoiceInputCreate({
     const enqueueSpeech = (piece) => {
       const line = String(piece || '').trim();
       if (!line) return;
-      // v2：本轮语速由宿主 meta 给（夜间/疲惫 -1 = -10%）；队列里每句都带自己的 rate。
-      if (petSpeak(line, { rate: petChatSpeechRate })) queuedSpeech += 1;
+      // v2：本轮语速由宿主 meta 给（夜间/疲惫 -1 = -10%）；再叠加当前人设的 voice.rate。
+      if (petSpeak(line, { rate: petChatSpeechRate + (Number(petChatVoice.rate) || 0) })) queuedSpeech += 1;
     };
     const reader = stream.body.getReader();
     const decoder = new TextDecoder();
@@ -837,6 +847,7 @@ function petChatOpenTyping(extra = {}) {
     // 新的一轮 = 先掐掉上一轮还在念的（与录音入口同一条 barge-in 纪律）
     petSpeakStop();
     petChatVoiceAbort = false;
+    petChatInputMode = 'text';
     // 打字说的文本**不上气泡**（P4 同理：气泡只显示助手的回答）。
     // 这里只把状态切成"思考中"，等 SSE 的 delta 逐字填进来。
     petBubble.setState('think');
@@ -993,7 +1004,7 @@ function mountPetChat() {
     window.__dshFoliaPet = {
       speak: (text, speech) => petSpeak(text, speech || {}),
       stop: () => petSpeakStop(),
-      chat: (text) => petVoiceIn.postChat(String(text || '')),
+      chat: (text) => { petChatInputMode = 'text'; return petVoiceIn.postChat(String(text || '')); },
       isSpeaking: () => petTts.isSpeaking(),
     };
   } catch { /* 被别的插件占用就只保留事件通道 */ }

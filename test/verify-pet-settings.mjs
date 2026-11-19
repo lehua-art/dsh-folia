@@ -52,7 +52,8 @@ const settings = { petChat: { enabled: false } };
   const full = readFileSync(join(ROOT, 'src', 'panel-tabs-assistant.js'), 'utf8');
   // 只看桌宠语音助手那一块：桌宠自身还有「显示桌宠/桌宠音效/音效音量」开关，不属于本页签的对话设置
   const at = full.indexOf('function PetChatSettings');
-  const source = at >= 0 ? full.slice(at) : full;
+  const end = at >= 0 ? full.indexOf('function MicTestBlock', at) : -1;
+  const source = at >= 0 ? full.slice(at, end > at ? end : undefined) : full;
   // 验收口径：模型 Key / 名字（含称呼）/ 音色 / 朗读回答开关；只有保存按钮
   const required = ['模型 Key', '名字', '称呼', '音色', '🔊 朗读回答', '保存'];
   const missing = required.filter((label) => !source.includes(label));
@@ -146,19 +147,25 @@ const settings = { petChat: { enabled: false } };
   await host.close();
 }
 
-/* ⑤ 查看记忆与清空 */
+/* ⑤ 查看记忆与清空（persona 事件流；旧 memory.json 不参与） */
 {
   const host = await startHost(settings);
+  const { getActivePersona } = await import('../lib/persona-store.js');
+  const { appendEvent } = await import('../lib/persona-memory.js');
+  const persona = getActivePersona();
+  appendEvent(persona.id, { kind: 'preference', importance: 8, text: '偏好：喜欢原神' });
   const memoryFile = join(HOME, 'pet-chat', 'memory.json');
   mkdirSync(dirname(memoryFile), { recursive: true });
-  writeFileSync(memoryFile, JSON.stringify({ nickname: '小鲸', likes: ['原神'], dislikes: [], notes: ['夜里更活跃'], style: '', updatedAt: Date.now() }));
+  writeFileSync(memoryFile, JSON.stringify({ nickname: '旧档', likes: ['旧记忆秘密'], dislikes: [], notes: ['夜里更活跃'], style: '', updatedAt: Date.now() }));
   const before = await getJson(`${host.base}/memory`);
   const cleared = await getJson(`${host.base}/memory`, { method: 'DELETE' });
   const after = await getJson(`${host.base}/memory`);
-  check('⑤ 查看记忆（有内容）→ 清空后为空',
-    before.body.memory.nickname === '小鲸' && cleared.body.cleared === true
-      && (!after.body.memory || !after.body.memory.nickname),
-    `清空前=${before.body.memory.nickname} · 清空后=${after.body.memory && after.body.memory.nickname}`);
+  check('⑤ 查看 persona 记忆（有内容）→ 清空后为空；旧 memory.json 不被引用',
+    before.body.personaId === persona.id && Array.isArray(before.body.memory.events) && before.body.memory.events.length >= 1
+      && !JSON.stringify(before.body).includes('旧记忆秘密')
+      && cleared.body.cleared === true
+      && Array.isArray(after.body.memory.events) && after.body.memory.events.length === 0,
+    `清空前=${before.body.memory.events.length} 条 · 清空后=${after.body.memory.events.length} 条`);
   await host.close();
 }
 

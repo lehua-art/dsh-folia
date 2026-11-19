@@ -156,6 +156,21 @@ async function waitJob(q, ms = 60000) {
   }
 }
 
+/**
+ * hash-mismatch 的自动单流重试是**异步下一拍**才 requeue；首个 failed 只是中间态。
+ * 等它真正跑完（done，或第二次失败带“已强制刷新清单复核”文案）再断言，避免抓到中间态。
+ */
+async function waitJobAfterHashRetry(q, ms = 60000) {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const j = q.snapshot()[0];
+    if (j && (j.status === 'done'
+      || (j.status === 'failed' && /已强制刷新清单复核/.test(String(j.error || ''))))) return j;
+    if (Date.now() > deadline) return j || null;
+    await sleep(30);
+  }
+}
+
 const has = (logs, re) => logs.some((l) => re.test(l));
 
 /* ── ① 双版本对象：全量旧版、Range 新版（总量不同）⇒ 必须被拦下并回落单流 ─────── */
@@ -278,7 +293,7 @@ const has = (logs, re) => logs.some((l) => re.test(l));
   const hashUrl = up.origin + '/media/hash.bin';
   EXPECT.set(hashUrl, { sha256: GOOD_SHA, bytes: GOOD.length });
   q.add({ url: hashUrl, dest, kind: 'wallpaper' });
-  const j = await waitJob(q);
+  const j = await waitJobAfterHashRetry(q);
 
   check('⑤ 内容不符被判成 hash-mismatch', has(logs, /hash-mismatch/),
     (logs.find((l) => /hash-mismatch/.test(l)) || '（没有）').slice(0, 160));
@@ -304,7 +319,7 @@ const has = (logs, re) => logs.some((l) => re.test(l));
   const badUrl = up.origin + '/media/bad.bin';
   EXPECT.set(badUrl, { sha256: sha(GOOD), bytes: GOOD.length });
   q.add({ url: badUrl, dest, kind: 'wallpaper' });
-  const j = await waitJob(q);
+  const j = await waitJobAfterHashRetry(q);
 
   check('⑤b 最终 failed，且文案说明"传输内容与站点不一致"',
     j && j.status === 'failed' && /传输内容与站点不一致/.test(String(j.error)), j ? String(j.error) : 'no job');

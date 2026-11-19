@@ -397,6 +397,11 @@ const INLINE_MODULES = [
     markers: ['function PetsTabPanel()', 'function renderPetsTab()', 'const PET_STYLE = '],
   },
   {
+    file: 'src/panel-tabs-personas.js',
+    why: '「智能大肥鱼 → 人设」：多 Persona 列表 + 7 子页（基本/模型/人设卡/记忆/声音/玩法/权限）',
+    markers: ['function PersonaSection()', 'const PERSONA_STYLE = ', 'const PERSONA_TABS = '],
+  },
+  {
     file: 'src/panel-tabs-assistant.js',
     why: '「智能大肥鱼」一级设置项（pre.51）：独立页面承载桌宠语音助手表单（Key/名字/称呼/音色/工作能力）',
     markers: ['function AssistantSection()', 'function PetChatSettings()', 'const CHAT_DEFAULTS = ', 'id: \'we-pet-chat-settings\''],
