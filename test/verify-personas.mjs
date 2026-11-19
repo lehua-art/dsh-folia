@@ -466,21 +466,23 @@ const settings = { petChat: { enabled: true, provider: 'openai', baseUrl: '', mo
   await model.close();
 }
 
-/* ── 前端：列表 + 7 子页 ─────────────────────────────────────────────── */
+/* ── 前端：三页签 + 类型裁剪（UI v2） ─────────────────────────────────── */
 {
   const panel = readFileSync(join(ROOT, 'src', 'panel-tabs-personas.js'), 'utf8');
   const assistant = readFileSync(join(ROOT, 'src', 'panel-tabs-assistant.js'), 'utf8');
-  const tabs = ['基本', '模型与 Key', '人设卡', '记忆', '声音', '玩法', '权限'];
-  check('UI 人设列表 + 7 子页齐全，特殊人设隐藏权限页',
-    /function PersonaSection\(\)/.test(panel)
-      && tabs.every((label) => panel.includes(label))
-      && /isCharacter/.test(panel) && /PERSONA_TABS\.filter/.test(panel)
-      && /PersonaSection/.test(assistant),
-    `tabs=${tabs.length} · AssistantSection 挂载=${/PersonaSection/.test(assistant)}`);
-  check('UI 导入/导出/删除二次确认入口齐全',
-    /导入角色卡（JSON\/PNG）/.test(panel) && /export-card/.test(panel)
-      && /window\.confirm/.test(panel) && /assistant\｜特殊|特殊人设/.test(panel),
-    'import/export/confirm');
+  const assistantTabs = panel.slice(panel.indexOf('const PERSONA_BASE_TABS'), panel.indexOf('const CHARACTER_TABS'));
+  const characterTabs = panel.slice(panel.indexOf('const CHARACTER_TABS'), panel.indexOf('const LIST_TABS'));
+  check('UI v2 三页签：我的助手 / 特殊人设 / 卡片库',
+    ['我的助手', '特殊人设', '卡片库'].every((label) => panel.includes(label))
+      && /function PersonaSection\(\)/.test(panel) && /PersonaSection/.test(assistant));
+  check('UI v2 类型裁剪：assistant 有权限无剧情；character 有剧情无权限',
+    /权限/.test(assistantTabs) && !/剧情/.test(assistantTabs)
+      && /剧情/.test(characterTabs) && !/权限/.test(characterTabs));
+  check('UI v2 全局默认只走弹窗；导入/导出/删除二次确认入口齐全',
+    /GlobalKeyModal/.test(panel) && /type: 'password'/.test(panel)
+      && /import-document/.test(panel) && /export-card/.test(panel)
+      && /window\.confirm/.test(panel) && /会同时删除它的全部记忆/.test(panel),
+    'modal/import/export/confirm');
 }
 
 /* ── H：旧 memory.json 不被读取 ─────────────────────────────────────────── */

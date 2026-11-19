@@ -398,8 +398,8 @@ const INLINE_MODULES = [
   },
   {
     file: 'src/panel-tabs-personas.js',
-    why: '「智能大肥鱼 → 人设」：多 Persona 列表 + 7 子页（基本/模型/人设卡/记忆/声音/玩法/权限）',
-    markers: ['function PersonaSection()', 'const PERSONA_STYLE = ', 'const PERSONA_TABS = '],
+    why: '「智能大肥鱼 → 人设」v2：三页签列表 + 全局默认弹窗 + 助手向导 + 卡片库 + 文档卡片化 + 类型裁剪详情',
+    markers: ['function PersonaSection()', 'const PERSONA_STYLE = ', 'const LIST_TABS = ', 'const CHARACTER_TABS = '],
   },
   {
     file: 'src/panel-tabs-assistant.js',

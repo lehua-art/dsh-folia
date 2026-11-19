@@ -1101,6 +1101,14 @@
         {
           "kind": "guard",
           "npm": null,
+          "file": "test/verify-persona-ui.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
           "file": "test/verify-pet-settings.mjs",
           "args": [],
           "tier": "hard",
@@ -2379,6 +2387,14 @@
           "kind": "guard",
           "npm": null,
           "file": "test/verify-personas.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-persona-ui.mjs",
           "args": [],
           "tier": "hard",
           "probe": false

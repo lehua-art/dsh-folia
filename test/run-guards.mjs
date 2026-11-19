@@ -461,6 +461,8 @@ const VERIFY_STEPS = [
   // pre.65 人设系统（18 条）：多 Key/模型、记忆隔离、CCv2 JSON/PNG、特殊人设禁工具、
   // 成长自动采纳、200 条记忆 top-8、语音/文字长度、旧 memory.json 不读。
   step('test/verify-personas.mjs'),
+  // pre.65 UI v2（24 条）：Key 收口 / 三页签 / 一键使用 / docx 卡片化 / 类型裁剪 / 记忆隔离。
+  step('test/verify-persona-ui.mjs'),
   // 桌宠对话设置区（6 条）：控件齐全 / 保存生效 / 切 Ollama / 测试失败原因 / 记忆清空 / 关对话不弹气泡
   step('test/verify-pet-settings.mjs'),
   // G1 入口加载冒烟：最小 fake ctx 真跑 apply（不抛错 / 基础路由在 / 语音未就绪不崩）

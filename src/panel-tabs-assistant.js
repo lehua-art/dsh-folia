@@ -1075,10 +1075,6 @@ function AssistantSection() {
   return React.createElement('div', { className: 'we-assistant-section', style: { padding: '4px 2px' } },
     React.createElement('div', { style: { fontSize: '14px', fontWeight: 600 } }, weT('智能大肥鱼')),
     React.createElement(PersonaSection, null),
-    React.createElement('div', { style: { fontSize: '12px', fontWeight: 600, margin: '12px 0 2px' } }, weT('全局默认（仅“继承全局”的人设使用）')),
-    React.createElement('div', { className: 'we-picker__hint', style: { fontSize: '10px', opacity: .7, marginBottom: '4px' } },
-      weT('旧版 config/memory.json 不迁移、不读取；这里只作为所有人设的回落默认。')),
-    React.createElement(PetChatSettings, null),
   );
 }
 
