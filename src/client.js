@@ -5754,7 +5754,7 @@ const ROPE_FORMS = {
   qwen:     { get label() { return weT("Qwen"); }, img: ROPE_IMG_QWEN,       w: 64, h: 80 },
   // ── 本仓自有形象（fork）：`folia` —— 顺序必须与 settings-schema 的 `ROPE_FORM_VALUES` 一致
   //    （test/verify-presets.mjs 断言两张表的键序逐字相同）。源图 350×384 ⇒ 64 宽时高 70。──
-  folia:    { get label() { return weT("Folia"); }, img: ROPE_IMG_FOLIA,      w: 64, h: 70 },
+  folia:    { get label() { return weT("dshAI"); }, img: ROPE_IMG_FOLIA,      w: 64, h: 70 },
 };
 
 /**

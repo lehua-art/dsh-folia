@@ -35,27 +35,8 @@ const CAP_ICON = {
 const CAP_META = { fontSize: '11px', opacity: 0.6, marginTop: '2px', wordBreak: 'break-all' };
 
 /** 作者仓库预览占位块：固定 120px 高，图片失败时仍占位（不塌、不露裂图）。 */
-const CAP_PREVIEW_BOX = {
-  width: '100%',
-  height: '120px',
-  overflow: 'hidden',
-  borderRadius: '8px',
-  background: 'rgba(255,255,255,0.06)',
-};
 
 
-/** 本地封面：按名字做确定性色相，永不依赖网络（离线也好看）。 */
-function capCoverHue(item) {
-  const text = String((item && (item.pkg || item.name)) || '');
-  let h = 0;
-  for (let i = 0; i < text.length; i += 1) h = (h * 31 + text.charCodeAt(i)) % 360;
-  return h;
-}
-
-function capCoverBg(item) {
-  const h = capCoverHue(item);
-  return 'linear-gradient(135deg, hsl(' + h + ' 45% 26%) 0%, hsl(' + ((h + 42) % 360) + ' 50% 15%) 100%)';
-}
 
 function CapabilityCard({ item }) {
   const [open, setOpen] = React.useState(false);
@@ -99,24 +80,6 @@ function CapabilityCard({ item }) {
   const body = [head];
   if (open) {
     const line = (k, v) => React.createElement('div', { key: k, className: 'we-picker__hint', style: { marginTop: '4px' } }, v);
-    // 本地生成的封面（图标 + 名称 + 分类），不依赖任何外部图片，离线也好看。
-    const sectionLabel = item.section === 'fun' ? weT('娱乐') : weT('工作');
-    body.push(React.createElement('div', { key: 'cover', style: { marginTop: '8px' } },
-      React.createElement('div', {
-        style: {
-          height: '120px', borderRadius: '8px', overflow: 'hidden',
-          display: 'flex', alignItems: 'center', gap: '12px', padding: '0 16px',
-          background: capCoverBg(item),
-        },
-      }),
-      React.createElement('span', { style: { fontSize: '40px', lineHeight: 1 } }, item.icon || '🧩'),
-      React.createElement('div', { style: { minWidth: 0 } },
-        React.createElement('div', {
-          style: { fontWeight: 600, fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-        }, item.name),
-        React.createElement('div', {
-          style: { marginTop: '4px', fontSize: '11px', opacity: 0.78, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-        }, sectionLabel + ' · ' + (item.pkg || '')))));
     body.push(React.createElement('div', { key: 'd-title', style: { marginTop: '8px', fontSize: '12px', fontWeight: 600 } }, weT('详情')));
     body.push(line('desc', item.authorDesc || item.summary || ''));
     body.push(React.createElement('div', { key: 'u-title', style: { marginTop: '8px', fontSize: '12px', fontWeight: 600 } }, weT('如何使用')));
@@ -210,4 +173,4 @@ function CapabilitiesSection() {
       items,
     }));
 }
-export { capCoverHue, capCoverBg, CapabilityCard, CapabilitiesSection, CapGroup };
+export { CapabilityCard, CapabilitiesSection, CapGroup };

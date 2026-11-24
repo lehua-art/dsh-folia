@@ -1,5 +1,5 @@
 /**
- * verify-identity-ui.mjs — pre.71 身份文案 + 两处 UI 文案删除 + 能力作者预览图。
+ * verify-identity-ui.mjs — pre.71 身份文案 + 两处 UI 文案删除 + 移除能力详情预览图。
  *
  * 任务单四项：
  *   A. 插件身份文案（package.json displayName/description + README 首屏副标题）覆盖现状；
@@ -39,16 +39,16 @@ const inventory = read('lib/inventory.js');
 
 // ══ A. 身份文案 ═══════════════════════════════════════════════════════════════
 {
-  check('package.json displayName 改为「Folia · 壁纸引擎与 AI 桌宠」',
-    pkg.displayName === 'Folia · 壁纸引擎与 AI 桌宠', pkg.displayName);
+  check('package.json displayName 改为「dshAI · 壁纸引擎与 AI 桌宠」',
+    pkg.displayName === 'dshAI · 壁纸引擎与 AI 桌宠', pkg.displayName);
   const desc = String(pkg.description || '');
   const tokens = ['壁纸', 'AI 桌宠', '人设', '皮肤', '开机动画', '能力'];
   check('package.json description 语义覆盖壁纸 / AI 桌宠 / 人设 / 皮肤 / 开机动画 / 能力',
     tokens.every((t) => desc.includes(t)), desc);
   check('package.json description 不再只写旧的 WE 壁纸 + 皮肤',
     !/^DSH 壁纸引擎：本机 WE 壁纸实时渲染/.test(desc), desc);
-  check('README 首屏标题同步为「Folia · 壁纸引擎与 AI 桌宠」',
-    /^# Folia · 壁纸引擎与 AI 桌宠$/m.test(readme));
+  check('README 首屏标题同步为「dshAI · 壁纸引擎与 AI 桌宠」',
+    /^# dshAI · 壁纸引擎与 AI 桌宠$/m.test(readme));
   check('README 首屏副标题覆盖 AI 桌宠语音 / 多人设 / 皮肤 / 开机动画 / 能力市场',
     /AI 桌宠语音助手/.test(readme) && /多人设角色卡/.test(readme)
     && /皮肤与开机动画/.test(readme) && /能力市场/.test(readme),
@@ -104,12 +104,9 @@ const inventory = read('lib/inventory.js');
   };
   globalThis.weT = (key) => String(key);
   const mod = await import(pathToFileURL(join(ROOT, 'src/panel-tabs-work.js')).href);
-  const capCoverHue = mod.capCoverHue;
-check('本地封面：同名确定性色相（0–359）',
-  capCoverHue({ pkg: 'a' }) === capCoverHue({ pkg: 'a' })
-  && capCoverHue({ pkg: 'a' }) >= 0 && capCoverHue({ pkg: 'a' }) < 360);
-check('不再依赖外部图片（无 opengraph / 无 img 预览）',
-  !/opengraph/.test(workTab) && !/预览图来自作者仓库/.test(workTab) && !/capPreviewUrl/.test(workTab));
+
+check('能力详情不再渲染任何封面/图片（预览图已移除）',
+  !/opengraph|capCoverHue|capCoverBg|CAP_PREVIEW_BOX|预览图来自作者仓库/.test(workTab));
 
 const stateQueue = [];
 globalThis.React.useState = (init) => {
@@ -137,10 +134,9 @@ const baseItem = { name: '示例能力', summary: '摘要', pkg: 'pkg', authorDe
 
 stateQueue.push(true, false);
 const tree = mod.CapabilityCard({ item: baseItem });
-check('渲染树：详情顶部有本地封面（图标 + 名称 + 分类）且不渲染 img',
+check('渲染树：详情展开后不渲染 img，且详情/如何使用仍在',
   !findNode(tree, (n) => n.type === 'img')
-  && textOf(tree).includes('示例能力') && textOf(tree).includes('娱乐'));
-check('渲染树：不再出现“预览图来自作者仓库”小字', !textOf(tree).includes('预览图来自作者仓库'));
+  && textOf(tree).includes('详情') && textOf(tree).includes('如何使用'));
 }
 
 console.log('');
