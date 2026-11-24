@@ -42,26 +42,24 @@ const CAP_PREVIEW_BOX = {
   borderRadius: '8px',
   background: 'rgba(255,255,255,0.06)',
 };
-const CAP_PREVIEW_IMG = { width: '100%', height: '120px', objectFit: 'cover', display: 'block' };
 
-/**
- * 从能力条目的 `source` 推作者仓库的 OG 预览图：
- *   https://github.com/<owner>/<repo>[/tree/...] → https://opengraph.githubassets.com/1/<owner>/<repo>
- * 非 GitHub 来源（npm / 其它）返回空串 —— 调用方据此整块不渲染，保持原布局。
- * 不新增 catalog 字段，也不发起额外抓取：OG 图由 GitHub 自己生成。
- */
-function capPreviewUrl(source) {
-  const m = String(source || '').match(/^https?:\/\/(?:www\.)?github\.com\/([^/?#]+)\/([^/?#]+)/i);
-  if (!m) return '';
-  const repo = m[2].replace(/\.git$/i, '');
-  if (!m[1] || !repo) return '';
-  return 'https://opengraph.githubassets.com/1/' + m[1] + '/' + repo;
+
+/** 本地封面：按名字做确定性色相，永不依赖网络（离线也好看）。 */
+function capCoverHue(item) {
+  const text = String((item && (item.pkg || item.name)) || '');
+  let h = 0;
+  for (let i = 0; i < text.length; i += 1) h = (h * 31 + text.charCodeAt(i)) % 360;
+  return h;
+}
+
+function capCoverBg(item) {
+  const h = capCoverHue(item);
+  return 'linear-gradient(135deg, hsl(' + h + ' 45% 26%) 0%, hsl(' + ((h + 42) % 360) + ' 50% 15%) 100%)';
 }
 
 function CapabilityCard({ item }) {
   const [open, setOpen] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
-  const [previewFailed, setPreviewFailed] = React.useState(false);
   const copy = () => {
     const text = String(item.command || '');
     try {
@@ -101,21 +99,24 @@ function CapabilityCard({ item }) {
   const body = [head];
   if (open) {
     const line = (k, v) => React.createElement('div', { key: k, className: 'we-picker__hint', style: { marginTop: '4px' } }, v);
-    const previewUrl = capPreviewUrl(item.source);
-    if (previewUrl) {
-      body.push(React.createElement('div', { key: 'preview', style: { marginTop: '8px' } },
-        React.createElement('div', { style: CAP_PREVIEW_BOX },
-          previewFailed ? null : React.createElement('img', {
-            src: previewUrl,
-            alt: item.name,
-            loading: 'lazy',
-            style: CAP_PREVIEW_IMG,
-            onError: () => setPreviewFailed(true),
-          })),
+    // 本地生成的封面（图标 + 名称 + 分类），不依赖任何外部图片，离线也好看。
+    const sectionLabel = item.section === 'fun' ? weT('娱乐') : weT('工作');
+    body.push(React.createElement('div', { key: 'cover', style: { marginTop: '8px' } },
+      React.createElement('div', {
+        style: {
+          height: '120px', borderRadius: '8px', overflow: 'hidden',
+          display: 'flex', alignItems: 'center', gap: '12px', padding: '0 16px',
+          background: capCoverBg(item),
+        },
+      }),
+      React.createElement('span', { style: { fontSize: '40px', lineHeight: 1 } }, item.icon || '🧩'),
+      React.createElement('div', { style: { minWidth: 0 } },
         React.createElement('div', {
-          className: 'we-picker__hint', style: { marginTop: '4px' },
-        }, weT('预览图来自作者仓库'))));
-    }
+          style: { fontWeight: 600, fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+        }, item.name),
+        React.createElement('div', {
+          style: { marginTop: '4px', fontSize: '11px', opacity: 0.78, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+        }, sectionLabel + ' · ' + (item.pkg || '')))));
     body.push(React.createElement('div', { key: 'd-title', style: { marginTop: '8px', fontSize: '12px', fontWeight: 600 } }, weT('详情')));
     body.push(line('desc', item.authorDesc || item.summary || ''));
     body.push(React.createElement('div', { key: 'u-title', style: { marginTop: '8px', fontSize: '12px', fontWeight: 600 } }, weT('如何使用')));
@@ -209,4 +210,4 @@ function CapabilitiesSection() {
       items,
     }));
 }
-export { CapabilityCard, CapabilitiesSection, CapGroup, capPreviewUrl };
+export { capCoverHue, capCoverBg, CapabilityCard, CapabilitiesSection, CapGroup };

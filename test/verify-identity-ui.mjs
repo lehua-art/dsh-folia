@@ -104,67 +104,43 @@ const inventory = read('lib/inventory.js');
   };
   globalThis.weT = (key) => String(key);
   const mod = await import(pathToFileURL(join(ROOT, 'src/panel-tabs-work.js')).href);
-  const capPreviewUrl = mod.capPreviewUrl;
+  const capCoverHue = mod.capCoverHue;
+check('本地封面：同名确定性色相（0–359）',
+  capCoverHue({ pkg: 'a' }) === capCoverHue({ pkg: 'a' })
+  && capCoverHue({ pkg: 'a' }) >= 0 && capCoverHue({ pkg: 'a' }) < 360);
+check('不再依赖外部图片（无 opengraph / 无 img 预览）',
+  !/opengraph/.test(workTab) && !/预览图来自作者仓库/.test(workTab) && !/capPreviewUrl/.test(workTab));
 
-  check('capPreviewUrl：GitHub 仓库 → opengraph.githubassets.com/1/owner/repo',
-    capPreviewUrl('https://github.com/owner/repo') === 'https://opengraph.githubassets.com/1/owner/repo');
-  check('capPreviewUrl：/tree/... 子路径只取 owner/repo',
-    capPreviewUrl('https://github.com/owner/repo/tree/main/packages/x')
-      === 'https://opengraph.githubassets.com/1/owner/repo');
-  check('capPreviewUrl：www.github.com / .git 后缀都能归一',
-    capPreviewUrl('https://www.github.com/owner/repo.git')
-      === 'https://opengraph.githubassets.com/1/owner/repo');
-  check('capPreviewUrl：非 GitHub / 空值 → 空串（整块不渲染）',
-    capPreviewUrl('https://registry.npmjs.org/pkg') === ''
-    && capPreviewUrl('') === '' && capPreviewUrl(null) === '');
-  check('预览图 UI 参数：120px 高 / 100% 宽 / object-fit: cover / lazy',
-    /height: '120px'/.test(workTab) && /width: '100%'/.test(workTab)
-    && /objectFit: 'cover'/.test(workTab) && /loading: 'lazy'/.test(workTab));
-  check('图片失败走 onError → 隐藏图片、保留占位块（不露裂图）',
-    /onError: \(\) => setPreviewFailed\(true\)/.test(workTab)
-    && /previewFailed \? null : React\.createElement\('img'/.test(workTab));
-  check('图片下方小字「预览图来自作者仓库」在册且被渲染',
-    panelI18n.includes('"预览图来自作者仓库":') && workTab.includes("weT('预览图来自作者仓库')"));
+const stateQueue = [];
+globalThis.React.useState = (init) => {
+  const v = stateQueue.length ? stateQueue.shift() : (typeof init === 'function' ? init() : init);
+  return [v, () => {}];
+};
+const findNode = (root, pred) => {
+  let hit = null;
+  (function walk(n) {
+    if (hit) return;
+    if (Array.isArray(n)) { n.forEach(walk); return; }
+    if (!n || typeof n !== 'object') return;
+    if (pred(n)) { hit = n; return; }
+    if (Array.isArray(n.children)) n.children.forEach(walk);
+  })(root);
+  return hit;
+};
+const textOf = (node) => {
+  if (Array.isArray(node)) return node.map(textOf).join(' ');
+  if (!node || typeof node !== 'object') return typeof node === 'string' ? node : '';
+  return (Array.isArray(node.children) ? node.children.filter((c) => typeof c === 'string').join(' ') : '')
+    + ' ' + (Array.isArray(node.children) ? node.children.map(textOf).join(' ') : '');
+};
+const baseItem = { name: '示例能力', summary: '摘要', pkg: 'pkg', authorDesc: '描述', usage: '用法', icon: '🧩', section: 'fun' };
 
-  // 渲染树：GitHub 来源展开后第一块是预览图；非 GitHub 来源没有图、详情照常。
-  const stateQueue = [];
-  globalThis.React.useState = (init) => {
-    const v = stateQueue.length ? stateQueue.shift() : (typeof init === 'function' ? init() : init);
-    return [v, () => {}];
-  };
-  const findNode = (root, pred) => {
-    let hit = null;
-    (function walk(n) {
-      if (hit) return;
-      if (Array.isArray(n)) { n.forEach(walk); return; }
-      if (!n || typeof n !== 'object') return;
-      if (pred(n)) { hit = n; return; }
-      if (Array.isArray(n.children)) n.children.forEach(walk);
-    })(root);
-    return hit;
-  };
-  const textOf = (node) => {
-    if (Array.isArray(node)) return node.map(textOf).join(' ');
-    if (!node || typeof node !== 'object') return typeof node === 'string' ? node : '';
-    return (Array.isArray(node.children) ? node.children.filter((c) => typeof c === 'string').join(' ') : '')
-      + ' ' + (Array.isArray(node.children) ? node.children.map(textOf).join(' ') : '');
-  };
-  const baseItem = { name: '示例能力', summary: '摘要', pkg: 'pkg', authorDesc: '描述', usage: '用法' };
-
-  stateQueue.push(true, false, false); // open / copied / previewFailed
-  const ghTree = mod.CapabilityCard({ item: Object.assign({}, baseItem, { source: 'https://github.com/owner/repo' }) });
-  const ghImg = findNode(ghTree, (n) => n.type === 'img');
-  check('渲染树：GitHub 来源展开后渲染 OG 图（src/loading/style 正确）',
-    Boolean(ghImg) && ghImg.props.src === 'https://opengraph.githubassets.com/1/owner/repo'
-    && ghImg.props.loading === 'lazy' && ghImg.props.style.height === '120px');
-  check('渲染树：图片下方有「预览图来自作者仓库」小字',
-    textOf(ghTree).includes('预览图来自作者仓库'));
-
-  stateQueue.push(true, false, false);
-  const npmTree = mod.CapabilityCard({ item: Object.assign({}, baseItem, { source: 'https://registry.npmjs.org/pkg' }) });
-  check('渲染树：非 GitHub 来源不渲染预览图，详情仍正常展开',
-    !findNode(npmTree, (n) => n.type === 'img')
-    && textOf(npmTree).includes('详情') && textOf(npmTree).includes('如何使用'));
+stateQueue.push(true, false);
+const tree = mod.CapabilityCard({ item: baseItem });
+check('渲染树：详情顶部有本地封面（图标 + 名称 + 分类）且不渲染 img',
+  !findNode(tree, (n) => n.type === 'img')
+  && textOf(tree).includes('示例能力') && textOf(tree).includes('娱乐'));
+check('渲染树：不再出现“预览图来自作者仓库”小字', !textOf(tree).includes('预览图来自作者仓库'));
 }
 
 console.log('');
