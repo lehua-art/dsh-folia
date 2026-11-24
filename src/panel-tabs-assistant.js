@@ -689,6 +689,9 @@ function PetChatSettings() {
 
   if (tab === 'voice') {
     const voicePage = [];
+    voicePage.push(React.createElement('div', {
+      key: 'voice-center-moved', className: 'we-picker__hint', style: { margin: '0 0 6px', opacity: .85 },
+    }, weT('音色库与全局音色中心已移到人物详情里的「声音」页：内置音色包、Edge 分组、火山引擎配置都在那里；这里保留朗读开关与一键启用。')));
     voicePage.push(React.createElement('label', {
       key: 'speak-toggle',
       style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', margin: '6px 0 2px' },

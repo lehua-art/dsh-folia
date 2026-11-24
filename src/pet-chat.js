@@ -442,6 +442,24 @@ function petChatIsDarkWallpaper(item) {
  * 失败返回 `{ok:false,error}`，由宿主统一说人话 —— 这里只负责把真实结果回执回去。
  */
 async function petChatApplyAction(tool, args) {
+  if (tool === 'wallpaper_cycle') {
+    const enabled = !(args && args.enabled === false);
+    const before = Boolean(selection && selection.rotationEnabled);
+    try {
+      onToggleRotation();
+    } catch {
+      return { ok: false, error: 'apply-failed' };
+    }
+    await new Promise((resolve) => { setTimeout(resolve, 200); });
+    const now = Boolean(selection && selection.rotationEnabled);
+    if (now !== enabled) {
+      // 状态没切到目标值（例如轮播候选为空被自动关掉）⇒ 如实回执，不谎报成功。
+      if (before !== enabled) { try { onToggleRotation(); } catch { /* ignore */ } }
+      return { ok: false, error: 'not-applied', enabled: now };
+    }
+    petBubble.status('info', enabled ? weT('轮播打开了') : weT('轮播关掉了'), { delay: 1800 });
+    return { ok: true, enabled: now, rotationEnabled: now };
+  }
   if (tool !== 'wallpaper_switch') return { ok: false, error: 'unsupported' };
   const input = args || {};
   let list;
@@ -500,8 +518,7 @@ async function petChatApplyAction(tool, args) {
 }
 
 /** SSE action → 执行 → POST 回执。宿主据此**回读设置**再决定说不说成功。 */
-async function petChatHandleAction(payload) {
-  const id = String((payload && payload.id) || '');
+async function petChatHandleAction(payload) {  const id = String((payload && payload.id) || '');
   if (!id) return;
   let result;
   try {
@@ -518,6 +535,87 @@ async function petChatHandleAction(payload) {
       error: result.error || '',
     }, { parse: 'always' });
   } catch { /* 回执失败由宿主超时判失败，不会谎报成功 */ }
+}
+
+/* ── v2 权限确认：气泡按钮（与语音说「好」等价）─────────────────────────── */
+
+let petChatConfirmNode = null;
+
+function petChatConfirmHide() {
+  if (!petChatConfirmNode) return;
+  try { petChatConfirmNode.remove(); } catch { /* ignore */ }
+  petChatConfirmNode = null;
+}
+
+/**
+ * 宿主发来 confirm 事件 → 在桌宠旁显示一行确认条：
+ * [允许] [不允许] [以后都允许] [以后都别问]
+ * 点击走 POST /pet-chat/tool-confirm；宿主执行完用 /speak 广播结果（本端会朗读）。
+ */
+function petChatConfirmShow(payload) {
+  if (typeof document === 'undefined' || !payload || !payload.id) return;
+  petChatConfirmHide();
+  const box = document.createElement('div');
+  box.id = 'we-pet-tool-confirm';
+  box.dataset.tool = String(payload.tool || '');
+  Object.assign(box.style, {
+    position: 'fixed', left: '50%', bottom: '96px', transform: 'translateX(-50%)',
+    zIndex: '2147483000', maxWidth: 'min(560px, calc(100vw - 32px))',
+    padding: '10px 12px', borderRadius: '12px', background: 'rgba(22,24,30,.94)',
+    border: '1px solid rgba(255,255,255,.18)', boxShadow: '0 10px 30px rgba(0,0,0,.35)',
+    color: '#eef1f6', font: '12px/1.5 system-ui, "Segoe UI", sans-serif',
+    display: 'flex', flexDirection: 'column', gap: '8px',
+  });
+  const question = document.createElement('div');
+  question.textContent = String(payload.question || weT('要执行这个操作吗？'));
+  box.appendChild(question);
+  const row = document.createElement('div');
+  Object.assign(row.style, { display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' });
+  const finish = async (decision) => {
+    petChatConfirmHide();
+    try {
+      const resp = await apiPostJson('/pet-chat/tool-confirm', { id: payload.id, decision }, { parse: 'always' });
+      const data = (resp && resp.data) || {};
+      if (data.clientAction) {
+        const action = data.clientAction;
+        const result = await petChatApplyAction(String(action.tool || ''), action.args || {});
+        let say = '';
+        if (action.tool === 'wallpaper_cycle') say = result.ok ? (result.enabled ? '轮播打开了。' : '轮播关掉了。') : '轮播没切成功。';
+        else if (result.ok) say = result.title ? `换成「${result.title}」了。` : '换好了。';
+        else say = result.error === 'no-match' ? '没找到那张壁纸。' : '没换成，再试一次吧。';
+        petBubble.show(say);
+        petSpeak(say);
+        return;
+      }
+      if (data.say && decision === 'deny') petBubble.show(String(data.say));
+      if (data.say && data.ok === false) petBubble.status('error', String(data.say), { delay: 4000 });
+    } catch {
+      petBubble.status('error', weT('确认没发出去，再试一次'), { delay: 4000 });
+    }
+  };
+  const button = (label, decision, primary) => {
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.textContent = label;
+    Object.assign(el.style, {
+      border: '1px solid ' + (primary ? 'rgba(120,190,255,.65)' : 'rgba(255,255,255,.2)'),
+      borderRadius: '8px', padding: '5px 12px', cursor: 'pointer',
+      background: primary ? 'rgba(90,160,255,.22)' : 'rgba(255,255,255,.05)',
+      color: 'inherit', font: 'inherit',
+    });
+    el.addEventListener('click', (event) => {
+      try { event.preventDefault(); event.stopPropagation(); } catch { /* ignore */ }
+      void finish(decision);
+    });
+    return el;
+  };
+  row.appendChild(button(weT('允许'), 'allow', true));
+  row.appendChild(button(weT('不允许'), 'deny', false));
+  row.appendChild(button(weT('以后都允许'), 'always', false));
+  row.appendChild(button(weT('以后都别问'), 'never', false));
+  box.appendChild(row);
+  document.body.appendChild(box);
+  petChatConfirmNode = box;
 }
 
 /** 每 4 秒看一次壁纸是否变化；变化满 30 秒且不忙时点评一句。 */
@@ -727,6 +825,11 @@ const petVoiceIn = petVoiceInputCreate({
         if (eventName === 'meta') {
           petChatMood = String(payload.mood || 'neutral');
           petChatSpeechRate = Number.isFinite(Number(payload.rate)) ? Number(payload.rate) : 0;
+          continue;
+        }
+        if (eventName === 'confirm') {
+          // v2：权限为 ask 时宿主先发 confirm；语音说「好」或点气泡按钮后才执行。
+          petChatConfirmShow(payload);
           continue;
         }
         if (eventName === 'action') {
@@ -1023,6 +1126,7 @@ function mountPetChat() {
     petChatGreetingTimer = null;
     petChatEventsStop();
     petSpeakStop();
+    petChatConfirmHide();
     try { if (window.__dshFoliaPet) delete window.__dshFoliaPet; } catch { /* ignore */ }
     petBubble.dispose();
   };

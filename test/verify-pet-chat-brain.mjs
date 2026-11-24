@@ -38,6 +38,7 @@ const {
   clearProactiveState, canEventSpeak, buildEventLine, markSaid, PROACTIVE_RULES, EVENT_RULES,
 } = await import('../lib/pet-chat-proactive.js');
 const { readPetConfig, writePetConfig, runTool } = await import('../lib/pet-chat-tools.js');
+const { getActivePersona, updatePersona } = await import('../lib/persona-store.js');
 
 const results = [];
 function check(name, ok, detail) {
@@ -392,9 +393,23 @@ const doneEvent = (events) => events.find((e) => e.event === 'done') || { data: 
 {
   const model = await startModel();
   const host = await startHost({ petChat: { enabled: true, provider: 'ollama', baseUrl: model.base, model: 'fake' } });
+  // v2：系统操作默认被「高级权限」挡在外面（任务 J）。
+  const off = await chat(host, '卸载当前皮肤');
+  const offDone = doneEvent(off);
+  check('G1 高级权限关闭 ⇒ 系统工具不可用，明确拒绝（不弹确认、不执行）',
+    offDone.data.toolRefused === true && offDone.data.permission === 'deny'
+      && !off.some((e) => e.event === 'action')
+      && deltaText(off).includes('不能做'),
+    `done=${JSON.stringify(offDone.data)} · deltas=${deltaText(off)}`);
+
+  const active = getActivePersona();
+  updatePersona(active.id, {
+    permissions: { ...(active.permissions || {}), advanced: true, system: 'ask' },
+  });
+  await wait(1100);
   const first = await chat(host, '卸载当前皮肤');
   const ask = doneEvent(first);
-  check('G1 「卸载当前皮肤」→ 先问确认，不执行',
+  check('G2 打开高级权限 ⇒ 先问确认，不执行（高危强制二次确认）',
     ask.data.confirm === true && ask.data.tool === 'skin_uninstall'
       && deltaText(first).includes('确认') && !first.some((e) => e.event === 'action'),
     `done=${JSON.stringify(ask.data)} · deltas=${deltaText(first)}`);
@@ -402,14 +417,22 @@ const doneEvent = (events) => events.find((e) => e.event === 'done') || { data: 
   await wait(1100);
   const cancel = await chat(host, '取消');
   const cancelled = doneEvent(cancel);
-  check('G2 回答「取消」→ 不执行（cancelled=true）',
+  check('G3 回答「取消」→ 不执行（cancelled=true）',
     cancelled.data.cancelled === true && deltaText(cancel).includes('不办了'),
     `done=${JSON.stringify(cancelled.data)} · deltas=${deltaText(cancel)}`);
 
   const refused = await runTool('skin_uninstall', {}, { confirmed: false });
-  check('G3 工具层双保险：未确认直接返回 needsConfirm',
+  check('G4 工具层双保险：未确认直接返回 needsConfirm',
     refused.needsConfirm === true && refused.ok === false,
     `needsConfirm=${refused.needsConfirm}`);
+
+  // 回到默认（advanced=false）：工具层必须直接拒绝，而不是弹确认。
+  const locked = getActivePersona();
+  updatePersona(locked.id, { permissions: { ...(locked.permissions || {}), advanced: false } });
+  const lockedResult = await runTool('skin_uninstall', {}, { persona: getActivePersona(), confirmed: true });
+  check('G5 高级权限关闭 ⇒ 工具层代码级拒绝（即使 confirmed=true）',
+    lockedResult.ok === false && lockedResult.permission === 'deny',
+    `ok=${lockedResult.ok} permission=${lockedResult.permission}`);
   await host.close();
   await model.close();
 }

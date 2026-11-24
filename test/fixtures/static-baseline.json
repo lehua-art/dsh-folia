@@ -1,27 +1,34 @@
 {
   "eslint": {
-    "filesLinted": 363,
+    "filesLinted": 465,
     "byRule": {
       "no-dupe-keys": 3,
-      "no-promise-executor-return": 10,
-      "no-undef": 12,
+      "no-promise-executor-return": 37,
+      "no-undef": 14,
       "no-unmodified-loop-condition": 2,
-      "no-unused-expressions": 2,
-      "no-unused-vars": 14,
-      "no-useless-assignment": 18,
-      "no-void": 4,
+      "no-unused-expressions": 3,
+      "no-unused-vars": 35,
+      "no-useless-assignment": 65,
+      "no-void": 8,
       "object-shorthand": 24,
-      "prefer-const": 2,
-      "require-atomic-updates": 20
+      "prefer-const": 1,
+      "require-atomic-updates": 27,
+      "unknown": 18
     }
   },
   "tsc": {
     "byCode": {
       "TS2304": 401,
-      "TS2339": 172,
+      "TS2322": 6,
+      "TS2339": 215,
+      "TS2345": 4,
       "TS2349": 1,
+      "TS2353": 7,
+      "TS2365": 1,
+      "TS2367": 1,
       "TS2552": 41,
       "TS2739": 2,
+      "TS2741": 12,
       "TS2810": 2
     }
   }
