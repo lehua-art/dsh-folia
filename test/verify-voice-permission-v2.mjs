@@ -244,10 +244,12 @@ try {
     Boolean(limited) && /429|限流/.test(`${limited.reason}`) && catalog.edgeRateLimited === true,
     limited ? `${limited.label} · ${limited.reason}` : '没有 rate-limited 项');
   const builtin = (catalog.groups || []).find((group) => group.key === 'builtin');
-  check('A3 内置音色包在目录里（华言/高清）且带状态',
-    Boolean(builtin) && builtin.items.length === 6
+  check('A3 内置音色包在目录里（华言/高清），且已下架非商用男声',
+    // 非商用男声包已下架（许可原因）⇒ 目录为 5 个；仍要求至少 4 个可用 + 1 个高清
+  Boolean(builtin) && builtin.items.length >= 5
       && builtin.items.some((item) => item.label.includes('华言') && item.status === 'ready')
-      && builtin.items.some((item) => item.hd === true),
+      && builtin.items.some((item) => item.hd === true)
+  && !builtin.items.some((item) => String(item.label || '').includes('高清中文男')),
     `items=${(builtin && builtin.items || []).length}`);
 
   console.log('\nB. 卡片选择器 + 试听');
