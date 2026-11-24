@@ -728,6 +728,119 @@
     ];
   }
 
+  // ── 侧栏「壁纸」页签的本地上传入口（pre.70）────────────────────────────────
+  // 复用 `src/client.js` 的 `uploadWallpaperFile(file)`（同一 bundle 作用域；设置页的
+  // 「自定义」入口也走它）—— 这里**不重写上传**，只做"多选 + 串行 + 进度 + 拖拽"这层壳。
+  // 允许的格式必须与宿主 `UPLOAD_EXT`（lib/media/media-dirs.js）一致：mp4 / jpeg / png。
+  // webp / gif / avif / webm **不放开** —— 宿主那张表没有它们，前端收得下只会换来 415。
+  const QP_UPLOAD_ACCEPT = ".jpg,.jpeg,.png,.mp4";
+
+  /**
+   * 串行上传一批文件：一个完成再发下一个。
+   *
+   * 为什么必须串行：`uploadWallpaperFile` 用的是共享 transient（`uploading` / `uploadError` /
+   * `uploadNote`），并发会把彼此的状态互相覆盖 —— 进度条会跳、错误会被后一个文件的
+   * "开始上传"清掉。依赖全经参数注入，因此 `test/verify-qp-upload.mjs` 能用假实现直接
+   * 执行这条编排（顺序 / 进度 / 失败不中断 / 成功回调次数）。
+   */
+  async function qpUploadFilesSequential(files, deps) {
+    const list = Array.from(files || []).filter((f) => f && typeof f.name === "string" && f.name);
+    const total = list.length;
+    const opts = deps || {};
+    const uploadOne = typeof opts.uploadOne === "function" ? opts.uploadOne : async () => ({ ok: true });
+    const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
+    const onSuccess = typeof opts.onSuccess === "function" ? opts.onSuccess : null;
+    let succeeded = 0;
+    let failed = 0;
+    for (let i = 0; i < total; i++) {
+      if (onProgress) onProgress({ busy: true, done: i, total });
+      const result = await uploadOne(list[i], i);
+      if (result && result.ok === false) {
+        failed++;
+      } else {
+        succeeded++;
+        if (onSuccess) onSuccess(list[i], i, result);
+      }
+    }
+    if (onProgress) onProgress({ busy: false, done: total, total });
+    return { total, succeeded, failed };
+  }
+
+  /** 拖拽事件 → 文件数组（不是拖文件 / 没有文件时返回空数组）。 */
+  function qpDroppedFiles(dataTransfer) {
+    if (!dataTransfer || !dataTransfer.files) return [];
+    return Array.from(dataTransfer.files).filter((f) => f && typeof f.name === "string" && f.name);
+  }
+
+  /** 进度文案：「上传中 1/3…」—— `done` 是**已完成**数，屏上显示正在传的那一个。 */
+  function qpUploadProgressText(state) {
+    const total = Math.max(1, Number(state && state.total) || 0);
+    const done = Math.min(total, Math.max(0, Number(state && state.done) || 0) + 1);
+    return weT("上传中 {done}/{total}…", { done, total });
+  }
+
+  /**
+   * 「⬆ 上传本地」按钮 + 隐藏的多选 file input。
+   * 按钮是真 `<button>`（Tab 可达、Enter/Space 可点），点它转去 `.click()` 隐藏 input；
+   * 不用 `<label>` 包 input —— label 默认不可聚焦，键盘用户到不了这个入口。
+   */
+  function QpUploadControl(props) {
+    const inputRef = React.useRef(null);
+    const busy = Boolean(props && props.busy);
+    const openPicker = () => {
+      if (busy) return;
+      const el = inputRef.current;
+      if (el) el.click();
+    };
+    return React.createElement(React.Fragment, null,
+      React.createElement("button", {
+        type: "button",
+        className: "we-picker__btn we-qp__uploadbtn",
+        "data-we-qp-upload": "1",
+        disabled: busy,
+        title: weT("上传本地"),
+        "aria-label": weT("上传本地"),
+        onClick: openPicker,
+      },
+        React.createElement("span", { className: "we-qp__uploadbtn-icon", "aria-hidden": "true" }, "⬆"),
+        React.createElement("span", { className: "we-qp__uploadbtn-label" }, weT("⬆ 上传本地")),
+      ),
+      React.createElement("input", {
+        ref: inputRef,
+        className: "we-qp__uploadfile",
+        type: "file",
+        multiple: true,
+        accept: QP_UPLOAD_ACCEPT,
+        disabled: busy,
+        tabIndex: -1,
+        "aria-hidden": "true",
+        onChange: (e) => {
+          // 先把 FileList 拷成数组再清 value：FileList 是活引用，清 value 后可能一起空掉。
+          const picked = Array.from(e.target.files || []);
+          e.target.value = "";
+          if (picked.length && props && typeof props.onFiles === "function") props.onFiles(picked);
+        },
+      }),
+    );
+  }
+
+  /** 上传状态行（搜索行下方）：进度 / 错误 / 重复提示 / 拖拽提示；全空时**不占高度**。 */
+  function qpRenderUploadStatus(sel, state, dragActive) {
+    const busy = Boolean(state && state.busy);
+    const hasError = !busy && Boolean(sel.uploadError);
+    const hasNote = !busy && !hasError && Boolean(sel.uploadNote);
+    if (!busy && !hasError && !hasNote && !dragActive) return null;
+    return React.createElement("div", {
+      className: "we-qp__uploadstatus", role: "status", "aria-live": "polite",
+    },
+      busy ? React.createElement("span", { className: "we-picker__hint" }, qpUploadProgressText(state)) : null,
+      hasError ? React.createElement("div", { className: "we-picker__error" }, sel.uploadError) : null,
+      hasNote ? React.createElement("div", { className: "we-picker__note" }, sel.uploadNote) : null,
+      dragActive ? React.createElement("span", { className: "we-picker__hint" }, weT("拖到这里上传")) : null,
+      dragActive ? React.createElement("span", { className: "we-picker__hint" }, weT("仅支持 JPG / PNG / MP4")) : null,
+    );
+  }
+
   // 筛选条（pre.51）：只有 [缓存][子标签][来源] 三个下拉 + 搜索 + 视图切换。
   // 分级 / 类型两档已按用户口径删除（「侧栏快捷键壁纸筛选条改成三个下拉」）。
   // 取值与处理器全部经 `filters` 入参进来 —— 本函数是纯渲染器，不读外层 state，
@@ -736,6 +849,9 @@
     const {
       cacheFilter, subtagFilter, subtagOptions, sourceFilter,
       onCacheFilterChange, onSubtagFilterChange,
+      // 本地上传入口的 UI 态与动作也随 `filters` 这一份渲染 ctx 进来（不新开第 5 个形参：
+      // 该签名被 verify-panel-interactions 的既有判据按字面锚定）。
+      upload,
     } = filters || {};
     return React.createElement("div", { className: "we-qp__viewbar" },
       // 第一行：搜索 + 列表/卡片切换。搜索不再 basis:100% 独占整行 —— 窄侧栏里
@@ -747,6 +863,12 @@
           placeholder: weT("搜索壁纸标题…"),
           "aria-label": weT("搜索壁纸标题"),
           onInput: (e) => { setTransient("qpSearch", e.target.value); emit(); },
+        }),
+        // 本地上传入口：搜索框右边（用户点名要的位置）。窄侧栏里按钮只显示图标，
+        // 完整文案在 title / aria-label 里 —— 见 styles-quick.js 的 420px 断点。
+        React.createElement(QpUploadControl, {
+          busy: Boolean(upload && upload.busy),
+          onFiles: upload && upload.onFiles,
         }),
         // 列表 / 卡片：标签式切换（滑动胶囊做激活指示、无分段底 —— 样式见
         // .we-qp__viewtabs），偏好记 localStorage（QP_VIEW_KEY），两个壳共用一份。
@@ -777,6 +899,8 @@
           }, weT("卡片")),
         ),
       ),
+      // 上传状态行：搜索行下方（进度 / 错误 / 重复提示 / 拖拽提示）。
+      qpRenderUploadStatus(sel, upload && upload.progress, Boolean(upload && upload.dragActive)),
       // ① 缓存状态：全部 / 已缓存 / 未缓存（pre.51 新）。
       React.createElement("select", {
         className: "we-picker__select we-qp__filter we-qp__cache",
@@ -858,7 +982,17 @@
   // sourceFilter + 两个 handler）。**不要在函数体里直接读外层 state** —— 那是
   // "cacheFilter is not defined" 的来源，也是上次改签名时定义/调用一起被替换的原因。
   function qpRenderLibrarySection(sel, view, filters, listRef, rows, cardsView, vTopH, vBtmH, q, switchView) {
-    return React.createElement("div", { className: "we-qp__section we-qp__library" },
+    // 拖拽上传落在**整块列表区**（不是只落在 `.we-qp__list` 那条窄容器上）：列表为空 /
+    // 只有一行空态文案时，整块区域仍可接住拖进来的文件。落点高亮由 --drop 修饰类画。
+    // 上传的 UI 态同样经 `filters.upload` 进来（父组件的 state 只在那里装配一次）。
+    const upload = filters && filters.upload;
+    const dragActive = Boolean(upload && upload.dragActive);
+    return React.createElement("div", {
+      className: "we-qp__section we-qp__library" + (dragActive ? " we-qp__library--drop" : ""),
+      onDragOver: upload && upload.onDragOver,
+      onDragLeave: upload && upload.onDragLeave,
+      onDrop: upload && upload.onDrop,
+    },
       !sel.loaded
         ? React.createElement("span", { className: "we-picker__hint" }, weT("扫描 Wallpaper Engine…"))
         : sel.inventory.error
@@ -971,6 +1105,82 @@
     // 虚拟滚动的测量锚点：挂在下面列表容器上（qpVirtWindow 的 effect 只在浏览器跑，
     // 渲染期只借 useRef 的壳）。hook 顺序必须稳定 —— 排在 view / qpTab 两个 useState 之后。
     const listRef = React.useRef(null);
+    // ── 侧栏本地上传（pre.70）──────────────────────────────────────────────
+    // 三个 hook 刻意排在**所有既有 useState / useRef 之后**：现有守卫（verify-scene-live）
+    // 用一条队列按序喂 useState，插在前面会把 fontOpen / glassDetailOpen 那几档的值顶错位。
+    const [uploadState, setUploadState] = React.useState({ busy: false, done: 0, total: 0 });
+    const [uploadDragActive, setUploadDragActive] = React.useState(false);
+    // 防连点：state 更新是异步的，同一帧里连按两次会各起一条串行链。
+    const uploadBusyRef = React.useRef(false);
+    const runQpUpload = async (filesIn) => {
+      if (uploadBusyRef.current || sel.uploading) return;
+      const files = Array.from(filesIn || []).filter((f) => f && typeof f.name === "string" && f.name);
+      if (!files.length) return;
+      uploadBusyRef.current = true;
+      setUploadState({ busy: true, done: 0, total: files.length });
+      try {
+        await qpUploadFilesSequential(files, {
+          // 复用设置页同一条上传函数：它自己会 applySelection（选中刚上传的那张），
+          // 用 transient 报错 / 重复提示；这里只按"结束后有没有 uploadError"判成功。
+          uploadOne: async (file) => {
+            await uploadWallpaperFile(file);
+            return { ok: !sel.uploadError, duplicate: Boolean(sel.uploadNote) };
+          },
+          onProgress: (p) => setUploadState(p),
+          onSuccess: () => {
+            // 成功后立刻把来源切到「本机」：否则当前若是「站点」筛选，刚上传的那张
+            // 只被 applySelection 选中、列表里却看不见（用户会以为上传丢了）。
+            if (sel.sourceFilter !== "local") {
+              setSetting("sourceFilter", "local");
+              emit();
+            }
+          },
+        });
+      } catch (err) {
+        // 上传函数内部的失败已经转成 uploadError；这里兜的是编排层意外（绝不让面板卡在忙碌态）。
+        setTransient("uploadError", weT("上传失败：{error}", {
+          error: weT(err && err.message ? err.message : err),
+        }));
+        emit();
+      } finally {
+        uploadBusyRef.current = false;
+        setUploadState((prev) => ({ busy: false, done: prev.total, total: prev.total }));
+      }
+    };
+    const qpUploadDragOver = (e) => {
+      const dt = e.dataTransfer;
+      if (!dt) return;
+      const types = dt.types;
+      const hasFiles = types && (typeof types.includes === "function"
+        ? types.includes("Files")
+        : Array.prototype.indexOf.call(types, "Files") >= 0);
+      if (!hasFiles) return;
+      // 不 preventDefault 浏览器就会用默认行为（导航 / 打开文件）接管 drop。
+      e.preventDefault();
+      dt.dropEffect = "copy";
+      if (!uploadDragActive) setUploadDragActive(true);
+    };
+    const qpUploadDragLeave = (e) => {
+      // 在子节点之间移动也会触发 dragleave：只有真正离开整块列表区才撤掉高亮。
+      if (e.currentTarget && e.relatedTarget && e.currentTarget.contains(e.relatedTarget)) return;
+      setUploadDragActive(false);
+    };
+    const qpUploadDrop = (e) => {
+      e.preventDefault();
+      setUploadDragActive(false);
+      const files = qpDroppedFiles(e.dataTransfer);
+      if (files.length) runQpUpload(files);
+    };
+    const qpUpload = {
+      busy: uploadState.busy || Boolean(sel.uploading),
+      progress: uploadState,
+      dragActive: uploadDragActive,
+      onFiles: runQpUpload,
+      onDragOver: qpUploadDragOver,
+      onDragLeave: qpUploadDragLeave,
+      onDrop: qpUploadDrop,
+    };
+
 
     const list = sel.inventory.wallpapers;
     const current = list.find((w) => w.id === sel.id) || null;
@@ -1112,6 +1322,8 @@
                   // 两个 handler 直接从同一 bundle 作用域取（client.js 里的
                   // onCacheFilterChange / onSubtagFilterChange：写持久化键 + emit）。
                   onCacheFilterChange, onSubtagFilterChange,
+                  // 本地上传的进度 / 拖拽态 / 动作：渲染器只读这份 ctx。
+                  upload: qpUpload,
                 }, listRef, rows, cardsView, vTopH, vBtmH, q, switchView),
                 // 声音（与播放页那份同源：同一份渲染器、同一状态）。包一层 .we-qp__section
                 // 只为保留这一节的分隔线与间距（渲染器自己那份 section 是给设置页排版的）。

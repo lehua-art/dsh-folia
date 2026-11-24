@@ -343,6 +343,26 @@ body[data-we-glass-floaters] .we-repo-panel__body {
   .we-qp__viewbar .we-qp__search { flex: 1 1 auto; min-width: 0; max-width: 300px; width: auto; }
   .we-qp__viewbar .we-qp__viewtabs { flex: none; margin-left: auto; }
   .we-qp__viewbar .we-qp__filter { flex: 1 1 0; min-width: 0; max-width: 160px; }
+  /* 本地上传入口（pre.70）：搜索框右边的窄按钮。flex:none + 搜索框 min-width:0 ⇒
+     窄侧栏里先缩搜索框，按钮不会被挤出行；视口窄到手机宽度（≤420px）时只露图标，
+     完整文案留在 title / aria-label 里（键盘仍可 Tab 到它 —— 它是真 <button>）。 */
+  .we-qp__viewbar .we-qp__uploadbtn { flex: none; padding: 0 8px; font-size: 11px; }
+  .we-qp__uploadbtn-icon { display: none; }
+  @media (max-width: 420px) {
+    .we-qp__uploadbtn-label { display: none; }
+    .we-qp__uploadbtn-icon { display: inline; font-size: 13px; }
+  }
+  .we-qp__uploadfile { display: none; }
+  /* 上传状态行：占满搜索行下面一整行；全空时渲染器返回 null（不占高度）。 */
+  .we-qp__uploadstatus {
+    flex: 1 1 100%; display: flex; flex-direction: column; gap: 2px; min-width: 0;
+  }
+  .we-qp__uploadstatus .we-picker__hint { font-size: 11px; }
+  /* 拖拽悬停：整块列表区给一圈 accent 虚线，告诉用户"松手就传到这"。 */
+  .we-qp__library--drop {
+    outline: 1px dashed var(--we-accent, var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.55)));
+    outline-offset: 4px; border-radius: 8px;
+  }
   /* 列表 / 卡片：标签式切换 —— 复用 .we-tabs 的滑动胶囊做激活指示，但去掉分段底与
      描边（用户口径：不要默认背景）；页签收成内容宽（两枚都是两字，等宽成立，
      胶囊 (100%-6px)/2 的等分算式与 3px 内衬原样沿用）。 */

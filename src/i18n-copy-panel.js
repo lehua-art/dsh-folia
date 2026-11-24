@@ -105,6 +105,13 @@ const WE_I18N_EN_PANEL = {
   "未配置 · 场景实时渲染贴图走程序化复刻": "Not configured · Scene live rendering textures fall back to procedural recreation",
   "指向 Wallpaper Engine 安装目录的 assets（或其拷贝）": "Points to the assets folder of the Wallpaper Engine installation (or a copy of it)",
   "上传中…": "Uploading…",
+  // 侧栏快捷面板「壁纸」页签的本地上传入口（pre.70）—— 与设置页上传同一条链路，
+  // 新词按任务单归在 panel 域（守卫只对账键集，不按文件分域）。
+  "⬆ 上传本地": "⬆ Upload local",
+  "上传本地": "Upload local",
+  "上传中 {done}/{total}…": "Uploading {done}/{total}…",
+  "拖到这里上传": "Drop here to upload",
+  "仅支持 JPG / PNG / MP4": "Only JPG / PNG / MP4",
   "已上传 {count} 个": "Uploaded {count} item(s)",
   "支持 JPG / PNG / MP4，及含 project.json 的 WE 壁纸目录": "Supports JPG / PNG / MP4, and WE wallpaper folders containing project.json",
   "移除这个自定义壁纸（会再问一次，且会删除本地文件）": "Remove this custom wallpaper (asks again and deletes the local file).",

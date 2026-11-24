@@ -489,6 +489,14 @@
         {
           "kind": "guard",
           "npm": null,
+          "file": "test/verify-qp-upload.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
           "file": "test/verify-picker-model.mjs",
           "args": [],
           "tier": "hard",
@@ -1775,6 +1783,14 @@
           "kind": "guard",
           "npm": null,
           "file": "test/verify-picker-upload.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-qp-upload.mjs",
           "args": [],
           "tier": "hard",
           "probe": false

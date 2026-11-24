@@ -209,6 +209,10 @@ const VERIFY_STEPS = [
   step('test/verify-settings-namespaces.mjs'), // ← 还原（旧链位：presets 之后、system-fonts 之前）
   step('test/verify-system-fonts.mjs'),
   step('test/verify-picker-upload.mjs'),
+  // pre.70：侧栏「壁纸」页签的「⬆ 上传本地」入口 —— 串行编排 / 进度 / 拖拽 / 来源切「本机」/
+  // accept 与宿主 UPLOAD_EXT 对账 / 按钮在搜索行右侧的结构位置。与设置页上传同一条链路，
+  // 但没有它时"侧栏入口被删 / 改成并发上传 / 来源没切"都不会有任何东西变红 ⇒ 挂链。
+  step('test/verify-qp-upload.mjs'),
   step('test/verify-picker-model.mjs'),
   step('test/verify-picker-props.mjs'),
   step('test/verify-about.mjs'),
