@@ -439,11 +439,6 @@ const selection = {
   cacheState: "",
   cachePercent: 0,
   cacheFailReason: "",
-  // WE 官方资源路径编辑器（transient）：开态 + 草稿路径 + 上次错误。
-  // 生效状态（目录/可用性）由 inventory 携带（host 是唯一真相）。
-  editingWeAssetsDir: false,
-  weAssetsDirDraft: "",
-  weAssetsError: "",
   inventory: { installDir: null, uploadDir: null, cacheDir: null, weAssetsDir: null, weAssetsAvailable: false, sceneMediaBase: "", wallpapers: [], total: 0, portableCount: 0, playlists: [], error: null },
   loaded: false,
 };
@@ -1901,30 +1896,6 @@ async function clearQueuedDownloads() {
   emit();
 }
 
-const WE_ASSETS_DIR_URL = "/folia/we-assets-dir";
-
-// Set / clear the WE official-assets directory (host-persisted). Scene live
-// rendering then serves official pixels via /api/local-assets instead of the
-// renderer's programmatic recreations. Empty input clears the setting.
-// 保存后刷新 inventory（weAssetsAvailable 进 syncLayers key）→ live 渲染页
-// 带新参数重建，官方像素即刻生效。
-async function changeWeAssetsDir(dir) {
-  setTransient("weAssetsError", "");
-  emit();
-  try {
-    const res = await apiPostJson(WE_ASSETS_DIR_URL,
-      { dir: String(dir || "").trim() }, { parse: "always" });
-    if (!res.ok) throw new Error(hostFailureReason(res));
-    setTransient("editingWeAssetsDir", false);
-    setTransient("weAssetsDirDraft", "");
-    await loadInventory();
-    syncLayers(); // 可用性变化进 key → live iframe 带/去 localAssets=1 重建
-  } catch (err) {
-    setTransient("weAssetsError", weT("保存失败：{error}", { error: weT(err && err.message ? err.message : err) }));
-  }
-  emit();
-}
-
 // ── Behind-body layer: wallpaper + scrim (plain DOM, NOT a slot) ───────────
 // Edge (and only Edge) paints its own floating "下载/投屏" media-overlay toolbar
 // over any VISIBLE <video> element, and it ignores pointer-events / controlsList /
@@ -3081,7 +3052,7 @@ function onEditTrigger(e) {
 function onEditOrder(e) {
   if (selection.editing) { selection.editing.order = e.target.value; emit(); }
 }
-// 两个可编辑路径（上传目录 / 官方资源路径）的**草稿**状态 —— 都在 selection 的瞬态字段里。
+// 上传目录的**草稿**状态 —— 都在 selection 的瞬态字段里。
 function onStartEditUploadDir() {
   setTransient("editingUploadDir", true);
   setTransient("uploadDirDraft", selection.inventory.uploadDir || "");
@@ -3167,18 +3138,6 @@ function onCancelEditCacheDir() {
   setTransient("editingCacheDir", false);
   setTransient("cacheDirBrowse", null);
   setTransient("cacheDirError", "");
-  emit();
-}
-function onStartEditWeAssetsDir() {
-  setTransient("editingWeAssetsDir", true);
-  setTransient("weAssetsDirDraft", selection.inventory.weAssetsDir || "");
-  setTransient("weAssetsError", "");
-  emit();
-}
-function onWeAssetsDirDraft(e) { setTransient("weAssetsDirDraft", e.target.value); emit(); }
-function onCancelEditWeAssetsDir() {
-  setTransient("editingWeAssetsDir", false);
-  setTransient("weAssetsError", "");
   emit();
 }
 
@@ -5637,18 +5596,18 @@ function WallpaperPicker() {
     );
     return renderWallpaperTab({
       setSetting, setTransient,
-      INTERVALS, armedConfirm: sel.armedConfirm, cdMode, current, editing, editorPageView, group, groups, isLiveScene, onArmConfirm: armConfirm, onArmDeleteGroup, onCacheRetry: retryDownloadFirst, onCancelEditUploadDir, onCancelEditWeAssetsDir, onClear, onDeleteGroup, onDisarmConfirm: disarmConfirm, onEditInterval, onEditName, onEditOrder, onEditTrigger, onGroupChange, onGroupInterval, onGroupTrigger, onOpenPicker, onOpenPickerDraft, onRefresh, onStartEditUploadDir, onStartEditWeAssetsDir, onSwitchTransition, onSwitchTransitionDir, onSwitchTransitionSpeed, onToggleAudio, onTogglePlay, onTogglePropsPanel, onToggleRotation, onUploadDirDraft, onWeAssetsDirDraft, pagerRow, playableCount, playableList, playbackLive, propsPanelOpen, renderUserPropsPanel, sel, setPickerOpener, uploadedList,
+      INTERVALS, armedConfirm: sel.armedConfirm, cdMode, current, editing, editorPageView, group, groups, isLiveScene, onArmConfirm: armConfirm, onArmDeleteGroup, onCacheRetry: retryDownloadFirst, onCancelEditUploadDir, onClear, onDeleteGroup, onDisarmConfirm: disarmConfirm, onEditInterval, onEditName, onEditOrder, onEditTrigger, onGroupChange, onGroupInterval, onGroupTrigger, onOpenPicker, onOpenPickerDraft, onRefresh, onStartEditUploadDir, onSwitchTransition, onSwitchTransitionDir, onSwitchTransitionSpeed, onToggleAudio, onTogglePlay, onTogglePropsPanel, onToggleRotation, onUploadDirDraft, pagerRow, playableCount, playableList, playbackLive, propsPanelOpen, renderUserPropsPanel, sel, setPickerOpener, uploadedList,
     });
   };
   const tabIdx = Math.max(0, visibleTabs.findIndex((t) => t.id === activeTab));
 
   return React.createElement("div", { className: "we-picker", "data-we-cards": sel.pickerLayout, ref: pickerRootRef },
     // ── Card header (mirrors the skin-center's pluginCard header): plugin
-    //    name + live wallpaper count badge + description. ──
+    //    name + live wallpaper count badge. The old description line was
+    //    removed per product direction; title + badge stay. ──
     React.createElement("div", { className: "we-picker__card-head" },
       React.createElement("span", { className: "we-picker__card-name" }, weT("壁纸引擎")),
       React.createElement("span", { className: "we-picker__card-badge" }, String(playableList.length)),
-      React.createElement("span", { className: "we-picker__card-desc" }, weT("本地 Wallpaper Engine 壁纸 · 液态玻璃主题")),
     ),
     // ── 页签栏（分段式）：六个页签互斥展示，替代三十控件的单列长滚动。
     //    指示胶囊随 activeTab 平移（transform 合成器属性，不引发布局）；宽度按

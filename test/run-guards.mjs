@@ -482,6 +482,9 @@ const VERIFY_STEPS = [
   // stop 幂等 / barge-in 调用顺序 / 分句排队 / 三态气泡 / 工作联动 speak 通道。
   step('test/verify-voice-tts.mjs'),
   step('test/verify-capabilities.mjs'),
+  // pre.71 身份/UI 收口：package + README 身份文案；删侧栏卡副标题；删官方资源路径整块
+  // （宿主路由/inventory 字段保留）；能力详情作者仓库 OG 预览图（非 GitHub 无图、失败不裂）。
+  step('test/verify-identity-ui.mjs'),
   step('test/verify-boot-pool.mjs'),
 ];
 

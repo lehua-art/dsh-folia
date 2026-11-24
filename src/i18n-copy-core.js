@@ -66,7 +66,6 @@ const WE_I18N_EN_CORE = {
   "移除失败：{error}": "Remove failed: {error}",
   "请输入存储位置路径": "Enter a storage location path",
   "更改失败：{error}": "Change failed: {error}",
-  "保存失败：{error}": "Save failed: {error}",
   "标签页隐藏(pauseOnHidden)": "Tab hidden (pauseOnHidden)",
   "窗口失焦(pauseOnBlur)": "Window unfocused (pauseOnBlur)",
   "窗口被完全遮挡(pauseOnOcclusion)": "Window fully occluded (pauseOnOcclusion)",
@@ -118,7 +117,6 @@ const WE_I18N_EN_CORE = {
   "‹ 上一页": "‹ Previous",
   "下一页 ›": "Next ›",
   "壁纸引擎": "Wallpaper Engine",
-  "本地 Wallpaper Engine 壁纸 · 液态玻璃主题": "Local Wallpaper Engine wallpapers · liquid glass theme",
   "壁纸引擎设置分区": "Wallpaper Engine settings sections",
   "菲比啾比": "Phoebe Jiubi",
   // ⚠️ **八只「模型娘」的名字刻意不进词表**。原因不是"忘了翻"，而是本仓 i18n 的

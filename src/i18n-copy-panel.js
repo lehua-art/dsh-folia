@@ -97,13 +97,7 @@ const WE_I18N_EN_PANEL = {
   "无法读取该目录：{error}": "Cannot read folder: {error}",
   "已迁移 {moved} 个缓存文件": "Moved {moved} cache file(s)",
   "已迁移 {moved} 个缓存文件，{skipped} 个跳过": "Moved {moved} cache file(s), skipped {skipped}",
-  "官方资源路径": "Official assets path",
   "设置": "Set",
-  "WE assets 绝对路径，留空保存=清除": "Absolute path to WE assets; save empty to clear",
-  "已启用 · 场景实时渲染取官方像素": "Enabled · Scene live rendering uses official pixel assets",
-  "目录不可用（缺 materials/），场景实时渲染走程序化复刻": "Directory unavailable (materials/ missing) · Scene live rendering falls back to procedural recreation",
-  "未配置 · 场景实时渲染贴图走程序化复刻": "Not configured · Scene live rendering textures fall back to procedural recreation",
-  "指向 Wallpaper Engine 安装目录的 assets（或其拷贝）": "Points to the assets folder of the Wallpaper Engine installation (or a copy of it)",
   "上传中…": "Uploading…",
   // 侧栏快捷面板「壁纸」页签的本地上传入口（pre.70）—— 与设置页上传同一条链路，
   // 新词按任务单归在 panel 域（守卫只对账键集，不按文件分域）。
@@ -640,6 +634,7 @@ const WE_I18N_EN_PANEL = {
   "工作能力": "Work",
   "娱乐": "Fun",
   "详情": "Details",
+  "预览图来自作者仓库": "Preview from the author's repository",
   "收起": "Collapse",
   "复制安装命令": "Copy install command",
   "已复制": "Copied",

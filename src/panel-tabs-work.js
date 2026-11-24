@@ -34,9 +34,34 @@ const CAP_ICON = {
 
 const CAP_META = { fontSize: '11px', opacity: 0.6, marginTop: '2px', wordBreak: 'break-all' };
 
+/** 作者仓库预览占位块：固定 120px 高，图片失败时仍占位（不塌、不露裂图）。 */
+const CAP_PREVIEW_BOX = {
+  width: '100%',
+  height: '120px',
+  overflow: 'hidden',
+  borderRadius: '8px',
+  background: 'rgba(255,255,255,0.06)',
+};
+const CAP_PREVIEW_IMG = { width: '100%', height: '120px', objectFit: 'cover', display: 'block' };
+
+/**
+ * 从能力条目的 `source` 推作者仓库的 OG 预览图：
+ *   https://github.com/<owner>/<repo>[/tree/...] → https://opengraph.githubassets.com/1/<owner>/<repo>
+ * 非 GitHub 来源（npm / 其它）返回空串 —— 调用方据此整块不渲染，保持原布局。
+ * 不新增 catalog 字段，也不发起额外抓取：OG 图由 GitHub 自己生成。
+ */
+function capPreviewUrl(source) {
+  const m = String(source || '').match(/^https?:\/\/(?:www\.)?github\.com\/([^/?#]+)\/([^/?#]+)/i);
+  if (!m) return '';
+  const repo = m[2].replace(/\.git$/i, '');
+  if (!m[1] || !repo) return '';
+  return 'https://opengraph.githubassets.com/1/' + m[1] + '/' + repo;
+}
+
 function CapabilityCard({ item }) {
   const [open, setOpen] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
+  const [previewFailed, setPreviewFailed] = React.useState(false);
   const copy = () => {
     const text = String(item.command || '');
     try {
@@ -76,6 +101,21 @@ function CapabilityCard({ item }) {
   const body = [head];
   if (open) {
     const line = (k, v) => React.createElement('div', { key: k, className: 'we-picker__hint', style: { marginTop: '4px' } }, v);
+    const previewUrl = capPreviewUrl(item.source);
+    if (previewUrl) {
+      body.push(React.createElement('div', { key: 'preview', style: { marginTop: '8px' } },
+        React.createElement('div', { style: CAP_PREVIEW_BOX },
+          previewFailed ? null : React.createElement('img', {
+            src: previewUrl,
+            alt: item.name,
+            loading: 'lazy',
+            style: CAP_PREVIEW_IMG,
+            onError: () => setPreviewFailed(true),
+          })),
+        React.createElement('div', {
+          className: 'we-picker__hint', style: { marginTop: '4px' },
+        }, weT('预览图来自作者仓库'))));
+    }
     body.push(React.createElement('div', { key: 'd-title', style: { marginTop: '8px', fontSize: '12px', fontWeight: 600 } }, weT('详情')));
     body.push(line('desc', item.authorDesc || item.summary || ''));
     body.push(React.createElement('div', { key: 'u-title', style: { marginTop: '8px', fontSize: '12px', fontWeight: 600 } }, weT('如何使用')));
@@ -169,4 +209,4 @@ function CapabilitiesSection() {
       items,
     }));
 }
-export { CapabilityCard, CapabilitiesSection, CapGroup };
+export { CapabilityCard, CapabilitiesSection, CapGroup, capPreviewUrl };

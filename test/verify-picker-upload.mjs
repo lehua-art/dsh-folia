@@ -8,9 +8,8 @@
 //   ① 选中 File → 进入「上传中…」（期间 file input 禁用）→ 宿主 2xx 后
 //      「已上传 N 个」按库存里的 up- 条目计数（up-dir- 目录项目不算上传）；
 //   ② 宿主非 2xx → 错误行显示宿主给的原因，且**不重拉库存**（没有新条目要合并）；
-//   ③ 保存官方资源路径 ⇒ **恰好一次** /inventory 重拉（宿主文件是真源，新目录/
-//      可用性靠这次重拉带回渲染）；宿主拒绝时显示 weAssetsError，编辑器保持打开、
-//      草稿保留（用户能改一改再存）。
+//   ③ 官方资源路径 UI 已移除（pre.71）：设置页不再出现该行 / WE assets 草稿框；
+//      宿主 /we-assets-dir 路由与 inventory.weAssets* 字段仍保留（由别的守卫覆盖）。
 //
 // 判据纪律（docs/DEV-GUIDE.md §4.7 约定 5）：每条判据只在这里定义一次（命名函数 /
 // 命名常量），正判据与负对照**调同一个函数**，负对照喂的是**变异输入**
@@ -62,8 +61,6 @@ function findRow(root, needle) {
 }
 
 const isFileInput = (n) => n.type === 'input' && n.props && n.props.type === 'file';
-const buttonIn = (row, text) => (row ? findNode(row, (n) => n.type === 'button'
-  && Array.isArray(n.children) && n.children.length === 1 && n.children[0] === text) : null);
 
 // ── 判据 ① 上传区 ──
 /** 在途提示：「上传中…」这一行在场。 */
@@ -75,13 +72,11 @@ const uploadedCount = (root) => {
   return line ? Number(line.replace(/\D/g, '')) : -1;
 };
 
-/** 错误行集合（上传失败 / weAssetsError 共用同一条渲染通道）。 */
+/** 错误行集合（上传失败通道）。 */
 const errorLines = (root) => stringsUnder(root, 'we-picker__error');
 
-// 两条错误通道都渲染成 .we-picker__error，且**互不清除**（上传失败不会被改目录
-// 清掉，反之亦然）⇒ 判据必须按文案前缀分通道，否则一条通道的残留会把另一条判成红。
+// 错误行统一渲染成 .we-picker__error；按文案前缀分通道，避免其它错误行的残留把上传判据判红。
 const uploadErrorLines = (root) => errorLines(root).filter((t) => t.startsWith('上传失败：'));
-const saveErrorLines = (root) => errorLines(root).filter((t) => t.startsWith('保存失败：'));
 
 /** file input 的 disabled（上传期间必须禁用，否则能并发选第二个文件）。 */
 const uploadInputDisabled = (root) => {
@@ -101,30 +96,14 @@ function uploadRequestCarries(req, file) {
     && req.url.includes('title=' + encodeURIComponent(title));
 }
 
-// ── 判据 ② 官方资源路径（目录编辑器）──
-/** 编辑器（草稿输入行）是否打开。 */
-const weAssetsEditorOpen = (root) => findRow(root, 'WE assets') !== null;
-
-/** 编辑器草稿输入框的当前值（关着 → null）。 */
-const weAssetsDraftOf = (root) => {
-  const input = findNode(root, (n) => n.type === 'input' && n.props
-    && typeof n.props.placeholder === 'string' && n.props.placeholder.startsWith('WE assets'));
-  return input ? input.props.value : null;
-};
-
-/** 「官方资源路径」那一行显示的当前值（宿主 inventory 的镜像）。 */
-const weAssetsShown = (root) => {
-  const row = findRow(root, '官方资源路径');
-  const shown = row ? stringsUnder(row, 'we-picker__uploads-path') : [];
-  return shown.length ? shown[0] : null;
-};
+// ── 判据 ② 官方资源路径整块已移除（pre.71）──
+/** 页面里是否还有 WE assets 草稿输入框（pre.71 起必须为 false）。 */
+const hasWeAssetsDraftInput = (root) => findNode(root, (n) => n.type === 'input' && n.props
+  && typeof n.props.placeholder === 'string' && n.props.placeholder.startsWith('WE assets')) !== null;
 
 /** /inventory 重拉次数（命名二元判据：正判据与负对照都调它）。 */
 const inventoryRefetchDelta = (before, after) => after - before;
 const exactlyOneInventoryRefetch = (before, after) => inventoryRefetchDelta(before, after) === 1;
-
-/** 一次 we-assets-dir 保存请求携带的目录（无请求/无字段 → null）。 */
-const weAssetsSaveDirOf = (call) => (call && call.body && typeof call.body.dir === 'string' ? call.body.dir : null);
 
 /** 挂载台自身：picker 渲染回调已注册（否则后面每条判据都在空跑）。 */
 const hasPickerRender = (renders) => renders.length > 0;
@@ -220,11 +199,7 @@ const localStorage = {
 // ── 宿主侧 mock 状态（负对照就是换这里的应答）──
 const inventoryCalls = [];
 const uploadCalls = [];
-const weAssetsCalls = [];
 let uploadedOnce = false;      // 上传成功后宿主库存里多出 up-1（+ 不可计的 up-dir-2）
-let weAssetsDirValue = null;   // 宿主侧已保存的官方资源路径
-let weAssetsSaveStatus = 200;
-let weAssetsSaveError = '';
 let pendingUpload = null;      // 在途上传（null = 没有请求在飞）
 
 const assertState = (cond, msg) => { if (!cond) throw new Error('harness: ' + msg); };
@@ -252,8 +227,8 @@ function inventoryPayload() {
     wallpapers.push({ id: 'up-dir-2', title: '目录项目', type: 'image', playable: false, media: null, preview: null });
   }
   return {
-    installDir: 'D:/we', uploadDir: 'D:/we/uploads', weAssetsDir: weAssetsDirValue,
-    weAssetsAvailable: false, total: wallpapers.length, portableCount: wallpapers.length,
+    installDir: 'D:/we', uploadDir: 'D:/we/uploads',
+    total: wallpapers.length, portableCount: wallpapers.length,
     playlists: [], wallpapers,
   };
 }
@@ -271,17 +246,6 @@ const fetch = (url, opts) => {
     uploadCalls.push({ url: u, headers, body: opts && opts.body });
     pendingUpload = deferred();
     return pendingUpload.promise;
-  }
-  if (method === 'POST' && u.includes('/folia/we-assets-dir')) {
-    let body;
-    try { body = JSON.parse((opts && opts.body) || '{}'); } catch { body = null; }
-    weAssetsCalls.push({ url: u, body });
-    const ok = weAssetsSaveStatus >= 200 && weAssetsSaveStatus < 300;
-    if (ok) weAssetsDirValue = (body && typeof body.dir === 'string' && body.dir) ? body.dir : null;
-    return Promise.resolve({
-      status: weAssetsSaveStatus,
-      json: () => Promise.resolve(ok ? { ok: true, weAssetsDir: weAssetsDirValue } : { error: weAssetsSaveError }),
-    });
   }
   if (u.includes('/folia/settings')) {
     return Promise.resolve({ status: 200, json: () => Promise.resolve({ ok: true }) });
@@ -339,9 +303,6 @@ const check = (label, cond, detail) => {
 const UPLOAD_OK_FILE = { name: 'wall.png', type: 'image/png' };
 const UPLOAD_BAD_FILE = { name: 'wall-again.png', type: 'image/png' };
 const UPLOAD_FAIL_REASON = '磁盘已满（测试）';
-const WE_ASSETS_OK_DIR = 'D:/we-assets';
-const WE_ASSETS_FAIL_DIR = 'Z:/no-such-drive';
-const WE_ASSETS_FAIL_REASON = '无法在该路径创建目录（权限不足或路径被占用）';
 const pickFileInput = (root) => findNode(root, isFileInput);
 const pickFile = (root, file) => pickFileInput(root).props.onChange({ target: { files: [file], value: '' } });
 
@@ -435,93 +396,19 @@ console.log('1. 上传：选中 File → 上传中 → 成功计数');
     uploadedCount(uploadFailTree) === 1, 'N=' + uploadedCount(uploadFailTree));
 }
 
-console.log('2. 目录编辑器（官方资源路径）：保存 ⇒ 恰好一次 /inventory 重拉');
+console.log('2. 官方资源路径整块已移除（pre.71）');
 {
-  // ②-a 编辑器初始关闭，行上显示宿主当前值（未配置 → 占位符）。
-  check('目录编辑器：初始关闭',
-    !weAssetsEditorOpen(initialTree));
-  check('目录编辑器：未配置时该行显示占位符「—」',
-    weAssetsShown(initialTree) === '—', 'shown=' + JSON.stringify(weAssetsShown(initialTree)));
-  check('负对照：把该行的显示值变异成目标路径后，同一条判据读成目标路径',
-    weAssetsShown(mutateText(initialTree, '—', WE_ASSETS_OK_DIR)) === WE_ASSETS_OK_DIR);
-
-  // ②-b 点「设置」→ 草稿输入行打开，预填宿主当前值（空）。
-  const row = findRow(render(), '官方资源路径');
-  const openBtn = buttonIn(row, weAssetsDirValue ? '更改' : '设置');
-  assertState(!!openBtn, '「官方资源路径」行必须有打开编辑器的按钮');
-  openBtn.props.onClick();
-  const openTree = render();
-  check('目录编辑器：点「设置」后草稿输入行打开且预填宿主当前值',
-    weAssetsEditorOpen(openTree) && weAssetsDraftOf(openTree) === '');
-  check('负对照：同一棵初始树上，同一条「编辑器打开」判据判为关闭',
-    !weAssetsEditorOpen(initialTree));
-
-  // ②-c 填草稿 → 保存 → 请求携带草稿、恰好一次重拉、显示值换成宿主重拉回来的。
-  const editorRow = findRow(openTree, 'WE assets');
-  const draftInput = findNode(editorRow, (n) => n.type === 'input' && n.props
-    && typeof n.props.placeholder === 'string' && n.props.placeholder.startsWith('WE assets'));
-  assertState(!!draftInput, '编辑器里必须有草稿输入框');
-  draftInput.props.onInput({ target: { value: WE_ASSETS_OK_DIR } });
-  const beforeSave = inventoryCalls.length;
-  buttonIn(findRow(render(), 'WE assets'), '保存').props.onClick();
-  await sleep(30);
-  const savedTree = render();
-
-  check('目录保存：POST 体携带草稿路径',
-    weAssetsSaveDirOf(weAssetsCalls[0]) === WE_ASSETS_OK_DIR,
-    JSON.stringify(weAssetsCalls[0] ? weAssetsCalls[0].body : null));
-  check('负对照：换成别的目录的请求体，同一条判据判为不匹配',
-    weAssetsSaveDirOf({ body: { dir: 'D:/elsewhere' } }) !== WE_ASSETS_OK_DIR);
-  check('目录保存成功：恰好一次 /inventory 重拉',
-    exactlyOneInventoryRefetch(beforeSave, inventoryCalls.length),
-    'delta=' + inventoryRefetchDelta(beforeSave, inventoryCalls.length));
-  check('负对照：+2 次重拉的计数实参被同一条判据判为不满足「恰好一次」',
-    !exactlyOneInventoryRefetch(beforeSave, beforeSave + 2));
-  check('目录保存成功：行上显示宿主重拉回来的新路径（inventory 是真源）且编辑器关闭',
-    weAssetsShown(savedTree) === WE_ASSETS_OK_DIR && !weAssetsEditorOpen(savedTree),
-    'shown=' + JSON.stringify(weAssetsShown(savedTree)));
-  check('负对照：把该行显示值变异回占位符后，同一条判据不再等于新路径',
-    weAssetsShown(mutateText(savedTree, WE_ASSETS_OK_DIR, '—')) !== WE_ASSETS_OK_DIR);
-  check('目录保存成功：没有「保存失败：」错误行（同一次会话里上传失败的残留行不算）',
-    saveErrorLines(savedTree).length === 0,
-    saveErrorLines(savedTree).join(' | ') || '(空)');
-  check('负对照：同一判据能把「保存失败：」那一行点出来（成功腿的空集不是判据失灵）',
-    saveErrorLines({ props: { className: 'we-picker__error' }, children: ['保存失败：宿主拒绝'] })
-      .includes('保存失败：宿主拒绝'));
-
-  // ②-d 宿主拒绝 → weAssetsError 上屏，编辑器保持打开、草稿保留，且不重拉库存。
-  const reopenRow = findRow(savedTree, '官方资源路径');
-  const changeBtn = buttonIn(reopenRow, '更改');
-  assertState(!!changeBtn, '已配置后按钮文案必须是「更改」');
-  changeBtn.props.onClick();
-  const reopenedTree = render();
-  const failInput = findNode(findRow(reopenedTree, 'WE assets'), (n) => n.type === 'input' && n.props
-    && typeof n.props.placeholder === 'string' && n.props.placeholder.startsWith('WE assets'));
-  failInput.props.onInput({ target: { value: WE_ASSETS_FAIL_DIR } });
-  weAssetsSaveStatus = 400;
-  weAssetsSaveError = WE_ASSETS_FAIL_REASON;
-  const beforeFailSave = inventoryCalls.length;
-  buttonIn(findRow(render(), 'WE assets'), '保存').props.onClick();
-  await sleep(30);
-  const saveFailTree = render();
-  const expectedSaveError = '保存失败：' + WE_ASSETS_FAIL_REASON;
-
-  check('目录保存失败：错误行逐字显示 weAssetsError（宿主给的原因）',
-    saveErrorLines(saveFailTree).includes(expectedSaveError),
-    saveErrorLines(saveFailTree).join(' | ') || '(无错误行)');
-  check('负对照：改写成别的原因后同一条判据不再命中，且成功腿上该通道为空（两腿结论相反）',
-    !saveErrorLines(mutateText(saveFailTree, expectedSaveError, '保存失败：其它原因')).includes(expectedSaveError)
-    && saveErrorLines(savedTree).length === 0);
-  check('目录保存失败：不重拉库存（宿主没改，重拉只会白跑）',
-    !exactlyOneInventoryRefetch(beforeFailSave, inventoryCalls.length),
-    'delta=' + inventoryRefetchDelta(beforeFailSave, inventoryCalls.length));
-  check('负对照：同一条判据在成功腿上为真（+1 确实来自保存动作）',
-    exactlyOneInventoryRefetch(beforeSave, beforeSave + 1));
-  check('目录保存失败：编辑器保持打开且草稿保留（用户能改一改再存）',
-    weAssetsEditorOpen(saveFailTree) && weAssetsDraftOf(saveFailTree) === WE_ASSETS_FAIL_DIR,
-    'draft=' + JSON.stringify(weAssetsDraftOf(saveFailTree)));
-  check('负对照：成功关闭后的同一棵树上，同一条判据判为关闭且无草稿',
-    !weAssetsEditorOpen(savedTree) && weAssetsDraftOf(savedTree) === null);
+  check('设置页不再有「官方资源路径」行', findRow(initialTree, '官方资源路径') === null);
+  check('设置页不再有 WE assets 草稿输入框', !hasWeAssetsDraftInput(initialTree));
+  // 负对照：合成的行 / 输入框必须被同一条判据判出，证明空集不是判据失灵。
+  const syntheticRow = {
+    type: 'div', props: { className: 'we-picker__row' },
+    children: [{ type: 'span', props: { className: 'we-picker__hint' }, children: ['官方资源路径'] }],
+  };
+  check('负对照：合成的「官方资源路径」行会被同一条判据判出',
+    findRow(syntheticRow, '官方资源路径') !== null);
+  check('负对照：合成的 WE assets 输入框会被同一条判据判出',
+    hasWeAssetsDraftInput({ type: 'input', props: { placeholder: 'WE assets 绝对路径，留空保存=清除' }, children: [] }));
 }
 
 console.log('');

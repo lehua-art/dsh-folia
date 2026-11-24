@@ -353,7 +353,7 @@
   }
 
   function renderWallpaperUploadsSection(ctx) {
-    const { armedConfirm, group, onArmConfirm, onCancelEditUploadDir, onCancelEditWeAssetsDir, onDisarmConfirm, onStartEditUploadDir, onStartEditWeAssetsDir, onUploadDirDraft, onWeAssetsDirDraft, playableCount, playableList, sel, uploadedList } = ctx;
+    const { armedConfirm, group, onArmConfirm, onCancelEditUploadDir, onDisarmConfirm, onStartEditUploadDir, onUploadDirDraft, playableCount, playableList, sel, uploadedList } = ctx;
     const uploadToken = (w) => "upload:" + w.id;
     return React.createElement(React.Fragment, null,
     // ── 自定义壁纸: local JPG/PNG/MP4 as wallpapers. Files are written by the
@@ -405,54 +405,6 @@
           weT("已有文件会迁移到新位置")),
         React.createElement("span", { className: "we-picker__hint" },
           weT("支持 ~ 表示用户主目录")),
-      ),
-      // ── 官方资源路径（local-assets）：场景实时渲染的 util、particle、
-      // gradient 贴图默认是程序化复刻（观感近似）；指向本机 WE 安装目录的
-      // assets 树后按名取官方像素，与官方引擎逐像素对齐。素材属 WE 版权
-      // 内容，只从本机路径只读取用，不会被复制/上传。路径不硬编码 ——
-      // 持久化在宿主 config.json（weAssetsDir），经 we-assets-dir 端点读写。
-      React.createElement("div", { className: "we-picker__row" },
-        React.createElement("span", { className: "we-picker__hint we-picker__label" }, weT("官方资源路径")),
-        React.createElement("span", {
-          className: "we-picker__uploads-path",
-        }, sel.inventory.weAssetsDir || "—"),
-        React.createElement("button", {
-          className: "we-picker__btn", type: "button",
-          onClick: onStartEditWeAssetsDir,
-        }, sel.inventory.weAssetsDir ? weT("更改") : weT("设置")),
-      ),
-      sel.editingWeAssetsDir && React.createElement("div", { className: "we-picker__row" },
-        React.createElement("input", {
-          className: "we-picker__text", type: "text",
-          value: sel.weAssetsDirDraft,
-          placeholder: weT("WE assets 绝对路径，留空保存=清除"),
-          onInput: onWeAssetsDirDraft,
-          onKeyDown: (e) => {
-            if (e.key === "Enter") changeWeAssetsDir(sel.weAssetsDirDraft);
-            if (e.key === "Escape") onCancelEditWeAssetsDir();
-          },
-        }),
-        React.createElement("button", {
-          className: "we-picker__btn", type: "button",
-          onClick: () => changeWeAssetsDir(sel.weAssetsDirDraft),
-        }, weT("保存")),
-        React.createElement("button", {
-          className: "we-picker__btn", type: "button",
-          onClick: onCancelEditWeAssetsDir,
-        }, weT("取消")),
-      ),
-      React.createElement("div", { className: "we-picker__row" },
-        React.createElement("span", { className: "we-picker__hint" },
-          sel.inventory.weAssetsAvailable
-            ? weT("已启用 · 场景实时渲染取官方像素")
-            : (sel.inventory.weAssetsDir
-              ? weT("目录不可用（缺 materials/），场景实时渲染走程序化复刻")
-              : weT("未配置 · 场景实时渲染贴图走程序化复刻"))),
-        React.createElement("span", { className: "we-picker__hint" },
-          weT("指向 Wallpaper Engine 安装目录的 assets（或其拷贝）")),
-      ),
-      sel.weAssetsError && React.createElement("div", { className: "we-picker__error" },
-        sel.weAssetsError,
       ),
       React.createElement("div", { className: "we-picker__row" },
         React.createElement("span", { className: "we-picker__hint we-picker__label" }, weT("自定义")),
