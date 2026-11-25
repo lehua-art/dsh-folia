@@ -122,16 +122,80 @@ const makeBubble = (anchorRef) => {
     `隐藏=${!hidden} · 重开后=${bubble.isVisible()} text=${bubble.text}`);
 }
 
-/* ⑥ 超长：160px 内滚动、320px 宽上限、15px 圆角（样式在注入 CSS 里） */
+/* ⑥ v3：最多 4 行折叠 + 展开可读全文；300px 宽、16px 圆角、240px 展开高度 */
 {
   const anchorRef = { value: { left: 0, top: 0, width: 10, height: 10, scale: 1 } };
-  const { bubble } = makeBubble(anchorRef);
+  const { bubble, timers } = makeBubble(anchorRef);
   bubble.show('长'.repeat(400));
-  check('⑥ 超长回答：max-height 160px 可滚、宽度 ≤320px、圆角 15px',
-    /max-height:160px/.test(source) && /overflow-y:auto/.test(source)
-      && /max-width:320px/.test(source) && /border-radius:15px/.test(source)
-      && bubble.BUBBLE_MAX_HEIGHT === 160 && bubble.BUBBLE_MAX_WIDTH === 320,
-    `maxHeight=${bubble.BUBBLE_MAX_HEIGHT} · maxWidth=${bubble.BUBBLE_MAX_WIDTH}`);
+  const longText = bubble.text;
+  bubble.setExpanded(true);
+  const expanded = bubble.expanded;
+  const style = bubble.element && bubble.element.dataset ? String(bubble.element.dataset.expanded) : '';
+  bubble.setExpanded(false);
+  check('⑥ v3 超长回答：4 行折叠可展开、宽 ≤300px、圆角 16px、展开态 240px',
+    /-webkit-line-clamp:4/.test(source) && /max-width:300px/.test(source)
+      && /border-radius:16px/.test(source) && /max-height:240px/.test(source)
+      && bubble.MAX_LINES === 4 && bubble.BUBBLE_MAX_WIDTH === 300 && bubble.BUBBLE_MAX_HEIGHT === 240
+      && longText.length === 400 && expanded === true && style === '1' && bubble.expanded === false,
+    `maxHeight=${bubble.BUBBLE_MAX_HEIGHT} · maxWidth=${bubble.BUBBLE_MAX_WIDTH} · 展开=${expanded}→${bubble.expanded}`);
+}
+
+/* ⑪ v3：新消息替换旧消息时先淡出再换文字（150ms） */
+{
+  const anchorRef = { value: { left: 0, top: 0, width: 10, height: 10, scale: 1 } };
+  const { bubble, timers } = makeBubble(anchorRef);
+  bubble.show('第一句');
+  bubble.show('第二句');
+  const duringFade = bubble.text;
+  // 第 1 个定时器是淡出替换（150ms）；tick 后换新文字。
+  const wait = timers.tick();
+  check('⑪ v3 替换消息先淡出 150ms 再换文字',
+    duringFade === '第一句' && wait === 150 && bubble.text === '第二句' && bubble.isVisible() === true
+      && /transition:opacity 150ms/.test(source) && /translateY\(4px\)/.test(source),
+    `淡出期间=${duringFade} · 等待=${wait}ms · 之后=${bubble.text}`);
+}
+
+/* ⑫ v3：状态与正文分离；🔇 仅文字 / 麦克风已暂停 两种状态文案 */
+{
+  const anchorRef = { value: { left: 100, top: 300, width: 80, height: 80, scale: 1 } };
+  const { bubble } = makeBubble(anchorRef);
+  bubble.setVoiceFlags({ speakPaused: true });
+  bubble.setState('muted');
+  const muted = String(bubble.statusElement.textContent || '');
+  bubble.setVoiceFlags({ listenPaused: true, speakPaused: false });
+  bubble.setState('listen');
+  const paused = String(bubble.statusElement.textContent || '');
+  bubble.show('正文');
+  check('⑫ v3 状态条独立：🔇 仅文字 / 🎤 麦克风已暂停，正文不被污染',
+    muted.includes('🔇') && muted.includes('仅文字') && paused.includes('麦克风已暂停')
+      && bubble.text === '正文' && bubble.statusElement !== bubble.element,
+    `muted=${muted} · paused=${paused} · 正文=${bubble.text}`);
+}
+
+/* ⑬ v3：展开后出现「复制」，复制的是全文 */
+{
+  const anchorRef = { value: { left: 0, top: 0, width: 10, height: 10, scale: 1 } };
+  const written = [];
+  const doc = makeDoc();
+  const timers = makeTimers();
+  const bubble = factory({
+    document: doc,
+    setTimeout: timers.setTimeout,
+    clearTimeout: timers.clearTimeout,
+    getAnchor: () => anchorRef.value,
+    clipboard: { writeText: async (text) => { written.push(text); } },
+  });
+  bubble.show('复制这段字');
+  bubble.setExpanded(true);
+  const tools = (bubble.element.children || []).find((node) => node.className === 'we-pet-bubble-tools');
+  const copy = tools && (tools.children || []).find((node) => node.className === 'pet-bubble-copy');
+  const hiddenBefore = copy && String(copy.style.display);
+  if (copy) copy.handlers.click({ stopPropagation() {} });
+  await Promise.resolve();
+  await Promise.resolve();
+  check('⑬ v3 展开后出现「复制」，复制全文',
+    Boolean(copy) && hiddenBefore !== 'none' && written[0] === '复制这段字',
+    `按钮=${Boolean(copy)} · 写入=${JSON.stringify(written)}`);
 }
 
 

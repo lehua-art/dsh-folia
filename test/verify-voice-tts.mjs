@@ -633,8 +633,8 @@ async function waitFor(fn, ms = 3000) {
   check('⑦ “说”时状态条带简单波形（CSS 伪元素 + 动画；回答气泡不再挂波形）',
     /we-pet-status\[data-state="speak"\]::after/.test(css)
       && /@keyframes we-pet-status-wave/.test(css)
-      && /we-pet-bubble\{[^}]*max-height:160px/.test(css)
-      && /border-radius:15px/.test(css)
+      && /we-pet-bubble\{[^}]*max-width:300px/.test(css)
+      && /border-radius:16px/.test(css)
       && /transition:opacity 150ms/.test(css),
     `style 节点=${headChildren.length}`);
 }

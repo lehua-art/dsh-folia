@@ -197,13 +197,15 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
   let walkLeft = 0;
   /** 单击轮换到第几号轨道。 */
   let clickIdx = 0;
-  /** pre.63：右键菜单的连续对话状态（由 pet-chat 通过事件同步）。 */
+  /** 常驻聆听 / 暂停说话的状态（由 pet-chat 通过事件同步）。 */
   let continuousEnabled = true;
   let continuousPaused = false;
+  let speakPaused = false;
   const onContinuousState = (event) => {
     const detail = (event && event.detail) || {};
     if (typeof detail.enabled === 'boolean') continuousEnabled = detail.enabled;
     if (typeof detail.paused === 'boolean') continuousPaused = detail.paused;
+    if (typeof detail.speakPaused === 'boolean') speakPaused = detail.speakPaused;
     if (menu) closeMenu();
   };
 
@@ -427,6 +429,7 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
   let menu = null;
   if (typeof window !== "undefined" && window.addEventListener) {
     window.addEventListener("we-pet-continuous-state", onContinuousState);
+    window.addEventListener("we-pet-voice-state", onContinuousState);
   }
   function closeMenu() {
     if (menu && menu.parentNode) menu.parentNode.removeChild(menu);
@@ -470,30 +473,29 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
     const hr = document.createElement("div");
     hr.style.cssText = "height:1px;margin:6px 0;background:rgba(255,255,255,0.14)";
     menu.appendChild(hr);
-    // pre.63：连续对话（与设置页 voice.continuous 同一字段，由 pet-chat 同步状态/持久化）
-    const sendContinuous = (action) => {
+    // 任务 §4：右键只留两个开关 ——「暂停说话」（静音但继续听 + 出字幕）/「暂停聆听」（临时关麦）。
+    const sendVoice = (action, extra) => {
       try {
-        window.dispatchEvent(new CustomEvent("we-pet-continuous", { detail: { action } }));
+        window.dispatchEvent(new CustomEvent("we-pet-continuous", { detail: { action, ...(extra || {}) } }));
       } catch { /* 没装 pet-chat 时无副作用 */ }
     };
     menu.appendChild(buildMenuItem(
-      (continuousEnabled ? "☑ " : "☐ ") + weT("连续对话"),
+      (speakPaused ? "☑ " : "☐ ") + weT("暂停说话"),
       () => {
-        continuousEnabled = !continuousEnabled;
-        sendContinuous("toggle");
+        speakPaused = !speakPaused;
+        sendVoice("speak-pause", { paused: speakPaused });
         closeMenu();
       },
     ));
-    if (continuousEnabled) {
-      menu.appendChild(buildMenuItem(
-        continuousPaused ? weT("继续听") : weT("暂停听"),
-        () => {
-          sendContinuous(continuousPaused ? "resume" : "pause");
-          continuousPaused = !continuousPaused;
-          closeMenu();
-        },
-      ));
-    }
+    menu.appendChild(buildMenuItem(
+      (continuousPaused ? "▶ " : "⏸ ") + (continuousPaused ? weT("继续聆听") : weT("暂停聆听")),
+      () => {
+        const next = !continuousPaused;
+        continuousPaused = next;
+        sendVoice(next ? "pause" : "resume", { paused: next });
+        closeMenu();
+      },
+    ));
     const hr2 = document.createElement("div");
     hr2.style.cssText = "height:1px;margin:6px 0;background:rgba(255,255,255,0.14)";
     menu.appendChild(hr2);
@@ -567,6 +569,7 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("we-pet-continuous-state", onContinuousState);
+      window.removeEventListener("we-pet-voice-state", onContinuousState);
     }
   }
 

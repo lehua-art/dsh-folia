@@ -25,7 +25,7 @@ const CHAT_DEFAULTS = {
   petName: '',
   ownerName: '',
   // v0.2：朗读 = voice.muted 取反；音色 = voice.name；SAPI = voice.sapiEnabled（默认 false）。
-  voice: { name: '', muted: false, rate: 0, sapiEnabled: false, enabledEngine: 'edge', continuous: true },
+  voice: { name: '', muted: false, rate: 0, sapiEnabled: false, enabledEngine: 'edge', continuous: true, listenPaused: false },
 };
 
 /** apiJson 的返回是 { ok, status, data }，而 /pet-chat/* 的 data 里还套一层 { ok, data }。 */
@@ -203,7 +203,7 @@ function PetChatSettings() {
   const [workPlugins, setWorkPlugins] = React.useState(null);
   const [voices, setVoices] = React.useState(null);
   const [voiceMeta, setVoiceMeta] = React.useState({});
-  const [voiceCfg, setVoiceCfg] = React.useState({ sapiEnabled: false, enabledEngine: 'edge', continuous: true });
+  const [voiceCfg, setVoiceCfg] = React.useState({ sapiEnabled: false, enabledEngine: 'edge', continuous: true, listenPaused: false });
   const [setupBusy, setSetupBusy] = React.useState(false);
   const [setupReport, setSetupReport] = React.useState(null);
   // pre.62：录音组件（ffmpeg）供给状态；下载中时轮询 /voice/diagnose 显示百分比。
@@ -261,8 +261,9 @@ function PetChatSettings() {
         voice.sapiEnabled = voice.sapiEnabled === true;
         voice.enabledEngine = ['edge', 'piper', 'sapi'].includes(String(voice.enabledEngine || '')) ? voice.enabledEngine : 'edge';
         voice.continuous = voice.continuous !== false;
+        voice.listenPaused = voice.listenPaused === true;
         setDraft({ ...CHAT_DEFAULTS, ...doc, voice, apiKey: '' });
-        setVoiceCfg({ sapiEnabled: voice.sapiEnabled, enabledEngine: voice.enabledEngine, continuous: voice.continuous });
+        setVoiceCfg({ sapiEnabled: voice.sapiEnabled, enabledEngine: voice.enabledEngine, continuous: voice.continuous, listenPaused: voice.listenPaused });
         publishContinuous(voice.continuous !== false);
         setEnabledEngine(voice.enabledEngine);
         setCheckedEngine(voice.enabledEngine);
@@ -533,6 +534,7 @@ function PetChatSettings() {
         sapiEnabled: voiceCfg.sapiEnabled === true,
         enabledEngine,
         continuous: voiceCfg.continuous !== false,
+        listenPaused: voiceCfg.listenPaused === true,
       });
       if (!voice.name) {
         const fallback = assistantDefaultVoice(voices);
@@ -550,6 +552,8 @@ function PetChatSettings() {
           sapiEnabled: voice.sapiEnabled,
           enabledEngine,
           continuous: voiceCfg.continuous !== false,
+          listenPaused: voiceCfg.listenPaused === true,
+          muted: voice.muted === true,
         }, { parse: 'always' }).catch(() => null);
         if (voice.muted === true) {
           try { petSpeakStop(); } catch { /* 朗读是增强：停不下来也不能影响保存 */ }
@@ -611,7 +615,7 @@ function PetChatSettings() {
   const voiceKnown = usableVoices.some((v) => String(v.id) === currentVoiceName);
   const edgeOk = usableVoices.some((v) => v.engine === 'edge') || Boolean(voiceMeta && voiceMeta.edge && voiceMeta.edge.ok);
   const piperInstalled = Boolean(voiceMeta && voiceMeta.piper && voiceMeta.piper.installed);
-  const continuousOn = voiceCfg.continuous !== false;
+  const listenOn = voiceCfg.listenPaused !== true;
   // 下拉只列“当前已启用的内置引擎”+ 已测试通过的在线渠道，避免选到不参与回落的音色。
   const selectableVoices = usableVoices.filter((v) => v.engine === enabledEngine
     || ['openai', 'azure', 'elevenlabs'].includes(v.engine));
@@ -703,28 +707,28 @@ function PetChatSettings() {
     weT('🔊 朗读回答')));
     voicePage.push(React.createElement('div', {
       key: 'speak-hint', className: 'we-picker__hint', style: { margin: '0 0 6px' },
-    }, weT('关闭后只显示字幕、不合成语音（省算力）；保存后立刻生效。')));
+    }, weT('关闭后只显示字幕、不合成语音（=「暂停说话」）；聆听与字幕不中断，保存后立刻生效。')));
 
     voicePage.push(React.createElement('label', {
-      key: 'continuous-toggle', style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', margin: '6px 0 2px' },
+      key: 'listen-toggle', style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', margin: '6px 0 2px' },
     },
     React.createElement('input', {
-      type: 'checkbox', checked: continuousOn, disabled: busy,
+      type: 'checkbox', checked: listenOn, disabled: busy,
       onChange: (e) => {
-        const on = e.target.checked;
-        setVoiceCfg((prev) => ({ ...prev, continuous: on }));
-        publishContinuous(on);
+        const listening = e.target.checked;
+        setVoiceCfg((prev) => ({ ...prev, listenPaused: !listening }));
+        publishContinuous(listening);
         try {
           if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-            window.dispatchEvent(new CustomEvent('we-pet-continuous', { detail: { action: 'set', enabled: on } }));
+            window.dispatchEvent(new CustomEvent('we-pet-continuous', { detail: { action: listening ? 'resume' : 'pause' } }));
           }
         } catch { /* ignore */ }
       },
     }),
-    weT('☑ 连续对话')));
+    weT('🎤 常驻聆听')));
     voicePage.push(React.createElement('div', {
-      key: 'continuous-hint', className: 'we-picker__hint', style: { margin: '0 0 6px' },
-    }, weT('默认开启：朗读结束后约 0.6 秒自动开麦；静默 2 轮或连续 8 轮自动退出，点桌宠可暂停。')));
+      key: 'listen-hint', className: 'we-picker__hint', style: { margin: '0 0 6px' },
+    }, weT('装好就在听（不用点桌宠）：朗读时自动闭麦，播完 300ms 恢复；取消勾选 =「暂停聆听」（临时关麦，重启后仍记住）。')));
 
     voicePage.push(ffmpegRow('ffmpeg-voice'));
     voicePage.push(React.createElement('div', { key: 'setup', style: { display: 'flex', gap: '8px', alignItems: 'center', margin: '6px 0' } },

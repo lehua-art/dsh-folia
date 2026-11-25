@@ -212,7 +212,9 @@ function PersonaSection() {
     subtype: 'volc-seed-tts', voiceId: 'zh_female_shuangkuaisisi_uranus_bigtts',
   });
   const [volcNote, setVolcNote] = React.useState(null);
-  const [perm, setPerm] = React.useState({ loading: false, advanced: false, groups: [], toolLog: { items: [], total: 0 }, isCharacter: false, message: '' });
+  const [volcDiag, setVolcDiag] = React.useState(null);
+  const [perm, setPerm] = React.useState({ loading: false, advanced: false, preset: '', presets: [], groups: [], toolLog: { items: [], total: 0 }, isCharacter: false, message: '' });
+  const [toolWl, setToolWl] = React.useState({ loading: false, domains: '', apps: '', note: null });
   const [permBusy, setPermBusy] = React.useState(false);
   const [permNote, setPermNote] = React.useState(null);
   const [wizard, setWizard] = React.useState({ step: 1, name: '', nickname: '', tone: '温柔', relation: '' });
@@ -455,6 +457,8 @@ function PersonaSection() {
       setPerm({
         loading: false,
         advanced: data.advanced === true,
+        preset: String(data.preset || ''),
+        presets: Array.isArray(data.presets) ? data.presets : [],
         groups: Array.isArray(data.groups) ? data.groups : [],
         isCharacter: data.isCharacter === true,
         message: String(data.message || ''),
@@ -464,6 +468,35 @@ function PersonaSection() {
       setPerm((prev) => ({ ...prev, loading: false }));
     }
   }, []);
+
+  /** 工具白名单（任务 §6②：open_url 域名 / app_launch 应用，用户可编辑）。 */
+  const loadToolWhitelist = React.useCallback(async () => {
+    try {
+      const data = unwrap(await apiJson('/pet-chat/tools/whitelist', { parse: 'always' }));
+      setToolWl({
+        loading: false,
+        domains: Array.isArray(data.domains) ? data.domains.join(', ') : '',
+        apps: Array.isArray(data.apps) ? data.apps.map((item) => item.id || item).join(', ') : '',
+        note: null,
+      });
+    } catch {
+      setToolWl((prev) => ({ ...prev, loading: false, note: { ok: false, text: '读取白名单失败' } }));
+    }
+  }, []);
+
+  const saveToolWhitelist = async () => {
+    setPermBusy(true);
+    try {
+      const domains = String(toolWl.domains || '').split(/[，,\s]+/).map((item) => item.trim()).filter(Boolean);
+      const apps = String(toolWl.apps || '').split(/[，,\s]+/).map((item) => item.trim()).filter(Boolean);
+      const data = unwrap(await apiPostJson('/pet-chat/tools/whitelist', { domains, apps }, { parse: 'always' }));
+      if (!data.ok) throw new Error(data.hint || 'save-failed');
+      setToolWl((prev) => ({ ...prev, note: { ok: true, text: '白名单已保存' } }));
+      await loadToolWhitelist();
+    } catch (error) {
+      setToolWl((prev) => ({ ...prev, note: { ok: false, text: String((error && error.message) || '保存失败') } }));
+    } finally { setPermBusy(false); }
+  };
 
   /** 下载/删除/设默认之后把包状态合并回目录（不重新拉 Edge 列表）。 */
   const mergePackState = (packs) => {
@@ -503,36 +536,59 @@ function PersonaSection() {
 
   const previewVoice = React.useCallback(async (id) => {
     if (!id) return;
+    // 任务 §1②：播放前先告诉用户「正在用哪个引擎合成」，失败照实报，不静默换音色。
+    const engine = String(id).split(':')[0] || 'tts';
     setPreviewId(id);
-    setVoiceNote(null);
+    setVoiceNote({ ok: true, text: `正在用 ${engine} 合成…（试听不回落，失败会照实报）` });
     try {
       const resp = await apiFetch('/pet-chat/voice/preview', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id }), parse: false,
       });
+      // ⚠️ 二进制消费者：blob() 必须紧跟同一个 apiFetch 调用窗（verify-api-client 的 ①b）。
+      //     先拿 blob，再读响应头（哪个引擎 / 有没有回落）；失败分支再用 json() 读原因。
+      const blob = resp && resp.ok ? await resp.response.blob() : null;
       if (!resp || !resp.ok) {
+        let code = String((resp && resp.status) || '');
         let hint = '';
+        let engineOut = engine;
         try {
           const doc = await resp.response.json();
-          hint = doc && (doc.hint || doc.code);
+          code = doc.code || code;
+          hint = doc.hint || '';
+          engineOut = doc.engine || engine;
         } catch { /* ignore */ }
-        setVoiceNote({ ok: false, text: hint || '试听失败（音色未就绪或网络不可用）' });
+        setVoiceNote({
+          ok: false,
+          text: `试听失败（${engineOut || engine} · ${code || 'tts-failed'}）：${hint || '这个音色现在合成不了，不会偷偷换成别的音色'}`,
+        });
         setPreviewId('');
         return;
       }
-      const blob = await resp.response.blob();
+      let usedEngine = engine;
+      let fallback = false;
+      try {
+        usedEngine = String(resp.response.headers.get('x-folia-tts-engine') || engine);
+        fallback = String(resp.response.headers.get('x-folia-tts-fallback') || '0') === '1';
+      } catch { /* 头读不到不影响播放 */ }
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
       const cleanup = () => { try { URL.revokeObjectURL(url); } catch { /* ignore */ } setPreviewId(''); };
       audio.onended = cleanup;
-      audio.onerror = () => { cleanup(); setVoiceNote({ ok: false, text: '试听音频播放失败' }); };
+      audio.onerror = () => { cleanup(); setVoiceNote({ ok: false, text: '试听音频播放失败（文件坏了或播放器不可用）' }); };
       const played = audio.play();
+      setVoiceNote({
+        ok: fallback !== true,
+        text: fallback
+          ? `正在用 ${usedEngine} 播放，但宿主报告发生了回落（不该出现在试听里，请反馈）`
+          : `正在用 ${usedEngine} 播放试听：${id}`,
+      });
       if (played && typeof played.catch === 'function') {
         played.catch(() => { cleanup(); setVoiceNote({ ok: false, text: '浏览器拦截了自动播放，再点一次 ▶' }); });
       }
     } catch {
       setPreviewId('');
-      setVoiceNote({ ok: false, text: '试听请求失败' });
+      setVoiceNote({ ok: false, text: '试听请求失败（宿主没响应）' });
     }
   }, []);
 
@@ -560,7 +616,8 @@ function PersonaSection() {
     if (detailTab === 'voice' && !voices.length) void loadVoices();
     if (detailTab === 'voice' && !voiceCatalog) void loadVoiceCatalog();
     if (detailTab === 'permissions') void loadPermissions(selected.id);
-  }, [selected, detailTab, loadMemory, loadVoices, voices.length, voiceCatalog, loadVoiceCatalog, loadPermissions]);
+    if (detailTab === 'permissions') void loadToolWhitelist();
+  }, [selected, detailTab, loadMemory, loadVoices, voices.length, voiceCatalog, loadVoiceCatalog, loadPermissions, loadToolWhitelist]);
 
   const packAction = async (kind, pack) => {
     if (!pack) return;
@@ -630,6 +687,7 @@ function PersonaSection() {
   const testVolc = async () => {
     setVoiceBusy('volc-test');
     setVolcNote({ ok: true, text: '正在真调火山（最长 25 秒）…' });
+    setVolcDiag(null);
     try {
       if (volcForm.appId.trim() || volcForm.accessToken.trim()) {
         const saved = unwrap(await apiPostJson('/pet-chat/voice/providers', {
@@ -644,16 +702,42 @@ function PersonaSection() {
         if (!saved.ok) throw new Error(saved.error || 'save-failed');
       }
       const data = unwrap(await apiPostJson('/pet-chat/voice/providers/test', { provider: 'volcengine' }, { parse: 'always' }));
+      // 任务 §2①：把真实诊断（状态码 / 响应片段 / URL / ResourceId / 音色 / 子类型）原样显示。
+      setVolcDiag({
+        status: data.status, code: data.code, bodySnippet: data.bodySnippet,
+        url: data.url, resourceId: data.resourceId, voiceId: data.voiceId,
+        subtype: data.subtype, hint: data.hint, maskedAppId: data.maskedAppId, maskedToken: data.maskedToken,
+      });
       if (data.ok) {
-        const fallback = data.fallback ? '（在线失败，已回落内置音色）' : '';
-        setVolcNote({ ok: true, text: `火山已接通：${data.actualVoice || volcForm.voiceId}${fallback}` });
+        setVolcNote({
+          ok: true,
+          text: `火山已接通（已验证）：${data.subtype || volcForm.subtype} · ${data.resourceId || volcForm.resourceId} · ${data.voiceId || volcForm.voiceId}`,
+        });
       } else {
-        setVolcNote({ ok: false, text: String(data.error || '测试失败') });
+        const parts = [`HTTP ${data.status || 0}`, data.code || 'failed', data.error || '测试失败'];
+        if (data.hint) parts.push(`→ ${data.hint}`);
+        setVolcNote({ ok: false, text: parts.join(' · ') });
       }
       await loadVoiceCatalog();
     } catch (error) {
       setVolcNote({ ok: false, text: String((error && error.message) || '测试失败') });
     } finally { setVoiceBusy(''); }
+  };
+
+  /** 权限预设：标准 / 宽松 / 自定义（任务 §6①）。 */
+  const setPermissionPreset = async (preset) => {
+    if (!draft) return;
+    setPermBusy(true);
+    setPermNote(null);
+    try {
+      const data = unwrap(await apiPostJson('/pet-chat/personas/' + encodeURIComponent(draft.id) + '/permissions/preset', { preset }, { parse: 'always' }));
+      if (!data.ok) throw new Error(data.hint || data.message || 'preset-failed');
+      setPermNote({ ok: true, text: data.message || '预设已应用' });
+      await loadPermissions(draft.id);
+    } catch (error) {
+      setPermNote({ ok: false, text: String((error && error.message) || '预设应用失败') });
+      await loadPermissions(draft.id);
+    } finally { setPermBusy(false); }
   };
 
   const setPermissionGroup = async (group, level) => {
@@ -1143,7 +1227,11 @@ function PersonaSection() {
     const center = (voiceCatalog && voiceCatalog.center) || {};
     const volc = center.volcengine || {};
     const configured = volc.configured === true;
-    const statusText = configured ? (volc.lastOk ? '已测试通过' : '已配置（未测试）') : '未配置';
+    // 任务 §2④：已配置 → 已验证（最后一次真实测试通过）；并把实际用的子类型/资源 ID 显示出来。
+    const verified = volc.verified === true || volc.lastOk === true;
+    const statusText = configured ? (verified ? '已验证' : '已配置（未验证）') : '未配置';
+    const usedSubtype = volc.verifiedSubtype || volc.subtype || '';
+    const usedResourceId = volc.verifiedResourceId || volc.resourceId || '';
     const howTo = (voiceCatalog && voiceCatalog.howTo) || volc.howTo || [];
     const howToRows = howTo.map((step) => React.createElement('div', { key: step.step, style: { ...PERSONA_STYLE.card, padding: '7px 9px' } },
       React.createElement('div', { style: { fontSize: '12px', fontWeight: 600 } }, `${step.step}. ${step.title}`),
@@ -1154,14 +1242,32 @@ function PersonaSection() {
       }, step.link) : null));
     const header = React.createElement('div', { style: { ...PERSONA_STYLE.row, justifyContent: 'space-between' } },
       React.createElement('div', { style: { fontSize: '12px', fontWeight: 600 } }, '火山引擎（唯一在线供应商）',
-        personaTag(statusText, configured ? (volc.lastOk ? 'ok' : 'warn') : 'warn')),
+        personaTag(statusText, verified ? 'ok' : 'warn'),
+        verified ? personaTag(`实际：${usedSubtype || '?'} · ${usedResourceId || '?'}`, 'ok') : null),
       personaButton(howToOpen ? '收起「如何获取」' : '如何获取 →', () => setHowToOpen((prev) => !prev)));
     const statusHint = configured
       ? React.createElement('div', { className: 'we-picker__hint', style: { margin: '2px 0 4px' } },
-        `AppID ${volc.maskedAppId || '已保存'} · Token ${volc.maskedToken || '已保存'} · ${volc.cluster || ''} · ${volc.resourceId || ''}`)
+        `AppID ${volc.maskedAppId || '已保存'} · Token ${volc.maskedToken || '已保存'} · 子类型 ${volc.subtype || ''}`
+        + ` · Cluster ${volc.cluster || ''} · Resource ID ${volc.resourceId || ''}`
+        + (verified && volc.verifiedStatus ? ` · 上次测试 HTTP ${volc.verifiedStatus}` : ''))
       : null;
     const errorHint = volc.lastError
       ? React.createElement('div', { className: 'we-picker__hint', style: { color: '#f87171' } }, volc.lastError)
+      : null;
+    // 任务 §2①：把「测试」拿到的真实诊断原样摆出来（状态码 + 响应片段 + URL + ResourceId + 音色）。
+    const diagBlock = volcDiag
+      ? React.createElement('div', { style: { ...PERSONA_STYLE.card, padding: '7px 9px', marginTop: '4px', borderColor: 'rgba(120,190,255,.35)' } },
+        React.createElement('div', { style: { fontSize: '11px', fontWeight: 600 } },
+          `诊断 · HTTP ${volcDiag.status || 0} · ${volcDiag.code || ''}`),
+        React.createElement('div', { style: { fontSize: '10px', opacity: .8, marginTop: '2px', wordBreak: 'break-all' } },
+          `POST ${volcDiag.url || '(未发出请求)'}`),
+        React.createElement('div', { style: { fontSize: '10px', opacity: .8, marginTop: '1px' } },
+          `subtype=${volcDiag.subtype || '?'} · resourceId=${volcDiag.resourceId || '?'} · voiceId=${volcDiag.voiceId || '?'}`),
+        React.createElement('div', { style: { fontSize: '10px', opacity: .8, marginTop: '1px' } },
+          `AppID ${volcDiag.maskedAppId || '?'} · Token ${volcDiag.maskedToken || '?'}（只显示掩码）`),
+        React.createElement('div', { style: { fontSize: '10px', opacity: .82, marginTop: '3px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' } },
+          `响应片段：${volcDiag.bodySnippet || '(空)'}`),
+        volcDiag.hint ? React.createElement('div', { style: { fontSize: '10px', color: '#fcd34d', marginTop: '2px' } }, volcDiag.hint) : null)
       : null;
     const credentialsGrid = React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginTop: '4px' } },
       personaField('AppID', personaInput({
@@ -1216,7 +1322,7 @@ function PersonaSection() {
         howToRows)
       : null;
     return React.createElement('div', { style: { ...PERSONA_STYLE.card, padding: '10px' } },
-      header, statusHint, errorHint, credentialsGrid, routingGrid, voiceGrid, actions, noteRow, howToBlock);
+      header, statusHint, errorHint, credentialsGrid, routingGrid, voiceGrid, actions, noteRow, diagBlock, howToBlock);
   };
 
   const permissionRow = (group) => {
@@ -1385,9 +1491,19 @@ function PersonaSection() {
         React.createElement('div', { className: 'we-picker__hint', style: { marginTop: '3px' } },
           '这是代码层强制：即使提示词要求它换壁纸/卸载/读文件，工具层也会拒绝。声音页仍可正常选音色与试听。'))
       : React.createElement('div', null,
-        React.createElement('div', { style: { fontSize: '12px', fontWeight: 600, marginBottom: '2px' } }, '工具组权限'),
+        React.createElement('div', { style: { fontSize: '12px', fontWeight: 600, marginBottom: '2px' } }, '工具组权限',
+          personaTag(`预设：${((perm.presets || []).find((item) => item.current) || {}).label || '自定义'}`, '')),
+        // 任务 §6①：一键预设（标准 / 宽松 / 自定义）；改过任何一组会自动变「自定义」。
+        React.createElement('div', { style: { ...PERSONA_STYLE.row, gap: '4px', margin: '2px 0 4px', flexWrap: 'wrap' } },
+          (perm.presets || []).map((item) => personaButton(
+            `${item.label}${item.current ? ' ✓' : ''}`,
+            () => { void setPermissionPreset(item.id); },
+            { disabled: permBusy || item.current, style: item.current ? { borderColor: 'rgba(120,190,255,.7)', background: 'rgba(90,160,255,.16)' } : {} },
+          ))),
         React.createElement('div', { className: 'we-picker__hint', style: { marginBottom: '4px' } },
-          '允许 = 直接做；询问 = 先问一句，说「好」或在气泡点「允许」才做；禁止 = 明确拒绝。'),
+          ((perm.presets || []).find((item) => item.current) || {}).desc || '允许 = 直接做；询问 = 先问一句，说「好」或在气泡点「允许」才做；禁止 = 明确拒绝。'),
+        React.createElement('div', { className: 'we-picker__hint', style: { marginBottom: '4px' } },
+          '写文件（doc_write）、剪贴板、系统操作永远需要二次确认；预设不会绕过它们。'),
         perm.loading ? React.createElement('div', { className: 'we-picker__hint' }, '正在读取权限…') : null,
         perm.groups.map(permissionRow),
         React.createElement('label', { style: { ...PERSONA_STYLE.row, gap: '6px', margin: '8px 0 2px', cursor: permBusy ? 'default' : 'pointer' } },
@@ -1397,6 +1513,25 @@ function PersonaSection() {
           }),
           React.createElement('span', null, '高级权限',
             React.createElement('span', { style: { opacity: .72 } }, '（允许系统级操作；每个动作仍会二次确认）'))),
+        // 任务 §6②：「用户可编辑白名单」——open_url 域名 + app_launch 应用。
+        React.createElement('div', { style: { marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,.10)' } },
+          React.createElement('div', { style: { fontSize: '12px', fontWeight: 600 } }, '工具白名单'),
+          React.createElement('div', { className: 'we-picker__hint', style: { margin: '2px 0 4px' } },
+            'open_url 只开这些域名（https）；app_launch 只启动这些应用。用逗号分隔，保存后立刻生效。'),
+          personaField('允许的域名', personaInput({
+            value: toolWl.domains, placeholder: 'bilibili.com, github.com',
+            onChange: (v) => setToolWl((prev) => ({ ...prev, domains: v })),
+          })),
+          personaField('允许的应用（id）', personaInput({
+            value: toolWl.apps, placeholder: 'notepad, calc, mspaint, explorer, browser',
+            onChange: (v) => setToolWl((prev) => ({ ...prev, apps: v })),
+          })),
+          React.createElement('div', { style: { ...PERSONA_STYLE.row, marginTop: '4px' } },
+            personaButton('保存白名单', () => { void saveToolWhitelist(); }, { primary: true, disabled: permBusy }),
+            personaButton('重新读取', () => { void loadToolWhitelist(); })),
+          toolWl.note
+            ? React.createElement('div', { className: 'we-picker__hint', style: { color: toolWl.note.ok ? undefined : '#f87171' } }, toolWl.note.text)
+            : null),
         permNote ? React.createElement('div', { className: 'we-picker__hint', style: { color: permNote.ok ? undefined : '#f87171' } }, permNote.text) : null,
         React.createElement('div', { style: { fontSize: '12px', fontWeight: 600, marginTop: '10px' } },
           '最近调用记录', personaTag(`共 ${perm.toolLog ? perm.toolLog.total : 0} 条`, '')),

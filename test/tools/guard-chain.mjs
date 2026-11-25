@@ -152,6 +152,7 @@ export const OFF_CHAIN_WHY = {
   'verify-bundle-rows.mjs': '有意脱链：链尾有一条**真 cordis 往返**（按路径拼接动态 `import` 宿主 peer 包 `@deepseek-ai/cordis`，见本文件 `cordisPath` / `pathToFileURL` 那处），而 CI 是 `npm ci --omit=peer` ⇒ 挂链只会让它永久"出声 SKIP"（P5 的字面量扫描看不到路径拼接的说明符，所以挂链并不会被 P5 判红 —— 但"链上恒跳过"比脱链更坏）；故留在链外 + 每次改行/包必须手跑一次（BUNDLE-SPLIT §10.1 #2）。',
   'verify-static.mjs': '静态棘轮入口（ESLint / tsc 都是 devDependencies）⇒ CI 独立步骤 `npm run verify:static`；链上零裸依赖容不下它。',
   'verify-voice-permission-v2.mjs': '音色/权限 v2 专项验收（A–K）：要假 TTS + 本地火山端点/端口，由 run-audit 与交付日志单独跑；不进默认 PR 链以避免网络与端口依赖。',
+  'verify-voice-thinking-ux-v3.mjs': 'v3 专项验收（A–N：试听不回落 / 火山诊断 / 思考 / 常驻聆听 / 气泡 / 权限预设）：要假 TTS、本地火山与模型端点、vm 假 DOM，由 run-audit 与交付日志单独跑；不进默认 PR 链以避免端口与 DOM 依赖。',
 };
 
 /** 守卫面地板（防"面变空 ⇒ 脱链判据永真"）。实测 2026-10-16 = 88。 */

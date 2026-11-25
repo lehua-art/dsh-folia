@@ -107,6 +107,8 @@ function petAsrEta(seconds) {
  */
 async function ensureAsrReady(isCancelled) {
   const cancelled = typeof isCancelled === 'function' ? isCancelled : () => false;
+  // 假 DOM / 极简环境没有 setTimeout：常驻聆听不能因此抛错（只返回"没准备好"）。
+  if (typeof setTimeout !== 'function') return false;
   petBubble.setState('think');
   try {
     await apiPostJson('/pet-chat/asr', {}, { parse: 'always' });
@@ -160,7 +162,7 @@ async function ensureAsrReady(isCancelled) {
  * 懒加载：挂载时与每次唤醒时各刷一次（设置面板改完立刻生效，不用重启）。
  * 读不到就保持“不静音”，宁可多念一句，也不要让用户以为朗读坏了。
  */
-let petChatVoice = { name: '', muted: false, rate: 0, continuous: true };
+let petChatVoice = { name: '', muted: false, rate: 0, continuous: true, listenPaused: false };
 /** pre.65：本轮输入方式决定长度策略（语音 1–3 句；文字可长）。 */
 let petChatInputMode = 'text';
 /** 当前 active persona（只用于提示/排障；宿主以 index.active 为准，避免切换后发旧 id）。 */
@@ -170,25 +172,39 @@ async function petChatRefreshVoice() {
     const resp = await apiJson('/pet-chat/state', { parse: 'always' });
     const doc = (resp && resp.data) || {};
     if (doc.persona && doc.persona.id) petChatPersonaId = String(doc.persona.id);
+    petChatModelReady = doc.modelReady === true;
     if (doc.voice && typeof doc.voice === 'object') {
       petChatVoice = {
         name: String(doc.voice.name || ''),
         muted: doc.voice.muted === true,
         rate: Number.isFinite(Number(doc.voice.rate)) ? Number(doc.voice.rate) : 0,
         continuous: doc.voice.continuous !== false,
+        listenPaused: doc.voice.listenPaused === true,
       };
     }
   } catch { /* 读不到就用默认（不静音） */ }
-  petChatContinuousEnabled = petChatVoice.continuous !== false;
-  if (petChatContinuousEnabled === false) petChatContinuousStop('', true);
+  // 「暂停说话 / 暂停聆听」都是持久开关：设置页/右键改完立刻生效。
+  petChatSpeakPaused = petChatVoice.muted === true;
+  petChatContinuousEnabled = true;
+  petChatContinuousPaused = petChatVoice.listenPaused === true;
+  petBubble.setVoiceFlags({ speakPaused: petChatSpeakPaused, listenPaused: petChatContinuousPaused });
   petChatPublishContinuousState();
   return petChatVoice;
 }
 
-/* ── 连续对话（半双工）：朗读结束 → 0.6s 自动开麦；静默 2 轮 / 连续 8 轮退出 ── */
-const PET_CHAT_CONTINUOUS_DELAY_MS = 650;
-const PET_CHAT_CONTINUOUS_MAX_ROUNDS = 8;
-const PET_CHAT_CONTINUOUS_MAX_SILENT = 2;
+/* ── 常驻聆听（任务 §4）：装好就在听；半双工；「暂停说话 / 暂停聆听」两个开关 ── *
+ *
+ * 状态机：idle → listening → thinking → speaking → listening（循环）
+ *   · 挂载后自动进入 listening（受持久化的「暂停聆听」约束）；
+ *   · 朗读开始时**绝不录音**（半双工，避免听到自己）；播完 300ms 自动恢复听；
+ *   · 「暂停说话」只静音 TTS，继续听 + 头顶出字幕；
+ *   · 麦克风被占用/权限失败 ⇒ 退出常驻聆听并明确提示（不静默）。
+ */
+const PET_CHAT_LISTEN_RESUME_MS = 300;
+/** 连续 60 秒没听到人声 ⇒ 探听降频到每 2 秒一次（但仍算"在听"）。 */
+const PET_CHAT_QUIET_AFTER_MS = 60000;
+const PET_CHAT_QUIET_PROBE_MS = 2000;
+const PET_CHAT_SILENT_PROMPT_EVERY = 3;
 let petChatContinuousEnabled = true;
 let petChatContinuousActive = false;
 let petChatContinuousPaused = false;
@@ -196,6 +212,12 @@ let petChatContinuousRounds = 0;
 let petChatContinuousSilent = 0;
 let petChatContinuousTimer = null;
 let petChatVoiceAbort = false;
+/** 暂停说话（= voice.muted）：不出声，但继续听、继续出字幕。 */
+let petChatSpeakPaused = false;
+let petChatLastHeardAt = Date.now();
+let petChatListeningNow = false;
+/** 模型是否就绪（enabled + 有 Key/本机模型）：不满足时**不开麦**，先提示填 Key。 */
+let petChatModelReady = false;
 
 function petChatContinuousClearTimer() {
   if (petChatContinuousTimer != null) {
@@ -204,7 +226,7 @@ function petChatContinuousClearTimer() {
   }
 }
 
-/** pre.63：把连续对话状态推给右键菜单（pet-layer 监听）。 */
+/** 把常驻聆听 / 暂停说话的状态推给右键菜单（pet-layer 监听）。 */
 function petChatPublishContinuousState() {
   try {
     if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
@@ -216,6 +238,14 @@ function petChatPublishContinuousState() {
         rounds: petChatContinuousRounds,
       },
     }));
+    window.dispatchEvent(new CustomEvent('we-pet-voice-state', {
+      detail: {
+        speakPaused: petChatSpeakPaused === true,
+        listenPaused: petChatContinuousPaused === true,
+        listening: petChatListeningNow === true,
+        speaking: (() => { try { return petTts.isSpeaking(); } catch { return false; } })(),
+      },
+    }));
   } catch { /* 右键菜单是增强，事件失败不影响对话 */ }
 }
 
@@ -224,104 +254,132 @@ function petChatContinuousStart() {
   petChatContinuousClearTimer();
   petChatContinuousActive = true;
   petChatContinuousPaused = false;
-  if (petChatContinuousRounds === 0) petChatContinuousSilent = 0;
   petBubble.setContinuous(true);
   petChatPublishContinuousState();
   return true;
 }
 
+/** 停止常驻聆听（暂停聆听 / 页面隐藏 / 麦克风失败时调用）。 */
 function petChatContinuousStop(reason, silent) {
   petChatContinuousClearTimer();
   petChatContinuousActive = false;
   petChatContinuousPaused = true;
   petChatContinuousRounds = 0;
   petChatContinuousSilent = 0;
+  petChatListeningNow = false;
   petBubble.setContinuous(false);
   petChatPublishContinuousState();
   if (reason && silent !== true) petBubble.status('info', reason, { delay: 3500 });
 }
 
-/** 右键「暂停听」：立即停掉自动续听与当前录音，但保留 enabled 字段。 */
+/** 右键「暂停聆听」：立即停麦 + 停掉自动续听，并持久化（重启后仍暂停）。 */
 function petChatContinuousPause(reason) {
-  if (!petChatContinuousEnabled) return false;
   petChatVoiceAbort = true;
   try { petVoiceIn.stop(); } catch { /* ignore */ }
-  petChatContinuousStop(reason || weT('⏸ 连续对话已暂停（点桌宠继续）'), false);
+  petChatContinuousStop(reason || weT('⏸ 麦克风已暂停（右键「继续聆听」恢复）'), false);
+  petBubble.status('info', weT('🎤 麦克风已暂停'), { delay: 3000 });
+  void petChatPersistListenPaused(true);
   return true;
 }
 
-/** 右键「继续听」：恢复免点击循环，并立刻开下一轮（不用再点桌宠）。 */
+/** 右键「继续聆听」：恢复常驻聆听，并立刻听下一轮（不用再点桌宠）。 */
 function petChatContinuousResume() {
-  if (!petChatContinuousEnabled) return false;
   petChatVoiceAbort = false;
+  petChatContinuousEnabled = true;
   petChatContinuousPaused = false;
+  // 「恢复后立刻可听」：把最近人声时间拉回现在，不再套用 60s 静默后的 2s 探听节奏。
+  petChatLastHeardAt = Date.now();
   petChatContinuousStart();
-  petChatContinuousArm(450);
+  void petChatPersistListenPaused(false);
+  petChatContinuousArm(120);
   return true;
 }
 
-/** 开关（菜单/设置页共用 voice.continuous）：持久化 + 广播给菜单。 */
-function petChatSetContinuousEnabled(enabled) {
-  const next = enabled === true;
-  petChatContinuousEnabled = next;
-  if (!next) {
-    petChatVoiceAbort = true;
-    try { petVoiceIn.stop(); } catch { /* ignore */ }
-    petChatContinuousStop('', true);
-  } else {
-    petChatContinuousPaused = false;
-    petChatVoiceAbort = false;
-    petChatPublishContinuousState();
-  }
+/** 存「暂停聆听」到 voice.listenPaused（宿主持久化；重启后沿用）。 */
+async function petChatPersistListenPaused(paused) {
   try {
-    void apiPostJson('/pet-chat/voice/config', { continuous: next }, { parse: 'always' })
-      .then(() => petChatRefreshVoice())
-      .catch(() => { /* 设置页下次保存会再写 */ });
+    await apiPostJson('/pet-chat/voice/config', { listenPaused: paused === true }, { parse: 'always' });
+  } catch { /* 设置页下次保存会再写 */ }
+}
+
+/** 暂停说话：静音 TTS（继续听 + 出字幕）。 */
+function petChatSetSpeakPaused(paused) {
+  const next = paused === true;
+  petChatSpeakPaused = next;
+  petChatVoice.muted = next;
+  if (next) petSpeakStop();
+  petBubble.setVoiceFlags({ speakPaused: next, listenPaused: petChatContinuousPaused });
+  petBubble.status('info', next ? weT('🔇 仅文字（继续听，不出声）') : weT('🔊 声音已恢复'), { delay: 2600 });
+  petChatPublishContinuousState();
+  try {
+    void apiPostJson('/pet-chat/voice/config', { muted: next }, { parse: 'always' });
   } catch { /* ignore */ }
   return next;
 }
 
-/** 右键菜单事件：toggle / pause / resume。 */
-function petChatOnContinuousCommand(event) {
-  const action = String((event && event.detail && event.detail.action) || '');
-  if (action === 'toggle') petChatSetContinuousEnabled(!petChatContinuousEnabled);
-  else if (action === 'set') petChatSetContinuousEnabled(event.detail.enabled === true);
-  else if (action === 'pause') petChatContinuousPause();
-  else if (action === 'resume') petChatContinuousResume();
+/** 暂停聆听：关麦（不再自动开麦），保留"暂停说话"。 */
+function petChatSetListenPaused(paused) {
+  const next = paused === true;
+  if (next) petChatContinuousPause();
+  else petChatContinuousResume();
+  petBubble.setVoiceFlags({ speakPaused: petChatSpeakPaused, listenPaused: next });
+  return next;
 }
 
-/** 朗读结束或一次静默后，延迟 0.65s 自动开麦。 */
+/** 右键菜单事件：toggle / pause / resume（旧协议）+ speak-pause / listen-pause（v3）。 */
+function petChatOnContinuousCommand(event) {
+  const action = String((event && event.detail && event.detail.action) || '');
+  if (action === 'toggle') petChatSetListenPaused(!petChatContinuousPaused);
+  else if (action === 'set') petChatSetListenPaused(event.detail.enabled !== true);
+  else if (action === 'pause') petChatSetListenPaused(true);
+  else if (action === 'resume') petChatSetListenPaused(false);
+  else if (action === 'speak-pause') petChatSetSpeakPaused(!petChatSpeakPaused);
+  else if (action === 'speak-set') petChatSetSpeakPaused(event.detail.paused === true);
+}
+
+/** 静默累计到一定轮次才提示一次，不因为安静就退出常驻聆听。 */
+function petChatSilenceDelay(delayMs) {
+  const quietFor = Date.now() - petChatLastHeardAt;
+  if (quietFor >= PET_CHAT_QUIET_AFTER_MS) return PET_CHAT_QUIET_PROBE_MS;
+  return Math.max(PET_CHAT_LISTEN_RESUME_MS, Number(delayMs) || PET_CHAT_LISTEN_RESUME_MS);
+}
+
+/** 朗读结束 / 一次静默后，延迟 300ms 自动开麦（半双工：播完才听）。 */
 function petChatContinuousArm(delayMs) {
   if (!petChatContinuousEnabled || !petChatContinuousActive || petChatContinuousPaused) return;
-  if (petChatContinuousRounds >= PET_CHAT_CONTINUOUS_MAX_ROUNDS) {
-    petChatContinuousStop(weT('连续对话结束：已连续 {n} 轮', { n: PET_CHAT_CONTINUOUS_MAX_ROUNDS }));
-    return;
-  }
   petChatContinuousClearTimer();
   petChatShowContinuousListening();
+  const waitMs = petChatSilenceDelay(delayMs);
   petChatContinuousTimer = setTimeout(() => {
     petChatContinuousTimer = null;
     if (!petChatContinuousEnabled || !petChatContinuousActive || petChatContinuousPaused) return;
+    // 半双工硬约束：正在朗读时**绝不开麦**（等 onIdle 再排下一拍）。
+    try { if (petTts.isSpeaking()) return; } catch { /* 实例未就绪时照常开麦 */ }
     petChatVoiceAbort = false;
+    petChatListeningNow = true;
+    petChatPublishContinuousState();
     void petVoiceIn.start();
-  }, Math.max(500, Math.min(800, Number(delayMs) || PET_CHAT_CONTINUOUS_DELAY_MS)));
+  }, waitMs);
 }
 
-/** 一次语音轮次失败：静默累计 2 轮退出，其它错误立即停。 */
+/**
+ * 一次语音轮次失败：静默类（没听到/太小声）继续听，设备类错误退出常驻聆听并提示。
+ */
 function petChatContinuousVoiceError(code) {
   if (!petChatContinuousActive || petChatContinuousPaused) return;
   const silent = ['no-speech', 'unclear', 'too-quiet'].includes(String(code || ''));
   if (!silent) {
-    petChatContinuousStop(weT('连续对话已停止：{e}', { e: code || '麦克风不可用' }));
+    // 麦克风被占用 / 权限失败：退出常驻聆听（不静默），并把提示留在状态条。
+    petChatContinuousStop(weT('常驻聆听已暂停：{e}（右键「继续聆听」重试）', { e: code || '麦克风不可用' }));
+    void petChatPersistListenPaused(true);
     return;
   }
   petChatContinuousSilent += 1;
-  if (petChatContinuousSilent >= PET_CHAT_CONTINUOUS_MAX_SILENT) {
-    petChatContinuousStop(weT('连续对话结束：连续 {n} 轮没听到', { n: PET_CHAT_CONTINUOUS_MAX_SILENT }));
-    return;
+  petChatContinuousRounds += 1;
+  if (petChatContinuousSilent % PET_CHAT_SILENT_PROMPT_EVERY === 0) {
+    petBubble.status('info', weT('还在听（没听到人声，{n} 次）', { n: petChatContinuousSilent }), { delay: 1600 });
   }
-  petBubble.status('info', weT('没听到，再说一次（{n}/{m}）', { n: petChatContinuousSilent, m: PET_CHAT_CONTINUOUS_MAX_SILENT }), { delay: 1800 });
-  petChatContinuousArm(500);
+  petChatContinuousArm(PET_CHAT_LISTEN_RESUME_MS);
 }
 
 /* ── v2 大脑（前端侧）：情绪语速 / 环境快照 / 动作回执 / 主动触发 ─────────── */
@@ -442,6 +500,20 @@ function petChatIsDarkWallpaper(item) {
  * 失败返回 `{ok:false,error}`，由宿主统一说人话 —— 这里只负责把真实结果回执回去。
  */
 async function petChatApplyAction(tool, args) {
+  if (tool === 'wallpaper_volume') {
+    // 任务 §6② volume_set(target=wallpaper)：写壁纸音轨音量并回读 selection.videoVolume。
+    const percent = Math.max(0, Math.min(100, Math.round(Number(args && args.percent) || 0)));
+    try {
+      if (typeof onVideoVolume !== 'function') return { ok: false, error: 'unsupported' };
+      onVideoVolume(percent);
+    } catch {
+      return { ok: false, error: 'apply-failed' };
+    }
+    await new Promise((resolve) => { setTimeout(resolve, 200); });
+    const actual = Math.round(Number(selection && selection.videoVolume || 0) * 100);
+    if (Math.abs(actual - percent) > 2) return { ok: false, error: 'not-applied', percent: actual };
+    return { ok: true, percent: actual, verified: true };
+  }
   if (tool === 'wallpaper_cycle') {
     const enabled = !(args && args.enabled === false);
     const before = Boolean(selection && selection.rotationEnabled);
@@ -532,6 +604,7 @@ async function petChatHandleAction(payload) {  const id = String((payload && pay
       ok: result.ok === true,
       targetId: result.targetId || '',
       title: result.title || '',
+      percent: Number.isFinite(Number(result.percent)) ? Number(result.percent) : undefined,
       error: result.error || '',
     }, { parse: 'always' });
   } catch { /* 回执失败由宿主超时判失败，不会谎报成功 */ }
@@ -581,6 +654,7 @@ function petChatConfirmShow(payload) {
         const result = await petChatApplyAction(String(action.tool || ''), action.args || {});
         let say = '';
         if (action.tool === 'wallpaper_cycle') say = result.ok ? (result.enabled ? '轮播打开了。' : '轮播关掉了。') : '轮播没切成功。';
+        else if (action.tool === 'wallpaper_volume') say = result.ok ? `壁纸音量调到 ${result.percent}% 了。` : '壁纸音量没调成。';
         else if (result.ok) say = result.title ? `换成「${result.title}」了。` : '换好了。';
         else say = result.error === 'no-match' ? '没找到那张壁纸。' : '没换成，再试一次吧。';
         petBubble.show(say);
@@ -690,8 +764,10 @@ const petTts = petTtsCreate({
   onState: (kind) => { petBubble.setState(kind); },
   onIdle: () => {
     petBubble.hide(3000);
-    // 一轮回答朗读完 → 自动进入下一轮听；停止/静音/已暂停时不进。
-    if (petChatContinuousActive && !petChatContinuousPaused) petChatContinuousArm();
+    petChatListeningNow = false;
+    // 播完 300ms 自动恢复听（半双工：朗读期间绝不录音）。
+    if (petChatContinuousActive && !petChatContinuousPaused) petChatContinuousArm(PET_CHAT_LISTEN_RESUME_MS);
+    petChatPublishContinuousState();
   },
   onVoiceFallback: (actual) => {
     // pre.54（B3④）：宿主回落到本机默认音色时明确提示，不静默换音色。
@@ -797,6 +873,11 @@ const petVoiceIn = petVoiceInputCreate({
     const enqueueSpeech = (piece) => {
       const line = String(piece || '').trim();
       if (!line) return;
+      // 任务 §4③：「暂停说话」= 跳过 TTS 队列，只出字幕；状态条显示「🔇 仅文字」。
+      if (petChatSpeakPaused) {
+        petBubble.setState('muted');
+        return;
+      }
       // v2：本轮语速由宿主 meta 给（夜间/疲惫 -1 = -10%）；再叠加当前人设的 voice.rate。
       if (petSpeak(line, { rate: petChatSpeechRate + (Number(petChatVoice.rate) || 0) })) queuedSpeech += 1;
     };
@@ -874,20 +955,15 @@ const petVoiceIn = petVoiceInputCreate({
     // 最后一段没有句末标点也要念（比如“我也在”）
     enqueueSpeech(speakBuffer);
     if (typeof onState === 'function') onState({ state: 'idle' });
-    // 本轮成功：进入/继续连续对话；有朗读时等 onIdle 再开麦，没朗读时直接起计时。
-    if (petChatContinuousEnabled) {
-      if (!petChatContinuousActive) {
-        petChatContinuousRounds = 0;
-        petChatContinuousSilent = 0;
-        petChatContinuousStart();
-      }
-      petChatContinuousRounds += 1;
-      petChatContinuousSilent = 0;
-      petChatPublishContinuousState();
-      if (!queuedSpeech) petChatContinuousArm();
-    }
-    // 没有任何一句进入朗读（静音 / 合成不可用）⇒ 沿用旧行为：整段文字 3 秒后淡出。
-    // 有朗读时由 petTts 的 onIdle 在念完后淡出（按句字幕不会被提前清掉）。
+    // 本轮成功：常驻聆听继续（任务 §4：装好就在听，不靠"点了才听"）；
+    // 有朗读时等 onIdle 播完再开麦（半双工），没朗读（暂停说话/静音）直接 300ms 后排下一轮。
+    if (!petChatContinuousActive && !petChatContinuousPaused) petChatContinuousStart();
+    petChatLastHeardAt = Date.now();
+    petChatContinuousRounds += 1;
+    petChatContinuousSilent = 0;
+    petChatPublishContinuousState();
+    if (!queuedSpeech) petChatContinuousArm();
+    // 没有任何一句进入朗读（暂停说话 / 合成不可用）⇒ 字幕照常显示，3 秒后淡出。
     if (!queuedSpeech) petBubble.hide(3000);
     petChatTurnEnd();
   },
@@ -979,18 +1055,23 @@ function petChatSay(text) {
 /** 每次点桌宠递增；收起/重开时让旧的 ASR 等待自动作废。 */
 let petChatWakeSeq = 0;
 
-/** 点桌宠：连续对话中 ⇒ 暂停；气泡可见 ⇒ 收起；否则唤醒并开始听。 */
+/** 点桌宠：常驻聆听默认在听 —— 点它只做三件事：打断朗读 / 恢复聆听 / 收起气泡。 */
 function petChatWake() {
   // **任何一次唤醒都是 barge-in**：先把正在念的停掉，再决定是收起还是开麦。
   petSpeakStop();
   void petChatRefreshVoice();
   const seq = ++petChatWakeSeq;
-  if (petChatContinuousActive || petChatContinuousTimer != null) {
-    petChatVoiceAbort = true;
-    petChatContinuousStop(weT('⏸ 连续对话已暂停（点桌宠继续）'), false);
+  // 暂停聆听中点桌宠 = 恢复常驻聆听（不用再去右键菜单）。
+  if (petChatContinuousPaused) {
+    petChatContinuousResume();
+    return;
+  }
+  if (petChatContinuousActive) {
+    // 已经常驻聆听：点一下只收起气泡/状态条，**不关麦**（任务 §4：装好就在听）。
     petBubble.hide(0);
     petBubble.hideStatus(0);
-    petVoiceIn.stop();
+    petBubble.setContinuous(true);
+    if (!petChatContinuousTimer && !petChatListeningNow) petChatContinuousArm(PET_CHAT_LISTEN_RESUME_MS);
     return;
   }
   if (petBubble.isVisible()) { petBubble.hide(0); petBubble.hideStatus(0); petVoiceIn.stop(); return; }
@@ -1013,15 +1094,59 @@ function petChatWake() {
     if (seq !== petChatWakeSeq) return;
     petChatVoiceAbort = false;
     petBubble.setState('listen');
+    petChatListeningNow = true;
     const started = await petVoiceIn.start();
     if (!started) return; // 失败分支已经由 onError 提示（回落打字）
     // 状态条已经由 setState('listen') 显示「🎤 在听」，这里不再往回答气泡里塞提示。
   })();
 }
 
+/**
+ * 添加/恢复常驻聆听（安装后自动跑一次；右键「继续聆听」也走它）。
+ * ASR 没就绪时先准备模型（进度显示在状态条），就绪后才开麦。
+ */
+async function petChatResidentStart(seqGuard) {
+  // 没填模型 Key 就不开麦（隐私 + 体验）：先让用户去设置里配置。
+  if (!petChatModelReady) {
+    petBubble.status('info', weT('先填模型 Key，我才能听懂你说话（设置 → 智能大肥鱼）'), { delay: 7000 });
+    return false;
+  }
+  const seq = typeof seqGuard === 'number' ? seqGuard : ++petChatWakeSeq;
+  if (petChatContinuousPaused || petChatContinuousEnabled !== true) {
+    petBubble.setVoiceFlags({ speakPaused: petChatSpeakPaused, listenPaused: true });
+    return false;
+  }
+  const resp = await apiJson('/pet-chat/asr', { parse: 'always' }).catch(() => null);
+  const doc = (resp && resp.data) || {};
+  if (doc.available === false) {
+    petChatContinuousStop(weT('这个 DSH 版本没有语音转写服务：常驻聆听不可用，先打字吧'));
+    petBubble.status('error', weT('这个 DSH 版本没有语音转写服务，先打字吧'), { delay: 6000 });
+    return false;
+  }
+  if (!doc.ready) {
+    const ready = await ensureAsrReady(() => seq !== petChatWakeSeq);
+    if (!ready || seq !== petChatWakeSeq) return false;
+  }
+  if (seq !== petChatWakeSeq) return false;
+  // 回到页面 / 刚恢复：不要因为之前安静了很久而等 2 秒，立刻进入听。
+  petChatLastHeardAt = Date.now();
+  petChatContinuousStart();
+  petChatContinuousArm(120);
+  // 首次进入常驻聆听的一次性告知（不弹窗，只气泡）。
+  try {
+    const NOTICE_KEY = 'dsh-folia:resident-notice-v1';
+    if (window.localStorage && !window.localStorage.getItem(NOTICE_KEY)) {
+      window.localStorage.setItem(NOTICE_KEY, '1');
+      petBubble.status('info', weT('我会一直听着，直接说话就行；右键可「暂停聆听」'), { delay: 6500 });
+    }
+  } catch { /* 隐私模式/无 localStorage 时忽略 */ }
+  return true;
+}
+
 /** 连续对话等待/开麦时的状态条：独立成函数，确保补丁位置在 ASR 就绪判断之后。 */
 function petChatShowContinuousListening() {
   petBubble.setContinuous(true);
+  petBubble.setVoiceFlags({ speakPaused: petChatSpeakPaused, listenPaused: petChatContinuousPaused });
   petBubble.setState('listen');
 }
 
@@ -1031,6 +1156,28 @@ function petChatShowContinuousListening() {
  * `window.__dshFoliaPet.speak(text)` / 派发 `we-pet-speak` 事件。
  * EventSource 自带重连；这里不弹任何提示。
  */
+/**
+ * 桌面通知（任务 §6② notify）：宿主经 /events 推 `{type:'notify'}`。
+ * 浏览器 Notification 被系统拦掉时回落气泡状态条 —— 不静默丢通知。
+ */
+function petChatShowNotify(doc) {
+  const title = String((doc && doc.title) || '桌宠');
+  const text = String((doc && doc.text) || '').trim();
+  if (!text) return;
+  try {
+    const N = typeof Notification === 'function' ? Notification : null;
+    if (N && N.permission === 'granted') {
+      const note = new N(title, { body: text });
+      setTimeout(() => { try { note.close(); } catch { /* ignore */ } }, 6000);
+      return;
+    }
+    if (N && N.permission === 'default' && typeof N.requestPermission === 'function') {
+      void N.requestPermission().catch(() => {});
+    }
+  } catch { /* Electron 可能没有 Notification */ }
+  petBubble.status('info', `🔔 ${title}：${text}`, { delay: 6000 });
+}
+
 let petChatEventSource = null;
 function petChatEventsStart() {
   if (petChatEventSource || typeof EventSource !== 'function') return;
@@ -1039,7 +1186,9 @@ function petChatEventsStart() {
     source.onmessage = (event) => {
       let doc;
       try { doc = JSON.parse((event && event.data) || ''); } catch { doc = null; }
-      if (!doc || doc.type !== 'speak' || !doc.text) return;
+      if (!doc) return;
+      if (doc.type === 'notify') { petChatShowNotify(doc); return; }
+      if (doc.type !== 'speak' || !doc.text) return;
       petSpeak(String(doc.text), { voice: doc.voice, rate: doc.rate });
     };
     source.onerror = () => { /* EventSource 自动重连；失败不打扰用户 */ };
@@ -1082,20 +1231,44 @@ function mountPetChat() {
 
   window.addEventListener('we-pet-talk', onTalkEvent);
   window.addEventListener('we-pet-speak', onSpeakEvent);
-  // pre.63：右键菜单的连续对话开关/暂停/继续（与设置页共用 voice.continuous）。
+  // 右键菜单：常驻聆听 / 暂停说话（v3 §4）。旧 we-pet-continuous 保留兼容。
   const onContinuousEvent = (event) => { petChatOnContinuousCommand(event); };
   window.addEventListener('we-pet-continuous', onContinuousEvent);
-  // 页面隐藏：自动暂停连续对话（不偷偷在后台开麦）。
+  const onSpeakPauseEvent = (event) => {
+    const detail = (event && event.detail) || {};
+    petChatSetSpeakPaused(detail.paused === undefined ? !petChatSpeakPaused : detail.paused === true);
+  };
+  const onListenPauseEvent = (event) => {
+    const detail = (event && event.detail) || {};
+    petChatSetListenPaused(detail.paused === undefined ? !petChatContinuousPaused : detail.paused === true);
+  };
+  window.addEventListener('we-pet-speak-pause', onSpeakPauseEvent);
+  window.addEventListener('we-pet-listen-pause', onListenPauseEvent);
+  // 页面隐藏：暂时停麦（不持久化，回到页面自动恢复）；不偷偷在后台开麦。
   const onVisibility = () => {
-    if (typeof document === 'undefined' || document.visibilityState !== 'hidden') return;
-    if (petChatContinuousActive && !petChatContinuousPaused) {
-      petChatContinuousPause(weT('页面隐藏，连续对话已暂停'));
+    if (typeof document === 'undefined') return;
+    if (document.visibilityState === 'hidden') {
+      if (petChatContinuousActive && !petChatContinuousPaused) {
+        petChatVoiceAbort = true;
+        try { petVoiceIn.stop(); } catch { /* ignore */ }
+        petChatContinuousClearTimer();
+        petChatListeningNow = false;
+        petBubble.setContinuous(false);
+        petChatPublishContinuousState();
+      }
+      return;
     }
+    // 回到页面：如果没被「暂停聆听」，300ms 内恢复听。
+    if (!petChatContinuousPaused && petChatContinuousEnabled) petChatResidentStart();
   };
   document.addEventListener('visibilitychange', onVisibility);
   document.addEventListener('click', onDocumentClick, true);
   document.addEventListener('keydown', onKeyDown, true);
-  void petChatRefreshVoice().then(() => petChatPublishContinuousState()).catch(() => {});
+  // 任务 §4：安装/启动后自动进入常驻聆听（受持久化的「暂停聆听」约束）。
+  void petChatRefreshVoice().then(() => {
+    petChatPublishContinuousState();
+    if (!petChatContinuousPaused) void petChatResidentStart();
+  }).catch(() => {});
   petChatEventsStart();
   // v2 主动发起：壁纸变化 → 30 秒后点评；连续工作 45 分钟 → 休息提醒；挂载后试早晚问候。
   // 三条都受“正在朗读 / 正在听 / 一轮回答中 / 页面隐藏”约束（见 petChatProactiveAllowed）。
@@ -1109,12 +1282,20 @@ function mountPetChat() {
       stop: () => petSpeakStop(),
       chat: (text) => { petChatInputMode = 'text'; return petVoiceIn.postChat(String(text || '')); },
       isSpeaking: () => petTts.isSpeaking(),
+      // 任务 §4：两个开关（菜单之外的对外通道；判据也用它）
+      setSpeakPaused: (paused) => petChatSetSpeakPaused(paused === true),
+      setListenPaused: (paused) => petChatSetListenPaused(paused === true),
+      isListening: () => petChatListeningNow === true,
+      isSpeakPaused: () => petChatSpeakPaused === true,
+      isListenPaused: () => petChatContinuousPaused === true,
     };
   } catch { /* 被别的插件占用就只保留事件通道 */ }
   return () => {
     window.removeEventListener('we-pet-talk', onTalkEvent);
     window.removeEventListener('we-pet-speak', onSpeakEvent);
     window.removeEventListener('we-pet-continuous', onContinuousEvent);
+    window.removeEventListener('we-pet-speak-pause', onSpeakPauseEvent);
+    window.removeEventListener('we-pet-listen-pause', onListenPauseEvent);
     document.removeEventListener('click', onDocumentClick, true);
     document.removeEventListener('keydown', onKeyDown, true);
     document.removeEventListener('visibilitychange', onVisibility);

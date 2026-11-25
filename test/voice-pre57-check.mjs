@@ -218,11 +218,13 @@ got.ok === true && Boolean(got.audioPath),
   }
 }
 
-/* ④ 连续对话状态机（vm 里跑真实 pet-chat.js） */
+/* ④ 常驻聆听状态机（vm 里跑真实 pet-chat.js；v3 语义：装好就在听） */
 {
   const source = readFileSync(join(ROOT, 'src', 'pet-chat.js'), 'utf8');
   const bubble = {
-    continuous: false, statuses: [], lastState: '', setContinuous(v) { this.continuous = v; },
+    continuous: false, statuses: [], lastState: '', voiceFlags: null,
+    setContinuous(v) { this.continuous = v; },
+    setVoiceFlags(f) { this.voiceFlags = f; },
     setState(k) { this.lastState = k; }, status(_k, m) { this.statuses.push(String(m)); }, hide() {}, hideStatus() {},
     isVisible() { return false; }, clear() {}, append() {}, dispose() {},
   };
@@ -247,7 +249,7 @@ got.ok === true && Boolean(got.audioPath),
       };
     },
     petTtsSentences: () => ({ sentences: [], rest: '' }),
-    apiJson: async () => ({ data: {} }),
+    apiJson: async () => ({ data: { ready: true } }),
     apiPostJson: async () => ({ data: {} }),
     apiFetch: async () => ({ ok: false }),
     apiUrl: (p) => p,
@@ -261,6 +263,7 @@ got.ok === true && Boolean(got.audioPath),
     runInNewContext(source + '\n;globalThis.__PRE57__ = {'
       + 'start: petChatContinuousStart, arm: petChatContinuousArm, stop: petChatContinuousStop,'
       + 'error: petChatContinuousVoiceError, wake: petChatWake,'
+      + 'setSpeakPaused: petChatSetSpeakPaused, get speakPaused() { return petChatSpeakPaused; },'
       + 'get active() { return petChatContinuousActive; },'
       + 'get paused() { return petChatContinuousPaused; },'
       + 'get rounds() { return petChatContinuousRounds; },'
@@ -273,51 +276,55 @@ got.ok === true && Boolean(got.audioPath),
   }
   if (api) {
     api.start();
-    // 真实触发点：petTts 的 onIdle（朗读播完）→ 连续对话计时。
+    // 真实触发点：petTts 的 onIdle（朗读播完）→ 300ms 后自动恢复听（半双工）。
     state.ttsDeps.onIdle();
     const pending = timers.filter((t) => !t.cleared);
-    check('④ 朗读结束 → 0.5–0.8s 自动开麦，状态条显示「连续对话中 · 右键可关闭」',
+    check('④ 朗读结束 → 300ms 自动恢复听，状态条显示「常驻聆听中」',
       api.active === true && bubble.continuous === true && bubble.lastState === 'listen'
-        && pending.length === 1 && pending[0].ms >= 500 && pending[0].ms <= 800
-        && /连续对话中 · 右键可关闭/.test(readFileSync(join(ROOT, 'src', 'pet-bubble.js'), 'utf8')),
+        && pending.length === 1 && pending[0].ms === 300
+        && /常驻聆听中/.test(readFileSync(join(ROOT, 'src', 'pet-bubble.js'), 'utf8')),
       `delay=${pending[0] && pending[0].ms} state=${bubble.lastState}`);
     pending[0].fn();
     check('④ 计时到点只开一次麦', state.starts === 1, `starts=${state.starts}`);
 
     api.wake();
-    check('④ 点桌宠暂停：连续对话立即退出并给提示', api.active === false
-      && bubble.statuses.some((m) => /连续对话已暂停/.test(m)), bubble.statuses.slice(-1)[0]);
+    check('④ 常驻聆听中点桌宠：不关麦（只收起气泡），仍在听', api.active === true
+      && !bubble.statuses.some((m) => /连续对话已暂停/.test(m)), bubble.statuses.slice(-1)[0]);
 
-    api.start();
     api.error('no-speech');
-    check('④ 第 1 轮静默 ⇒ 自动重听（还不到 2 轮）', api.active === true
+    check('④ 没听到人声 ⇒ 不退出，继续探听', api.active === true
       && timers.filter((t) => !t.cleared).length >= 1, `status=${bubble.statuses.slice(-1)[0]}`);
-    api.error('no-speech');
-    check('④ 静默 2 轮 ⇒ 退出连续对话', api.active === false
-      && bubble.statuses.some((m) => /连续 2 轮没听到/.test(m)), bubble.statuses.slice(-1)[0]);
-
-    api.start();
     api.setRounds(8);
-    api.arm();
-    check('④ 连续 8 轮 ⇒ 自动退出', api.active === false
-      && bubble.statuses.some((m) => /已连续 8 轮/.test(m)), bubble.statuses.slice(-1)[0]);
+    api.error('unclear');
+    api.error('too-quiet');
+    check('④ 连续安静/轮次多也不退出常驻聆听（不靠 8 轮上限）', api.active === true && api.paused === false,
+      `rounds=${api.rounds} active=${api.active}`);
 
-    check('④ 设置项默认开启；点桌宠时先判连续对话并暂停',
-      /continuous: true/.test(source) && /continuous !== false/.test(source)
-        && /if \(petChatContinuousActive \|\| petChatContinuousTimer != null\)/.test(source)
-        && /连续对话已暂停/.test(source));
+    api.error('no-device');
+    check('④ 麦克风被占用/权限失败 ⇒ 自动退出常驻聆听并提示', api.active === false && api.paused === true
+      && bubble.statuses.some((m) => /常驻聆听已暂停/.test(m)), bubble.statuses.slice(-1)[0]);
+
+    api.setSpeakPaused(true);
+    check('④ 暂停说话 = 静音但继续听（voice.muted + 状态条「仅文字」）',
+      api.speakPaused === true && bubble.voiceFlags && bubble.voiceFlags.speakPaused === true,
+      JSON.stringify(bubble.voiceFlags));
+
+    check('④ 安装/启动后自动进入常驻聆听；暂停聆听持久化到 voice.listenPaused',
+      /petChatResidentStart/.test(source) && /listenPaused/.test(source)
+        && /if \(!petChatContinuousPaused\) void petChatResidentStart\(\)/.test(source)
+        && /voice\/config/.test(source));
 
     const layerSrc = readFileSync(join(ROOT, 'src', 'pet-layer.js'), 'utf8');
-    check('④ pre.63 右键菜单：连续对话勾选 + 暂停听/继续听 + 与 pet-chat 事件同步',
+    check('④ 右键菜单：暂停说话 / 暂停聆听（不再有「连续对话」「继续听」）',
       /☑ /.test(layerSrc) && /☐ /.test(layerSrc)
-        && /weT\("连续对话"\)/.test(layerSrc)
-        && /weT\("暂停听"\)/.test(layerSrc) && /weT\("继续听"\)/.test(layerSrc)
-        && /we-pet-continuous-state/.test(layerSrc)
+        && /weT\("暂停说话"\)/.test(layerSrc)
+        && /weT\("暂停聆听"\)/.test(layerSrc) && /weT\("继续聆听"\)/.test(layerSrc)
+        && !/weT\("连续对话"\)/.test(layerSrc)
+        && /we-pet-continuous-state/.test(layerSrc) && /we-pet-voice-state/.test(layerSrc)
         && /new CustomEvent\("we-pet-continuous"/.test(layerSrc));
-    check('④ pre.63 页面隐藏自动暂停，菜单/设置共用 voice.continuous',
-      /visibilitychange/.test(source) && /页面隐藏，连续对话已暂停/.test(source)
-        && /we-pet-continuous/.test(source) && /petChatSetContinuousEnabled/.test(source)
-        && /voice\/config/.test(source));
+    check('④ 页面隐藏只临时停麦，回页面自动恢复（不持久化）',
+      /visibilitychange/.test(source) && /petChatResidentStart\(\)/.test(source)
+        && /we-pet-speak-pause/.test(source) && /we-pet-listen-pause/.test(source));
   }
 }
 

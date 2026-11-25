@@ -425,6 +425,25 @@ const WE_I18N_EN_PANEL = {
   "连续对话已停止：{e}": "Continuous conversation stopped: {e}",
   "连续对话结束：连续 {n} 轮没听到": "Continuous conversation ended: no speech for {n} rounds",
   "没听到，再说一次（{n}/{m}）": "Didn't hear that — try again ({n}/{m})",
+  // v3：常驻聆听 + 暂停说话 / 暂停聆听（任务 §4）
+  "暂停说话": "Mute speech",
+  "暂停聆听": "Pause listening",
+  "继续聆听": "Resume listening",
+  "常驻聆听中": "Always listening",
+  "麦克风已暂停": "Microphone paused",
+  "🎤 麦克风已暂停": "🎤 Microphone paused",
+  "🔇 仅文字": "🔇 Subtitles only",
+  "仅文字": "Subtitles only",
+  "🔇 仅文字（继续听，不出声）": "🔇 Subtitles only (still listening, no sound)",
+  "🔊 声音已恢复": "🔊 Sound is back",
+  "⏸ 麦克风已暂停（右键「继续聆听」恢复）": "⏸ Microphone paused (right-click 'Resume listening' to restore)",
+  "还在听（没听到人声，{n} 次）": "Still listening (no voice, {n} times)",
+  "常驻聆听已暂停：{e}（右键「继续聆听」重试）": "Always-listening paused: {e} (right-click 'Resume listening' to retry)",
+  "这个 DSH 版本没有语音转写服务：常驻聆听不可用，先打字吧": "This DSH build has no speech-to-text service — always-listening is unavailable, please type instead",
+  // v3：气泡美化（展开 / 复制）
+  "展开": "Expand",
+  "复制": "Copy",
+  "复制失败：这个环境没有剪贴板权限": "Copy failed: no clipboard permission in this environment",
   // pre.64：大脑 v2（壁纸动作的客户端执行反馈）
   "正在换壁纸…": "Switching wallpaper…",
   "没找到叫「{name}」的壁纸": "No wallpaper named '{name}' was found",
@@ -1095,6 +1114,8 @@ const WE_I18N_EN_PANEL = {
   "下载失败：{e}": "Download failed: {e}",
   "下载中断，正在重试（第 {n}/{m} 次）": "Download interrupted; retrying ({n}/{m})",
   "正在下载离线音色{n}": "Downloading offline voice{n}",
+  "先填模型 Key，我才能听懂你说话（设置 → 智能大肥鱼）": "Add a model key first so I can hear you (Settings → Smart Fish).",
+  "我会一直听着，直接说话就行；右键可「暂停聆听」": "I stay listening — just speak; right-click to pause listening.",
 };
 
 export { WE_I18N_EN_PANEL };

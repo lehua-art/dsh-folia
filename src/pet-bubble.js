@@ -1,16 +1,17 @@
 /**
- * pet-bubble.js — 桌宠头顶的**双层气泡**（pre.54 重做）。
+ * pet-bubble.js — 桌宠头顶的**双层气泡**（v3 §5 美化版）。
  *
  * 用户口径：提示/错误不能和回答挤在同一个框里。
- *   ① 状态条（独立、细、可点、3–5 秒淡出）：在听 / 在想 / 在说 / 没找到麦克风 / …
- *   ② 回答气泡（只有回答，小尾巴指向桌宠）：逐句显示、随朗读推进、长回答可滚。
+ *   ① 状态条（独立、细、可点、3–5 秒淡出）：🎤 在听 / 💭 在想 / 🔊 在说 / 🔇 仅文字 / 麦克风已暂停
+ *   ② 回答气泡（只有回答，小尾巴指向桌宠）：最多 4 行，超出显示「展开」；展开后出现「复制」，
+ *      长回答在 240px 内滚动到底部；新消息替换旧消息时先淡出再淡入（150ms）。
  *
  * 结构：
  *   .we-pet-wrap（固定定位、列布局、整体锚定在桌宠头顶）
- *     ├─ .we-pet-status（状态条；自带 data-state 控制 🎤/💭/🔊 动效）
- *     └─ .we-pet-bubble（回答气泡；内部 .we-pet-bubble-text + 关闭按钮）
+ *     ├─ .we-pet-status（状态条；自带 data-state 控制 🎤/💭/🔊/🔇 动效）
+ *     └─ .we-pet-bubble（回答气泡；内部 .we-pet-bubble-text + 展开/复制/关闭）
  *
- * 依赖全部注入（document / 定时器 / 锚点），Node 里能用假 DOM 跑判据；
+ * 依赖全部注入（document / 定时器 / 锚点 / 剪贴板），Node 里能用假 DOM 跑判据；
  * 浏览器侧由 pet-chat.js 用真实 window 构造。`setState` 仍同步写 bubble 的
  * `data-state`（既有判据与桌宠动作读它），视觉三态则落在状态条上。
  */
@@ -25,34 +26,50 @@ function petBubbleCreate(deps) {
     : (typeof clearTimeout === 'function' ? clearTimeout : () => {});
   const getAnchor = typeof options.getAnchor === 'function' ? options.getAnchor : () => null;
   const onStatusClick = typeof options.onStatusClick === 'function' ? options.onStatusClick : null;
-  const MAX_LINES = 6;
-  const BUBBLE_MAX_WIDTH = 320;
-  const BUBBLE_MAX_HEIGHT = 160;
+  /** 最多显示几行（超出折叠 + 「展开」）。 */
+  const MAX_LINES = 4;
+  /** 气泡最大宽度（任务 §5：300px）。 */
+  const BUBBLE_MAX_WIDTH = 300;
+  /** 展开后的最大高度（长回答内部滚动）。 */
+  const BUBBLE_MAX_HEIGHT = 240;
+  /** 出现/消失的动效时长（任务 §5：150ms）。 */
+  const FADE_MS = 150;
 
   const raf = typeof options.requestAnimationFrame === 'function' ? options.requestAnimationFrame : null;
   const cancelRaf = typeof options.cancelAnimationFrame === 'function' ? options.cancelAnimationFrame : null;
   let rafId = null;
   const onClose = typeof options.onClose === 'function' ? options.onClose : () => {};
+  const clipboard = options.clipboard && typeof options.clipboard.writeText === 'function' ? options.clipboard : null;
   /** 独立冒烟（只 eval 本文件）时没有 weT；有就用词表，没有就回落中文原文。 */
   const tr = (text) => {
     try { return typeof weT === 'function' ? weT(text) : text; } catch { return text; }
   };
 
   const CSS = [
-    '.we-pet-wrap{position:fixed;z-index:9999;display:flex;flex-direction:column;align-items:center;gap:6px;max-width:320px;pointer-events:none;transform-origin:50% 100%;}',
-    // 回答气泡：半透明深色底 + 轻描边 + 14–16px 圆角；长回答 160px 内滚动。
-    '.we-pet-bubble{position:relative;max-width:320px;max-height:160px;overflow-y:auto;padding:10px 12px;border-radius:15px;background:rgba(20,20,24,.82);color:#f2f2f5;font-size:13px;line-height:1.5;border:1px solid rgba(255,255,255,.14);box-shadow:0 8px 24px rgba(0,0,0,.28);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:pre-wrap;word-break:break-word;opacity:0;transition:opacity 150ms ease;pointer-events:auto;scrollbar-width:thin;}',
-    '.we-pet-bubble[data-visible="1"]{opacity:1;}',
+    '.we-pet-wrap{position:fixed;z-index:9999;display:flex;flex-direction:column;align-items:center;gap:6px;max-width:300px;pointer-events:none;transform-origin:50% 100%;}',
+    // 回答气泡：深色半透明底 + 1px 描边 + 柔和阴影；圆角 16；最大宽 300；内边距 10 / 14。
+    '.we-pet-bubble{position:relative;max-width:300px;max-height:240px;overflow:hidden;padding:10px 14px;border-radius:16px;background:rgba(18,18,22,.86);color:#f2f2f5;font-size:13px;line-height:1.5;border:1px solid rgba(255,255,255,.14);box-shadow:0 10px 30px rgba(0,0,0,.38);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:pre-wrap;word-break:break-word;opacity:0;transform:translateY(4px);transition:opacity 150ms ease, transform 150ms ease;pointer-events:auto;scrollbar-width:thin;}',
+    '.we-pet-bubble[data-visible="1"]{opacity:1;transform:translateY(0);}',
+    // 折叠态：最多 4 行（-webkit-line-clamp），超出显示「展开」。
+    '.we-pet-bubble[data-expanded="0"] .we-pet-bubble-text{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;}',
+    // 展开态：最多 240px，内部滚动到底部。
+    '.we-pet-bubble[data-expanded="1"]{max-height:240px;overflow-y:auto;}',
     // 小尾巴指向桌宠（在气泡底部中央；不挡脸）。
     '.we-pet-bubble::after{content:"";position:absolute;left:50%;bottom:-6px;width:12px;height:12px;background:inherit;border-right:1px solid rgba(255,255,255,.14);border-bottom:1px solid rgba(255,255,255,.14);transform:translateX(-50%) rotate(45deg);}',
     '.we-pet-bubble::-webkit-scrollbar{width:4px;}',
     '.we-pet-bubble::-webkit-scrollbar-thumb{background:rgba(255,255,255,.22);border-radius:2px;}',
-    // 状态条：细、独立、可点、3–5 秒淡出。
-    '.we-pet-status{max-width:320px;padding:5px 10px;border-radius:999px;background:rgba(20,20,24,.74);color:#ececf2;font-size:12px;line-height:1.4;border:1px solid rgba(255,255,255,.12);box-shadow:0 4px 14px rgba(0,0,0,.22);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:flex;align-items:center;gap:6px;opacity:0;transition:opacity 150ms ease;pointer-events:auto;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
+    // 气泡底部小工具条（展开/收起 + 复制）：只在需要时出现，不抢正文。
+    '.we-pet-bubble-tools{display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:6px;font-size:11px;opacity:.78;}',
+    '.we-pet-bubble-tools button{background:transparent;border:0;color:inherit;font:inherit;cursor:pointer;padding:0;opacity:.9;}',
+    '.we-pet-bubble-tools button:hover{opacity:1;text-decoration:underline;}',
+    '.we-pet-bubble-tools button[hidden]{display:none;}',
+    // 状态条：细、独立、可点、3–5 秒淡出；字号 12。
+    '.we-pet-status{max-width:300px;padding:5px 10px;border-radius:999px;background:rgba(18,18,22,.78);color:#ececf2;font-size:12px;line-height:1.4;border:1px solid rgba(255,255,255,.12);box-shadow:0 4px 14px rgba(0,0,0,.24);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:flex;align-items:center;gap:6px;opacity:0;transition:opacity 150ms ease;pointer-events:auto;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
     '.we-pet-status[data-visible="1"]{opacity:1;}',
     '.we-pet-status[data-state="listen"]::after{content:"";width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.7;animation:we-pet-status-pulse 1s ease-in-out infinite;}',
     '.we-pet-status[data-state="think"]::after{content:"…";margin-left:1px;opacity:.8;animation:we-pet-status-blink 1.1s steps(2,end) infinite;}',
     '.we-pet-status[data-state="speak"]::after{content:"";display:block;width:28px;height:10px;opacity:.85;background:linear-gradient(currentColor,currentColor) 0 100%/3px 45% no-repeat,linear-gradient(currentColor,currentColor) 7px 100%/3px 90% no-repeat,linear-gradient(currentColor,currentColor) 14px 100%/3px 60% no-repeat,linear-gradient(currentColor,currentColor) 21px 100%/3px 100% no-repeat;transform-origin:0 100%;animation:we-pet-status-wave .8s ease-in-out infinite alternate;}',
+    '.we-pet-status[data-state="muted"]{opacity:.92;}',
     '.we-pet-status[data-state="error"]{border-color:rgba(255,120,120,.45);}',
     '@keyframes we-pet-status-wave{from{transform:scaleY(.55);opacity:.55;}to{transform:scaleY(1);opacity:.95;}}',
     '@keyframes we-pet-status-pulse{0%,100%{transform:scale(.8);opacity:.45;}50%{transform:scale(1.15);opacity:.9;}}',
@@ -62,13 +79,21 @@ function petBubbleCreate(deps) {
   let wrap = null;
   let el = null;          // 回答气泡
   let textEl = null;
+  let toolsEl = null;
+  let moreBtn = null;
+  let copyBtn = null;
   let statusEl = null;
   let text = '';
   let visible = false;
+  let expanded = false;
   let fadeTimer = null;
+  let replaceTimer = null;
   let statusTimer = null;
+  let copyTimer = null;
   let stylesInjected = false;
   let continuous = false;
+  let speakPaused = false;
+  let listenPaused = false;
 
   function startFollow() {
     if (!raf || rafId != null) return;
@@ -105,49 +130,22 @@ function petBubbleCreate(deps) {
     wrap.style.transform = `translate(-50%, -100%) scale(${Number(anchor.scale) || 1})`;
   }
 
-  function ensure() {
-    if (wrap || !doc || typeof doc.createElement !== 'function') return wrap;
-    ensureStyles();
-    wrap = doc.createElement('div');
-    wrap.className = 'we-pet-wrap';
-
-    statusEl = doc.createElement('div');
-    statusEl.className = 'we-pet-status';
-    statusEl.dataset = statusEl.dataset || {};
-    statusEl.setAttribute('role', 'status');
-    statusEl.setAttribute('aria-live', 'polite');
-    statusEl.addEventListener('click', () => {
-      try { if (onStatusClick) onStatusClick(); else hideStatus(0); } catch { /* ignore */ }
-    });
-
-    el = doc.createElement('div');
-    el.className = 'we-pet-bubble';
-    el.dataset = el.dataset || {};
-    el.style.position = 'relative';
-    el.style.pointerEvents = 'auto';
-    // 点气泡 = 收起（二选一里的“收起”；不复制，避免误触剪贴板）。拖选文字时不触发 click。
-    el.addEventListener('click', () => { hide(0); onClose(); });
-
-    textEl = doc.createElement('div');
-    textEl.className = 'we-pet-bubble-text';
-    if (typeof el.appendChild === 'function') el.appendChild(textEl);
-
-    const close = doc.createElement('button');
-    close.className = 'pet-bubble-close';
-    close.setAttribute('aria-label', '关闭');
-    close.textContent = '×';
-    close.style.cssText = 'position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:none;background:#333;color:#ddd;font-size:12px;line-height:1;cursor:pointer;pointer-events:auto;';
-    close.addEventListener('click', (event) => {
-      // 阻止冒泡到气泡（否则同一次点击会触发两次 onClose）。
-      try { if (event && typeof event.stopPropagation === 'function') event.stopPropagation(); } catch { /* ignore */ }
-      hide(0);
-      onClose();
-    });
-    if (typeof el.appendChild === 'function') el.appendChild(close);
-
-    if (typeof wrap.appendChild === 'function') { wrap.appendChild(statusEl); wrap.appendChild(el); }
-    if (doc.body && typeof doc.body.appendChild === 'function') doc.body.appendChild(wrap);
-    return wrap;
+  /** 展开/收起：只改 data 属性，视觉由 CSS 的 line-clamp 与 max-height 决定。 */
+  function setExpanded(next) {
+    expanded = next === true;
+    if (el && el.dataset) el.dataset.expanded = expanded ? '1' : '0';
+    if (moreBtn) moreBtn.textContent = expanded ? tr('收起') : tr('展开');
+    if (copyBtn) {
+      if (expanded) {
+        if (typeof copyBtn.removeAttribute === 'function') copyBtn.removeAttribute('hidden');
+        if (copyBtn.style) copyBtn.style.display = '';
+      } else {
+        if (typeof copyBtn.setAttribute === 'function') copyBtn.setAttribute('hidden', 'hidden');
+        if (copyBtn.style) copyBtn.style.display = 'none';
+      }
+    }
+    if (expanded) followBottom();
+    return expanded;
   }
 
   /** 长回答追加时保持在底部（用户往上翻时不强拉，交给浏览器滚动条）。 */
@@ -160,6 +158,7 @@ function petBubbleCreate(deps) {
 
   function cancelFade() {
     if (fadeTimer != null) { clearTimer(fadeTimer); fadeTimer = null; }
+    if (replaceTimer != null) { clearTimer(replaceTimer); replaceTimer = null; }
   }
   function cancelStatus() {
     if (statusTimer != null) { clearTimer(statusTimer); statusTimer = null; }
@@ -168,17 +167,141 @@ function petBubbleCreate(deps) {
     return Boolean(statusEl && statusEl.style && String(statusEl.style.opacity) === '1');
   }
 
-  /** 显示（或继续显示）一段**回答**；状态/错误请走 `status()`。 */
-  function show(nextText) {
-    if (!ensure()) return;
-    cancelFade();
+  /** 把文字真正写进气泡（show / 替换淡出后都走这里）。 */
+  function applyText(nextText, animate) {
     text = String(nextText == null ? '' : nextText);
     if (textEl) textEl.textContent = text;
-    if (el) { el.dataset.visible = '1'; el.style.opacity = '1'; }
+    if (el) {
+      if (el.dataset) el.dataset.visible = '1';
+      // 淡入：先让 opacity 回到 1（CSS transition 150ms + translateY 4px→0）。
+      el.style.opacity = animate === false ? '1' : '0';
+      if (animate !== false) {
+        setTimer(() => { if (el) el.style.opacity = '1'; }, 10);
+      }
+    }
     visible = true;
+    setExpanded(false);
     followBottom();
     place();
     startFollow();
+  }
+
+  /** 假 DOM / 老环境可能没有 addEventListener：气泡是装饰层，缺了也不能抛。 */
+  const listen = (target, type, fn) => {
+    try {
+      if (target && typeof target.addEventListener === 'function') target.addEventListener(type, fn);
+    } catch { /* ignore */ }
+  };
+
+  function ensure() {
+    if (wrap || !doc || typeof doc.createElement !== 'function') return wrap;
+    ensureStyles();
+    wrap = doc.createElement('div');
+    wrap.className = 'we-pet-wrap';
+
+    statusEl = doc.createElement('div');
+    statusEl.className = 'we-pet-status';
+    statusEl.dataset = statusEl.dataset || {};
+    statusEl.setAttribute('role', 'status');
+    statusEl.setAttribute('aria-live', 'polite');
+    listen(statusEl, 'click', () => {
+      try { if (onStatusClick) onStatusClick(); else hideStatus(0); } catch { /* ignore */ }
+    });
+
+    el = doc.createElement('div');
+    el.className = 'we-pet-bubble';
+    el.dataset = el.dataset || {};
+    el.dataset.expanded = '0';
+    el.style.position = 'relative';
+    el.style.pointerEvents = 'auto';
+    // 点气泡 = 收起（二选一里的“收起”；不复制，避免误触剪贴板）。拖选文字时不触发 click。
+    listen(el, 'click', () => { hide(0); onClose(); });
+
+    textEl = doc.createElement('div');
+    textEl.className = 'we-pet-bubble-text';
+    if (typeof el.appendChild === 'function') el.appendChild(textEl);
+
+    // 底部工具条：展开/收起 + 复制（复制只在展开态出现，任务 §5）。
+    toolsEl = doc.createElement('div');
+    toolsEl.className = 'we-pet-bubble-tools';
+    moreBtn = doc.createElement('button');
+    moreBtn.type = 'button';
+    moreBtn.className = 'pet-bubble-more';
+    moreBtn.textContent = tr('展开');
+    listen(moreBtn, 'click', (event) => {
+      try { if (event && typeof event.stopPropagation === 'function') event.stopPropagation(); } catch { /* ignore */ }
+      setExpanded(!expanded);
+    });
+    copyBtn = doc.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'pet-bubble-copy';
+    copyBtn.textContent = tr('复制');
+    copyBtn.setAttribute('hidden', 'hidden');
+    if (copyBtn.style) copyBtn.style.display = 'none';
+    listen(copyBtn, 'click', (event) => {
+      try { if (event && typeof event.stopPropagation === 'function') event.stopPropagation(); } catch { /* ignore */ }
+      void copyText();
+    });
+    if (typeof toolsEl.appendChild === 'function') {
+      toolsEl.appendChild(moreBtn);
+      toolsEl.appendChild(copyBtn);
+    }
+    if (typeof el.appendChild === 'function') el.appendChild(toolsEl);
+
+    const close = doc.createElement('button');
+    close.className = 'pet-bubble-close';
+    close.setAttribute('aria-label', '关闭');
+    close.textContent = '×';
+    close.style.cssText = 'position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:none;background:#333;color:#ddd;font-size:12px;line-height:1;cursor:pointer;pointer-events:auto;';
+    listen(close, 'click', (event) => {
+      // 阻止冒泡到气泡（否则同一次点击会触发两次 onClose）。
+      try { if (event && typeof event.stopPropagation === 'function') event.stopPropagation(); } catch { /* ignore */ }
+      hide(0);
+      onClose();
+    });
+    if (typeof el.appendChild === 'function') el.appendChild(close);
+
+    if (typeof wrap.appendChild === 'function') { wrap.appendChild(statusEl); wrap.appendChild(el); }
+    if (doc.body && typeof doc.body.appendChild === 'function') doc.body.appendChild(wrap);
+    return wrap;
+  }
+
+  /** 复制全文（只在展开态可用；失败给状态条提示，不静默）。 */
+  async function copyText() {
+    if (!text) return false;
+    try {
+      if (clipboard) {
+        await clipboard.writeText(text);
+      } else if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(text);
+      } else {
+        throw new Error('clipboard-unavailable');
+      }
+      if (copyBtn) copyBtn.textContent = tr('已复制');
+      if (copyTimer != null) clearTimer(copyTimer);
+      copyTimer = setTimer(() => { copyTimer = null; if (copyBtn) copyBtn.textContent = tr('复制'); }, 1500);
+      return true;
+    } catch {
+      status('error', tr('复制失败：这个环境没有剪贴板权限'), { delay: 3000 });
+      return false;
+    }
+  }
+
+  /** 显示（或替换）一段**回答**；替换旧消息时先淡出再淡入。 */
+  function show(nextText) {
+    if (!ensure()) return;
+    cancelFade();
+    const next = String(nextText == null ? '' : nextText);
+    if (visible && text && next !== text) {
+      // 任务 §5：新消息替换旧消息时先淡出（150ms），再换文字淡入。
+      if (el) el.style.opacity = '0';
+      replaceTimer = setTimer(() => {
+        replaceTimer = null;
+        applyText(next, true);
+      }, FADE_MS);
+      return;
+    }
+    applyText(next, visible);
   }
 
   /** 逐字/逐段追加（SSE 每个 chunk 调一次）。 */
@@ -204,6 +327,7 @@ function petBubbleCreate(deps) {
       el.style.opacity = '0';
       if (el.dataset) el.dataset.visible = '0';
     }
+    setExpanded(false);
     visible = false;
   }
 
@@ -223,7 +347,7 @@ function petBubbleCreate(deps) {
     doHide();
   }
 
-  /** 显示状态条（错误/提示/在听/在想/在说）。 */
+  /** 显示状态条（错误/提示/在听/在想/在说/仅文字/麦克风暂停）。 */
   function status(kind, message, opts) {
     if (!ensure()) return;
     cancelStatus();
@@ -258,7 +382,7 @@ function petBubbleCreate(deps) {
     doHide();
   }
 
-  /** 三态：听 / 想 / 说（落在状态条上；bubble 的 data-state 同步保留给既有判据）。 */
+  /** 三态 + v3 两态：在听 / 在想 / 在说 / 🔇 仅文字（落在状态条上）。 */
   function setState(kind) {
     if (!ensure()) return;
     const k = String(kind || '');
@@ -272,13 +396,14 @@ function petBubbleCreate(deps) {
       return;
     }
     const labels = {
-      listen: '🎤 ' + (continuous ? tr('连续对话中 · 右键可关闭') : tr('在听')),
+      listen: listenPaused ? '🎤 ' + tr('麦克风已暂停') : '🎤 ' + (continuous ? tr('常驻聆听中') : tr('在听')),
       think: '💭 ' + tr('在想'),
       speak: '🔊 ' + tr('在说'),
+      muted: '🔇 ' + tr('仅文字'),
     };
     const label = labels[k];
     if (!label) return;
-    // 错误/提示（含音色回落）在它自己的 3–6 秒窗口内优先于三态，别被下一句“在说”立刻盖掉。
+    // 错误/提示在它自己的 3–6 秒窗口内优先于三态，别被下一句“在说”立刻盖掉。
     const curState = statusEl && statusEl.dataset ? String(statusEl.dataset.state || '') : '';
     if (curState === 'error' || curState === 'info') return;
     cancelStatus();
@@ -294,12 +419,23 @@ function petBubbleCreate(deps) {
 
   function isVisible() { return visible; }
 
-  /** 连续对话模式：把「在听」换成一语中的状态条，提醒右键可关闭。 */
+  /** 常驻聆听：把「在听」换成一语中的状态条。 */
   function setContinuous(active) {
     continuous = active === true;
     if (continuous && statusEl && statusEl.dataset && String(statusEl.dataset.state || '') === 'listen') {
-      statusEl.textContent = '🎤 ' + tr('连续对话中 · 右键可关闭');
+      statusEl.textContent = '🎤 ' + tr('常驻聆听中');
     }
+  }
+
+  /** 「暂停说话 / 暂停聆听」的状态同步（状态条文案立刻跟着变）。 */
+  function setVoiceFlags(flags) {
+    const next = flags && typeof flags === 'object' ? flags : {};
+    if (typeof next.speakPaused === 'boolean') speakPaused = next.speakPaused;
+    if (typeof next.listenPaused === 'boolean') listenPaused = next.listenPaused;
+    const cur = statusEl && statusEl.dataset ? String(statusEl.dataset.state || '') : '';
+    if (cur === 'listen') setState('listen');
+    else if (speakPaused && cur === 'speak') setState('muted');
+    return { speakPaused, listenPaused };
   }
 
   function dispose() {
@@ -310,15 +446,21 @@ function petBubbleCreate(deps) {
     wrap = null;
     el = null;
     textEl = null;
+    toolsEl = null;
+    moreBtn = null;
+    copyBtn = null;
     statusEl = null;
     text = '';
     visible = false;
+    expanded = false;
   }
 
   return {
-    show, append, clear, hide, setState, status, hideStatus, place, isVisible, setContinuous, dispose,
+    show, append, clear, hide, setState, status, hideStatus, place, isVisible, setContinuous, setVoiceFlags,
+    setExpanded, copyText, dispose,
     get following() { return rafId != null; },
     get text() { return text; },
+    get expanded() { return expanded; },
     get element() { return el; },
     get textElement() { return textEl; },
     get statusElement() { return statusEl; },
@@ -326,5 +468,6 @@ function petBubbleCreate(deps) {
     MAX_LINES,
     BUBBLE_MAX_WIDTH,
     BUBBLE_MAX_HEIGHT,
+    FADE_MS,
   };
 }
