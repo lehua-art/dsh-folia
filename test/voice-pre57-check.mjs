@@ -1,4 +1,4 @@
-/**
+﻿/**
  * voice-pre57-check.mjs — pre.57 五件事的回归判据（不碰真麦克风/真 Key）。
  *
  * ① 录音滤镜链 / 16k 单声道 / 设备 1 秒 RMS 自适应 / 太小声不送 ASR
@@ -276,12 +276,12 @@ got.ok === true && Boolean(got.audioPath),
   }
   if (api) {
     api.start();
-    // 真实触发点：petTts 的 onIdle（朗读播完）→ 300ms 后自动恢复听（半双工）。
+    // 真实触发点：petTts 的 onIdle（朗读播完）→ 150ms 后自动恢复听（半双工）。
     state.ttsDeps.onIdle();
     const pending = timers.filter((t) => !t.cleared);
-    check('④ 朗读结束 → 300ms 自动恢复听，状态条显示「常驻聆听中」',
+    check('④ 朗读结束 → 150ms 自动恢复听，状态条显示「常驻聆听中」',
       api.active === true && bubble.continuous === true && bubble.lastState === 'listen'
-        && pending.length === 1 && pending[0].ms === 300
+        && pending.length === 1 && pending[0].ms === 150
         && /常驻聆听中/.test(readFileSync(join(ROOT, 'src', 'pet-bubble.js'), 'utf8')),
       `delay=${pending[0] && pending[0].ms} state=${bubble.lastState}`);
     pending[0].fn();
@@ -332,3 +332,4 @@ console.log('');
 const failed = results.filter((r) => !r.ok);
 console.log(`  ${results.length - failed.length} 通过 / ${failed.length} 失败`);
 process.exit(failed.length ? 1 : 0);
+

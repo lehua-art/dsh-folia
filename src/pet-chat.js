@@ -196,11 +196,11 @@ async function petChatRefreshVoice() {
  *
  * 状态机：idle → listening → thinking → speaking → listening（循环）
  *   · 挂载后自动进入 listening（受持久化的「暂停聆听」约束）；
- *   · 朗读开始时**绝不录音**（半双工，避免听到自己）；播完 300ms 自动恢复听；
+ *   · 朗读开始时**绝不录音**（半双工，避免听到自己）；播完 150ms 自动恢复听；
  *   · 「暂停说话」只静音 TTS，继续听 + 头顶出字幕；
  *   · 麦克风被占用/权限失败 ⇒ 退出常驻聆听并明确提示（不静默）。
  */
-const PET_CHAT_LISTEN_RESUME_MS = 300;
+const PET_CHAT_LISTEN_RESUME_MS = 150;
 /** 连续 60 秒没听到人声 ⇒ 探听降频到每 2 秒一次（但仍算"在听"）。 */
 const PET_CHAT_QUIET_AFTER_MS = 60000;
 const PET_CHAT_QUIET_PROBE_MS = 2000;
@@ -344,7 +344,7 @@ function petChatSilenceDelay(delayMs) {
   return Math.max(PET_CHAT_LISTEN_RESUME_MS, Number(delayMs) || PET_CHAT_LISTEN_RESUME_MS);
 }
 
-/** 朗读结束 / 一次静默后，延迟 300ms 自动开麦（半双工：播完才听）。 */
+/** 朗读结束 / 一次静默后，延迟 150ms 自动开麦（半双工：播完才听）。 */
 function petChatContinuousArm(delayMs) {
   if (!petChatContinuousEnabled || !petChatContinuousActive || petChatContinuousPaused) return;
   petChatContinuousClearTimer();
@@ -753,7 +753,20 @@ const petTts = petTtsCreate({
   // （真机/冒烟统一症状：Cannot access 'apiPostJson' before initialization）。
   apiFetch: (path, opts) => apiFetch(path, opts),
   apiPostJson: (path, payload, opts) => apiPostJson(path, payload, opts),
-  Audio: typeof Audio === 'function' ? Audio : null,
+  // v5 §2：包一层 Audio，只为记录"首段音频真正开始播"的时刻（不改播放行为）。
+  Audio: typeof Audio === 'function'
+    ? function PetChatAudio(url) {
+      const audio = new Audio(url);
+      try {
+        const originalPlay = audio.play;
+        audio.play = function patchedPlay(...args) {
+          if (!petChatPlayStartAt) petChatPlayStartAt = Date.now();
+          return originalPlay.apply(audio, args);
+        };
+      } catch { /* 播放器不可改写时只是少一段诊断 */ }
+      return audio;
+    }
+    : null,
   URL: typeof URL === 'function' ? URL : null,
   getVoice: () => petChatVoice,
   // 回答气泡只由 SSE 增量维护（完整回答、长文可滚）；逐句朗读只切“说”态，
@@ -765,7 +778,7 @@ const petTts = petTtsCreate({
   onIdle: () => {
     petBubble.hide(3000);
     petChatListeningNow = false;
-    // 播完 300ms 自动恢复听（半双工：朗读期间绝不录音）。
+    // 播完 150ms 自动恢复听（半双工：朗读期间绝不录音）。
     if (petChatContinuousActive && !petChatContinuousPaused) petChatContinuousArm(PET_CHAT_LISTEN_RESUME_MS);
     petChatPublishContinuousState();
   },
@@ -787,14 +800,123 @@ function petSpeak(text, speech) { return petTts.speak(text, speech); }
 /** 立刻停：清队列 + 停当前音频 + 通知宿主作废在途合成（barge-in 用）。 */
 function petSpeakStop() { return petTts.stop(); }
 
+/* ── v5 §1：清唱播放 + 逐行歌词高亮 ─────────────────────────────────────── */
+
+let petSingAudio = null;
+let petSingTimer = null;
+let petSingLines = [];
+let petSingIndex = -1;
+
+/** 停掉正在唱的歌（barge-in / 新歌替换 / 卸载）。 */
+function petSingStop() {
+  if (petSingTimer != null) { clearInterval(petSingTimer); petSingTimer = null; }
+  if (petSingAudio) {
+    try { petSingAudio.pause(); } catch { /* ignore */ }
+    try { petSingAudio.src = ''; } catch { /* ignore */ }
+    petSingAudio = null;
+  }
+  petSingLines = [];
+  petSingIndex = -1;
+}
+
+/**
+ * 播放一首清唱：`sing = { audioUrl, lines:[{text,startMs,durMs}], title, disclaimer }`。
+ * 歌词行按 `startMs` 高亮；播完 2 秒收起气泡，并按常驻聆听的节奏恢复听。
+ */
+function petChatSingPlay(sing) {
+  if (!sing || !sing.audioUrl) return false;
+  if (typeof Audio !== 'function') return false;
+  petSingStop();
+  petSpeakStop(); // 唱歌前先停朗读，避免两路音频叠在一起
+  petChatConfirmHide();
+  const lines = Array.isArray(sing.lines) ? sing.lines : [];
+  petSingLines = lines;
+  petSingIndex = -1;
+  petBubble.setVoiceFlags({ speakPaused: petChatSpeakPaused, listenPaused: petChatContinuousPaused });
+  petBubble.setState('sing');
+  petBubble.showLyrics(lines, 0, { title: sing.title, disclaimer: sing.disclaimer });
+  try {
+    const audio = new Audio(apiUrl(String(sing.audioUrl)));
+    petSingAudio = audio;
+    const tick = () => {
+      const nowMs = Number(audio.currentTime || 0) * 1000;
+      let active = 0;
+      for (let i = 0; i < lines.length; i += 1) {
+        if (lines[i].startMs <= nowMs + 40) active = i;
+        else break;
+      }
+      if (active !== petSingIndex) {
+        petSingIndex = active;
+        petBubble.showLyrics(lines, active);
+      }
+    };
+    petSingTimer = setInterval(tick, 120);
+    audio.addEventListener('ended', () => {
+      petSingStop();
+      petBubble.status('info', weT('唱完啦（清唱，无伴奏）'), { delay: 2600 });
+      petBubble.hide(2000);
+      petChatSingResumeListening();
+    });
+    audio.addEventListener('error', () => {
+      petSingStop();
+      petBubble.status('error', weT('这首歌的音频放不出来（文件坏了或播放器不可用）'), { delay: 5000 });
+      petChatSingResumeListening();
+    });
+    const played = audio.play();
+    if (played && typeof played.catch === 'function') {
+      played.catch(() => {
+        petSingStop();
+        petBubble.status('info', weT('浏览器拦了自动播放：再点一次「唱首歌」'), { delay: 4000 });
+      });
+    }
+    return true;
+  } catch {
+    petBubble.status('error', weT('唱歌音频没放起来'), { delay: 4000 });
+    return false;
+  }
+}
+
+/** 唱完回到常驻聆听（150ms，任务 §2：轮间不重开设备，只重启录音循环）。 */
+function petChatSingResumeListening() {
+  if (petChatContinuousEnabled && !petChatContinuousPaused) petChatContinuousArm(150);
+}
+
+/* ── v5 §2：延迟 6 段采样（说完/录音完/ASR/首 token/首段音频/出声）────────── */
+
+let petChatVoiceTiming = null;
+let petChatPlayStartAt = 0;
+let petChatDeepTimer = null;
+
+/** 一次语音轮次结束后把 6 段耗时上报宿主（失败静默，不影响对话）。 */
+function petChatReportLatency(turnStartAt, firstTokenAt, firstAudioAt) {
+  const timing = petChatVoiceTiming;
+  petChatVoiceTiming = null;
+  if (!timing || petChatInputMode !== 'voice' || !firstTokenAt) return;
+  const vadTail = 550; // 与 lib/voice/record.js 的 streamSilenceMs 同口径
+  const asr = Math.max(0, Number(timing.inferenceMs) || 0);
+  const firstToken = Math.max(0, firstTokenAt - turnStartAt);
+  const firstAudio = firstAudioAt ? Math.max(0, firstAudioAt - firstTokenAt) : 0;
+  const playStart = petChatPlayStartAt ? Math.max(0, petChatPlayStartAt - (firstAudioAt || firstTokenAt)) : 0;
+  const total = vadTail + asr + firstToken + firstAudio + playStart;
+  try {
+    void apiPostJson('/pet-chat/latency', {
+      inputMode: 'voice',
+      engine: petChatVoice && petChatVoice.name ? String(petChatVoice.name).split(':')[0] : '',
+      segments: { recordTail: vadTail, asr, firstToken, firstAudio, playStart, total },
+      total,
+    }, { parse: 'always' }).catch(() => {});
+  } catch { /* 诊断失败不影响对话 */ }
+}
+
 /** 语音输入（v0.1）：前端不碰麦克风 —— 宿主用 ffmpeg 录，这里只发请求、收文本。 */
 const petVoiceIn = petVoiceInputCreate({
   // barge-in：**一开录就先停朗读**（判据 verify-voice-tts 断言这个顺序）
-  onBeforeRecord: () => { petChatInputMode = 'voice'; petSpeakStop(); },
+  onBeforeRecord: () => { petChatInputMode = 'voice'; petSpeakStop(); petSingStop(); },
   postRecord: async () => {
     // pre.62：ffmpeg 不在包里，首次点麦可能在下载。宿主回 ffmpeg-preparing+percent；
     // 这里在状态条显示进度并自动重试 /record（下载在宿主后台继续），不显示“没听到声音”。
     for (let attempt = 0; attempt < 180; attempt += 1) {
+      const attemptStart = Date.now();
       const res = await apiPostJson('/pet-chat/record', { language: 'zh' }, { parse: 'always' });
       const doc = (res && res.data) || {};
       if (doc.code === 'ffmpeg-preparing') {
@@ -802,6 +924,14 @@ const petVoiceIn = petVoiceInputCreate({
         petBubble.status('info', weT('正在准备录音组件 {pct}%', { pct }), { delay: 0 });
         await new Promise((resolve) => { setTimeout(resolve, 1000); });
         continue;
+      }
+      if (doc.ok === true) {
+        // 6 段诊断：宿主在同一个 /record 里做了录音 + 转写；inferenceSeconds 是 ASR 那一段。
+        petChatVoiceTiming = {
+          recordStartedAt: attemptStart,
+          recordDoneAt: Date.now(),
+          inferenceMs: Math.max(0, Number(doc.inferenceSeconds) || 0) * 1000,
+        };
       }
       petBubble.hideStatus(0);
       return doc;
@@ -814,6 +944,10 @@ const petVoiceIn = petVoiceInputCreate({
       return;
     }
     petChatTurnBegin();
+    const turnStartAt = Date.now();
+    let firstTokenAt = 0;
+    let firstAudioAt = 0;
+    petChatPlayStartAt = 0;
     petChatSpeechRate = 0;
     petChatMood = 'neutral';
     const workNow = Date.now();
@@ -862,6 +996,8 @@ const petVoiceIn = petVoiceInputCreate({
     }
     let rawReply = '';
     let replyStarted = false;
+    /** v5：这一轮是不是以"唱歌"结尾（有 sing 事件时别按"无朗读"提前收气泡/开麦）。 */
+    let singStarted = false;
     let replyDone = false;
     /**
      * 朗读的流式切句（P1）：
@@ -879,7 +1015,10 @@ const petVoiceIn = petVoiceInputCreate({
         return;
       }
       // v2：本轮语速由宿主 meta 给（夜间/疲惫 -1 = -10%）；再叠加当前人设的 voice.rate。
-      if (petSpeak(line, { rate: petChatSpeechRate + (Number(petChatVoice.rate) || 0) })) queuedSpeech += 1;
+      if (petSpeak(line, { rate: petChatSpeechRate + (Number(petChatVoice.rate) || 0) })) {
+        queuedSpeech += 1;
+        if (!firstAudioAt) firstAudioAt = Date.now(); // 首段音频交给播放器的时刻
+      }
     };
     const reader = stream.body.getReader();
     const decoder = new TextDecoder();
@@ -906,6 +1045,17 @@ const petVoiceIn = petVoiceInputCreate({
         if (eventName === 'meta') {
           petChatMood = String(payload.mood || 'neutral');
           petChatSpeechRate = Number.isFinite(Number(payload.rate)) ? Number(payload.rate) : 0;
+          // v5 §5：深度档 >3s 显示「深度思考中…」（quick/standard 秒回，不闪这一下）。
+          if (payload.tier === 'deep') {
+            if (petChatDeepTimer != null) clearTimeout(petChatDeepTimer);
+            petChatDeepTimer = setTimeout(() => {
+              petChatDeepTimer = null;
+              petBubble.status('info', weT('深度思考中…'), { delay: 0 });
+            }, 3000);
+          } else if (petChatDeepTimer != null) {
+            clearTimeout(petChatDeepTimer);
+            petChatDeepTimer = null;
+          }
           continue;
         }
         if (eventName === 'confirm') {
@@ -918,6 +1068,12 @@ const petVoiceIn = petVoiceInputCreate({
           void petChatHandleAction(payload);
           continue;
         }
+        if (eventName === 'sing') {
+          // v5 §1：唱歌事件带 audioUrl + 逐行时间戳；客户端单独放音频并逐行高亮。
+          singStarted = true;
+          petChatSingPlay(payload);
+          continue;
+        }
         if (eventName === 'done') {
           if (Number.isFinite(Number(payload.rate))) petChatSpeechRate = Number(payload.rate);
           continue;
@@ -925,6 +1081,7 @@ const petVoiceIn = petVoiceInputCreate({
         // 防兜底：模型偶尔仍会输出 {"reply":"…","emotion":"…"} 信封，
         // 这里只把 reply 的正文喂给气泡（不显示大括号/字段名/emotion）。
         if (typeof payload.t === 'string') {
+          if (!firstTokenAt) firstTokenAt = Date.now(); // 首 token 到达（诊断第 4 段）
           rawReply += payload.t;
           let piece = payload.t;
           if (!replyStarted) {
@@ -956,15 +1113,17 @@ const petVoiceIn = petVoiceInputCreate({
     enqueueSpeech(speakBuffer);
     if (typeof onState === 'function') onState({ state: 'idle' });
     // 本轮成功：常驻聆听继续（任务 §4：装好就在听，不靠"点了才听"）；
-    // 有朗读时等 onIdle 播完再开麦（半双工），没朗读（暂停说话/静音）直接 300ms 后排下一轮。
+    // 有朗读时等 onIdle 播完再开麦（半双工），没朗读（暂停说话/静音）直接 150ms 后排下一轮。
     if (!petChatContinuousActive && !petChatContinuousPaused) petChatContinuousStart();
     petChatLastHeardAt = Date.now();
     petChatContinuousRounds += 1;
     petChatContinuousSilent = 0;
     petChatPublishContinuousState();
-    if (!queuedSpeech) petChatContinuousArm();
+    if (!queuedSpeech && !singStarted) petChatContinuousArm();
     // 没有任何一句进入朗读（暂停说话 / 合成不可用）⇒ 字幕照常显示，3 秒后淡出。
-    if (!queuedSpeech) petBubble.hide(3000);
+    // 唱歌时气泡归歌词用：不提前收，播完由 petChatSingPlay 收。
+    if (!queuedSpeech && !singStarted) petBubble.hide(3000);
+    petChatReportLatency(turnStartAt, firstTokenAt, firstAudioAt);
     petChatTurnEnd();
   },
   // P4：用户自己的话**不进**气泡（那是回声）；只显示 assistant 的 SSE delta
@@ -1025,6 +1184,7 @@ function petChatOpenTyping(extra = {}) {
     box.remove();
     // 新的一轮 = 先掐掉上一轮还在念的（与录音入口同一条 barge-in 纪律）
     petSpeakStop();
+    petSingStop();
     petChatVoiceAbort = false;
     petChatInputMode = 'text';
     // 打字说的文本**不上气泡**（P4 同理：气泡只显示助手的回答）。
@@ -1057,8 +1217,9 @@ let petChatWakeSeq = 0;
 
 /** 点桌宠：常驻聆听默认在听 —— 点它只做三件事：打断朗读 / 恢复聆听 / 收起气泡。 */
 function petChatWake() {
-  // **任何一次唤醒都是 barge-in**：先把正在念的停掉，再决定是收起还是开麦。
+  // **任何一次唤醒都是 barge-in**：先把正在念的/正在唱的停掉，再决定是收起还是开麦。
   petSpeakStop();
+  petSingStop();
   void petChatRefreshVoice();
   const seq = ++petChatWakeSeq;
   // 暂停聆听中点桌宠 = 恢复常驻聆听（不用再去右键菜单）。
@@ -1258,7 +1419,7 @@ function mountPetChat() {
       }
       return;
     }
-    // 回到页面：如果没被「暂停聆听」，300ms 内恢复听。
+    // 回到页面：如果没被「暂停聆听」，150ms 内恢复听。
     if (!petChatContinuousPaused && petChatContinuousEnabled) petChatResidentStart();
   };
   document.addEventListener('visibilitychange', onVisibility);
@@ -1279,7 +1440,8 @@ function mountPetChat() {
   try {
     window.__dshFoliaPet = {
       speak: (text, speech) => petSpeak(text, speech || {}),
-      stop: () => petSpeakStop(),
+      stop: () => { petSingStop(); return petSpeakStop(); },
+      sing: (sing) => petChatSingPlay(sing),
       chat: (text) => { petChatInputMode = 'text'; return petVoiceIn.postChat(String(text || '')); },
       isSpeaking: () => petTts.isSpeaking(),
       // 任务 §4：两个开关（菜单之外的对外通道；判据也用它）
@@ -1302,13 +1464,18 @@ function mountPetChat() {
     if (petChatWallpaperTimer != null) clearInterval(petChatWallpaperTimer);
     if (petChatWorkTimer != null) clearInterval(petChatWorkTimer);
     if (petChatGreetingTimer != null) clearTimeout(petChatGreetingTimer);
+    // v5 §6：深度思考的 3s 提示定时器也要随卸载清掉（否则会在 dispose 后改气泡）。
+    if (petChatDeepTimer != null) { clearTimeout(petChatDeepTimer); petChatDeepTimer = null; }
+    if (petSingTimer != null) { clearInterval(petSingTimer); petSingTimer = null; }
     petChatWallpaperTimer = null;
     petChatWorkTimer = null;
     petChatGreetingTimer = null;
     petChatEventsStop();
     petSpeakStop();
+    petSingStop();
     petChatConfirmHide();
     try { if (window.__dshFoliaPet) delete window.__dshFoliaPet; } catch { /* ignore */ }
     petBubble.dispose();
   };
 }
+

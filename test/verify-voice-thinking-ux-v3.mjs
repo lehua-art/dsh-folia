@@ -1,4 +1,4 @@
-/**
+﻿/**
  * verify-voice-thinking-ux-v3.mjs — v3 交付验收（任务 §1–§6，A–N）。
  *
  * 覆盖：
@@ -523,9 +523,10 @@ try {
     modelSeen.length = 0;
     modelReply = '可以这样安排：先定目标，再拆周计划。';
     await chat(thoughtHost, '帮我规划一下这周的学习计划，每天两小时，还要留出复习时间');
-    const complexSystem = String((modelSeen[modelSeen.length - 1].body.messages[0].content) || '');
-    const plannerCall = modelSeen.find((item) => item.body && item.body.stream === false);
-    check('E4 复杂问题 ⇒ 先两步列 3 条要点（内部），最终回答的 system 带要点',
+    const draftCall = modelSeen.find((item) => item.body && String((item.body.messages || [{}])[0].content || '').includes('【先想过的三条要点'));
+    const complexSystem = String((draftCall && draftCall.body.messages[0].content) || '');
+    const plannerCall = modelSeen.find((item) => item.body && item.body.stream === false && item !== draftCall);
+    check('E4 复杂问题 ⇒ 先两步列 3 条要点（内部），最终回答 system 带要点（v5 deep 档）',
       Boolean(plannerCall) && /【先想过的三条要点/.test(complexSystem) && /先接住累/.test(complexSystem),
       `调用=${modelSeen.length} · 策划器=${Boolean(plannerCall)}`);
   } finally {
@@ -655,20 +656,20 @@ try {
         && bubble.states.includes('listen'),
       `开麦次数=${state.starts} · 状态=${bubble.states.slice(-2).join(',')}`);
 
-    // 半双工：正在朗读时，计时到点也不开麦；播完 300ms 才恢复听。
+    // 半双工：正在朗读时，计时到点也不开麦；播完 150ms 才恢复听。
     const before = state.starts;
     state.speaking = true;
     state.ttsDeps.onIdle();
-    const pending = timers.filter((row) => !row.cleared && row.ms === 300);
+    const pending = timers.filter((row) => !row.cleared && row.ms === 150);
     for (const row of pending) { row.cleared = true; row.fn(); }
     await flush();
     const duringSpeak = state.starts;
     state.speaking = false;
     state.ttsDeps.onIdle();
-    const pending2 = timers.filter((row) => !row.cleared && row.ms === 300);
+    const pending2 = timers.filter((row) => !row.cleared && row.ms === 150);
     for (const row of pending2) { row.cleared = true; row.fn(); }
     await flush();
-    check('F2 半双工：朗读中绝不开麦；播完 300ms 自动恢复听（不录自己的声音）',
+    check('F2 半双工：朗读中绝不开麦；播完 150ms 自动恢复听（不录自己的声音）',
       duringSpeak === before && state.starts === before + 1,
       `朗读中=${duringSpeak} · 播完=${state.starts}（before=${before}）`);
 
@@ -972,4 +973,5 @@ if (failed.length) {
   for (const item of failed) console.log('  ✗ ' + item.name + (item.detail ? ' — ' + item.detail : ''));
   process.exit(1);
 }
+
 

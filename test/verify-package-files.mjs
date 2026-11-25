@@ -413,8 +413,8 @@ async function main() {
     // 4.26.0-pre.64 抬到 **144/157**：桌宠大脑 v2（意图/事件记忆/环境/情绪/主动/回读校验）。
     // 4.26.0-pre.65 抬到 **146/159**：人设 UI v2（Key 收口 / 三页签 / 一键使用 / 文档卡片化）。
     // 4.26.0-pre.70 抬到 **147/160**：侧栏快捷面板本地上传入口（串行 / 进度 / 拖拽 / 来源切本机）。
-    // 4.26.0-pre.71 抬到 **148/161**：身份文案 + 两处 UI 文案删除 + 能力作者 OG 预览图。
-    const CHAIN_FLOOR = { verify: 148, docs: 6, smoke: 6, all: 161 };
+    // 4.26.0-pre.77 抬到 **152/165**：身份文案 + 两处 UI 文案删除 + 能力作者 OG 预览图。
+    const CHAIN_FLOOR = { verify: 152, docs: 6, smoke: 6, all: 165 };
     /** 地板表与 GROUPS 的对齐体检：键名必须与**组名**逐一对齐（纯函数 ⇒ 负对照可直接喂）。 */
     const floorGaps = (groups, floors) => groups.map(([, g]) => g).filter((g) => !Number.isInteger(floors[g]));
     const problems = floorGaps(GROUPS, CHAIN_FLOOR).map((g) => '地板表缺组 ' + g

@@ -1173,9 +1173,41 @@
         {
           "kind": "guard",
           "npm": null,
+          "file": "test/verify-singing-v5.mjs",
+          "args": [],
+          "tier": "soft",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-capabilities-v5.mjs",
+          "args": [],
+          "tier": "soft",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-latency-v5.mjs",
+          "args": [],
+          "tier": "soft",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
           "file": "test/verify-capabilities.mjs",
           "args": [],
           "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-voice-thinking-ux-v3.mjs",
+          "args": [],
+          "tier": "soft",
           "probe": false
         },
         {
@@ -2482,9 +2514,41 @@
         {
           "kind": "guard",
           "npm": null,
+          "file": "test/verify-singing-v5.mjs",
+          "args": [],
+          "tier": "soft",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-capabilities-v5.mjs",
+          "args": [],
+          "tier": "soft",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-latency-v5.mjs",
+          "args": [],
+          "tier": "soft",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
           "file": "test/verify-capabilities.mjs",
           "args": [],
           "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-voice-thinking-ux-v3.mjs",
+          "args": [],
+          "tier": "soft",
           "probe": false
         },
         {

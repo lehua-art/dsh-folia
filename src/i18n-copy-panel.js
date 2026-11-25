@@ -1,4 +1,4 @@
-/**
+﻿/**
  * i18n-copy-panel.js — 英文词表域：设置面板页签（src/panel-tabs.js）
  *
  * 本域词条**原样搬自** `src/i18n-copy.js`（拆分属纯搬移：中文键与英文值一行未改、顺序未动）。
@@ -414,6 +414,13 @@ const WE_I18N_EN_PANEL = {
   "在听": "Listening",
   "在想": "Thinking",
   "在说": "Speaking",
+  // v5：唱歌（按谱清唱）
+  "在唱": "Singing",
+  "深度思考中…": "Thinking deeply…",
+  "唱完啦（清唱，无伴奏）": "Song finished (a cappella, no backing track)",
+  "这首歌的音频放不出来（文件坏了或播放器不可用）": "This song's audio cannot play (corrupt file or unavailable player)",
+  "浏览器拦了自动播放：再点一次「唱首歌」": "The browser blocked autoplay — click 'sing a song' again",
+  "唱歌音频没放起来": "The song audio did not start",
   // pre.63：连续对话（右键菜单 + 设置页同一 voice.continuous）
   "连续对话": "Continuous conversation",
   "暂停听": "Pause listening",
@@ -1119,3 +1126,4 @@ const WE_I18N_EN_PANEL = {
 };
 
 export { WE_I18N_EN_PANEL };
+

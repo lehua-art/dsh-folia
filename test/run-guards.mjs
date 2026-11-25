@@ -481,7 +481,15 @@ const VERIFY_STEPS = [
   // P1 智能语音闭环：真合成（SAPI → Edge 系统音色 → 明确错误）/ /tts 与 /tts/stop 路由 /
   // stop 幂等 / barge-in 调用顺序 / 分句排队 / 三态气泡 / 工作联动 speak 通道。
   step('test/verify-voice-tts.mjs'),
+  // v5 §1 按谱清唱（16 条）：真合成 + F0 朗读对照（≥2×）/ 音符数 / 时长误差 / 路由 / 拒绝带伴奏 / 曲调来源。
+  // 软档：依赖本机 SAPI 音色与 ffmpeg，换机器可能 SKIP；audit 仍会单独跑它。
+  step('test/verify-singing-v5.mjs', [], 'soft'),
+  // v5 §3/§4/§5（30 条）：能力注册表 + 50 条 hard asks / 插件技能列表与调用审计 / 多步任务 / 三档思考+自检。
+  step('test/verify-capabilities-v5.mjs', [], 'soft'),
+  // v5 §2 延迟（12 条）：6 段诊断 + P50/P90 协议 / ASR 预热与 10 分钟释放 / VAD 550 / 轮间 150 / 首 token 即合成。
+  step('test/verify-latency-v5.mjs', [], 'soft'),
   step('test/verify-capabilities.mjs'),
+  step('test/verify-voice-thinking-ux-v3.mjs', [], 'soft'),
   // pre.71 身份/UI 收口：package + README 身份文案；删侧栏卡副标题；删官方资源路径整块
   // （宿主路由/inventory 字段保留）；能力详情作者仓库 OG 预览图（非 GitHub 无图、失败不裂）。
   step('test/verify-identity-ui.mjs'),

@@ -69,6 +69,7 @@ function petBubbleCreate(deps) {
     '.we-pet-status[data-state="listen"]::after{content:"";width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.7;animation:we-pet-status-pulse 1s ease-in-out infinite;}',
     '.we-pet-status[data-state="think"]::after{content:"…";margin-left:1px;opacity:.8;animation:we-pet-status-blink 1.1s steps(2,end) infinite;}',
     '.we-pet-status[data-state="speak"]::after{content:"";display:block;width:28px;height:10px;opacity:.85;background:linear-gradient(currentColor,currentColor) 0 100%/3px 45% no-repeat,linear-gradient(currentColor,currentColor) 7px 100%/3px 90% no-repeat,linear-gradient(currentColor,currentColor) 14px 100%/3px 60% no-repeat,linear-gradient(currentColor,currentColor) 21px 100%/3px 100% no-repeat;transform-origin:0 100%;animation:we-pet-status-wave .8s ease-in-out infinite alternate;}',
+    '.we-pet-status[data-state="sing"]::after{content:"";display:block;width:34px;height:11px;opacity:.9;background:linear-gradient(currentColor,currentColor) 0 100%/3px 40% no-repeat,linear-gradient(currentColor,currentColor) 6px 100%/3px 85% no-repeat,linear-gradient(currentColor,currentColor) 12px 100%/3px 55% no-repeat,linear-gradient(currentColor,currentColor) 18px 100%/3px 100% no-repeat,linear-gradient(currentColor,currentColor) 24px 100%/3px 60% no-repeat,linear-gradient(currentColor,currentColor) 30px 100%/3px 30% no-repeat;transform-origin:0 100%;animation:we-pet-status-wave .55s ease-in-out infinite alternate;}',
     '.we-pet-status[data-state="muted"]{opacity:.92;}',
     '.we-pet-status[data-state="error"]{border-color:rgba(255,120,120,.45);}',
     '@keyframes we-pet-status-wave{from{transform:scaleY(.55);opacity:.55;}to{transform:scaleY(1);opacity:.95;}}',
@@ -304,6 +305,29 @@ function petBubbleCreate(deps) {
     applyText(next, visible);
   }
 
+  /**
+   * 清唱歌词：逐行显示 + 当前行高亮（'▶'）。**不做淡入淡出**（每 120ms 更新，
+   * 用 show() 会每次触发替换动画）。`meta.title` 只在第一次带上。
+   */
+  function showLyrics(lines, activeIndex, meta) {
+    if (!ensure()) return;
+    cancelFade();
+    const list = Array.isArray(lines) ? lines.filter((line) => line && line.text) : [];
+    const active = Math.max(0, Math.min(Math.max(0, list.length - 1), Math.round(Number(activeIndex) || 0)));
+    const head = meta && meta.title ? '🎵 ' + String(meta.title) + '\n' : '';
+    const body = head + list.map((line, i) => (i === active ? '▶ ' : '   ') + String(line.text)).join('\n');
+    text = body;
+    if (textEl) textEl.textContent = body;
+    if (el) {
+      if (el.dataset) el.dataset.visible = '1';
+      el.style.opacity = '1';
+    }
+    visible = true;
+    if (!expanded) followBottom();
+    place();
+    startFollow();
+  }
+
   /** 逐字/逐段追加（SSE 每个 chunk 调一次）。 */
   function append(chunk) {
     if (!ensure()) return;
@@ -399,6 +423,7 @@ function petBubbleCreate(deps) {
       listen: listenPaused ? '🎤 ' + tr('麦克风已暂停') : '🎤 ' + (continuous ? tr('常驻聆听中') : tr('在听')),
       think: '💭 ' + tr('在想'),
       speak: '🔊 ' + tr('在说'),
+      sing: '🎵 ' + tr('在唱'),
       muted: '🔇 ' + tr('仅文字'),
     };
     const label = labels[k];
@@ -457,6 +482,7 @@ function petBubbleCreate(deps) {
 
   return {
     show, append, clear, hide, setState, status, hideStatus, place, isVisible, setContinuous, setVoiceFlags,
+    showLyrics,
     setExpanded, copyText, dispose,
     get following() { return rafId != null; },
     get text() { return text; },

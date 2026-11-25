@@ -484,6 +484,33 @@ function PersonaSection() {
     }
   }, []);
 
+  /** v5 §4：已安装插件/技能能力（只列不调用，逐项启用）。 */
+  const [caps, setCaps] = React.useState({ loading: false, skills: [], plugins: [], note: null });
+  const loadCapabilities = React.useCallback(async () => {
+    setCaps((prev) => ({ ...prev, loading: true }));
+    try {
+      const data = unwrap(await apiJson('/pet-chat/capabilities', { parse: 'always' }));
+      setCaps({
+        loading: false,
+        skills: Array.isArray(data.skills) ? data.skills : [],
+        plugins: Array.isArray(data.plugins) ? data.plugins : [],
+        note: String(data.note || ''),
+      });
+    } catch {
+      setCaps((prev) => ({ ...prev, loading: false, note: '读取已安装能力失败' }));
+    }
+  }, []);
+  const toggleCapability = async (id, enabled) => {
+    setPermBusy(true);
+    try {
+      const data = unwrap(await apiPostJson('/pet-chat/capabilities', { id, enabled }, { parse: 'always' }));
+      if (!data.ok) throw new Error(data.hint || 'toggle-failed');
+      await loadCapabilities();
+    } catch (error) {
+      setCaps((prev) => ({ ...prev, note: String((error && error.message) || '操作失败') }));
+    } finally { setPermBusy(false); }
+  };
+
   const saveToolWhitelist = async () => {
     setPermBusy(true);
     try {
@@ -617,7 +644,8 @@ function PersonaSection() {
     if (detailTab === 'voice' && !voiceCatalog) void loadVoiceCatalog();
     if (detailTab === 'permissions') void loadPermissions(selected.id);
     if (detailTab === 'permissions') void loadToolWhitelist();
-  }, [selected, detailTab, loadMemory, loadVoices, voices.length, voiceCatalog, loadVoiceCatalog, loadPermissions, loadToolWhitelist]);
+    if (detailTab === 'permissions') void loadCapabilities();
+  }, [selected, detailTab, loadMemory, loadVoices, voices.length, voiceCatalog, loadVoiceCatalog, loadPermissions, loadToolWhitelist, loadCapabilities]);
 
   const packAction = async (kind, pack) => {
     if (!pack) return;
@@ -1531,6 +1559,32 @@ function PersonaSection() {
             personaButton('重新读取', () => { void loadToolWhitelist(); })),
           toolWl.note
             ? React.createElement('div', { className: 'we-picker__hint', style: { color: toolWl.note.ok ? undefined : '#f87171' } }, toolWl.note.text)
+            : null),
+        // v5 §4：已安装插件与技能（只列不调用 → 逐项启用）。
+        React.createElement('div', { style: { marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,.10)' } },
+          React.createElement('div', { style: { fontSize: '12px', fontWeight: 600 } }, '已安装插件与技能',
+            personaTag(`${(caps.skills || []).length} 个技能 / ${(caps.plugins || []).length} 个插件`, '')),
+          React.createElement('div', { className: 'we-picker__hint', style: { margin: '2px 0 4px' } },
+            caps.note || '只列出已安装的能力；调用默认询问，且每个能力要单独启用；调用会写审计。'),
+          caps.loading ? React.createElement('div', { className: 'we-picker__hint' }, '正在扫描已安装能力…') : null,
+          (caps.skills || []).length === 0
+            ? React.createElement('div', { className: 'we-picker__hint' }, '没有发现技能目录（~/.dsh/skills、项目 .dsh/skills、随包 office-skills 都没有 SKILL.md）。')
+            : (caps.skills || []).map((skill) => React.createElement('div', { key: skill.id, style: { ...PERSONA_STYLE.row, justifyContent: 'space-between', gap: '6px', padding: '2px 0' } },
+              React.createElement('div', { style: { minWidth: 0 } },
+                React.createElement('div', { style: { fontSize: '12px', fontWeight: 600 } }, skill.label || skill.name,
+                  personaTag(skill.source === 'ctx.skills' ? '宿主服务' : '技能文件', '')),
+                React.createElement('div', { className: 'we-picker__hint', style: { margin: 0, whiteSpace: 'normal' } }, skill.description || '')),
+              React.createElement('label', { style: { display: 'flex', gap: '4px', alignItems: 'center', fontSize: '11px', flexShrink: 0 } },
+                React.createElement('input', {
+                  type: 'checkbox', checked: skill.enabled === true, disabled: permBusy,
+                  onChange: (e) => { void toggleCapability(skill.id, e.target.checked); },
+                }),
+                '允许调用'))),
+          (caps.plugins || []).length
+            ? React.createElement('div', { style: { marginTop: '6px' } },
+              React.createElement('div', { className: 'we-picker__hint', style: { margin: '2px 0' } }, '已安装插件（无通用调用面，只读列出）：'),
+              (caps.plugins || []).slice(0, 12).map((plugin) => React.createElement('div', { key: plugin.id, style: { fontSize: '11px', opacity: .8 } },
+                `· ${plugin.name}${plugin.version ? ' v' + plugin.version : ''} — ${plugin.description || plugin.label || ''}`.slice(0, 120))))
             : null),
         permNote ? React.createElement('div', { className: 'we-picker__hint', style: { color: permNote.ok ? undefined : '#f87171' } }, permNote.text) : null,
         React.createElement('div', { style: { fontSize: '12px', fontWeight: 600, marginTop: '10px' } },
