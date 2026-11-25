@@ -371,6 +371,9 @@ try {
     chatSrc.includes('resident-notice-v1') && chatSrc.includes('我会一直听着'));
   check('O4 两条新提示都有英文词条',
     i18nSrc.includes('先填模型 Key') && i18nSrc.includes('我会一直听着'));
+  check('O5 旧版 Edge 短标签（YunJhe/Xiaoxiao）归一为完整 id，试听不再 bad-voice',
+    (await import('../lib/tts/voice-center.js')).normalizeVoiceId('YunJhe') === 'edge:zh-TW-YunJheNeural'
+    && (await import('../lib/tts/voice-center.js')).normalizeVoiceId('Xiaoxiao') === 'edge:zh-CN-XiaoxiaoNeural');
   } finally {
     await new Promise((r) => { volcServer.close(r); });
   }
