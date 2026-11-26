@@ -1,5 +1,22 @@
 # 变更记录（Changelog）
 
+### v1.1.0（2026-11-26，**精选 → 个人工具 75 项 + 插件步骤详情 + 安装话术**）
+
+> 只做展示与复制；不做逐条安装器，不扫描安装路径/注册表；非 DSH 工具明确按 README 安装。
+> 版本保持 1.0.1 的发布由主对话统一处理（本次未 npm publish）。
+
+- 新增 `lib/curated-personal.js`：75 项个人工具 / 12 类（AI 13、语音文档 7、相册影音 8、文档效率 5、
+  笔记阅读 9、家庭生活 6、自动化运维 8、备份文件 4、隐私安全 4、财务 3、创作设计 5、开发 3）。
+  每项含 name/一句话/detail/repo/license/requires/risk；同类合并卡用 `repos` 列各仓库。
+- `lib/capabilities-curated.js`：67 个插件 step 全部补 `detail + repo`（npm registry 元数据生成后静态化，
+  含 npm 包页面兜底）；不联网抓 GitHub。
+- `GET /pet-chat/capabilities/curated` 增加 `personalTools`，保留 `bundles/installed/agentsAvailable`。
+- 能力页顶部话术改为“复制包名命令或 GitHub 地址 → 粘贴到 DSH 对话 → 助手确认后安装；
+  非 DSH 工具按 README 安装”。精选内新增分段 [场景组合][个人工具]（默认场景组合）；
+  工具卡 [复制仓库地址] + [打开 GitHub]，插件 [复制安装命令]，复制后提示粘贴给助手。
+- 新增 `test/verify-curated-personal.mjs`（A–H 10 条）；守卫链/fixture/CHAIN_FLOOR 抬到 155/168。
+- `run-audit` 130 通过 / 52 退役 / 0 失败（182，以实测为准）。
+
 ### v4.26.0-pre.79（2026-11-26，**能力页「精选」20 套组合**）
 
 > 只做展示/复制命令；不做逐条安装器，不扫描安装路径/注册表。未 npm publish（等用户确认）。

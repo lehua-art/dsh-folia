@@ -491,6 +491,8 @@ const VERIFY_STEPS = [
   step('test/verify-capabilities.mjs'),
   // pre.79 能力页精选项（A–K）：20 套静态数据 + 路由 + 前端精选/向导/快捷键源码判据。
   step('test/verify-curated.mjs'),
+  // 精选 → 个人工具（A–H）：75 项/12 类、详情、复制仓库、README 话术、路由。
+  step('test/verify-curated-personal.mjs'),
   // pre.71 三项 P0/P1：关于页 inventory 未就绪不空白 / 子标签计数与回退 / delegate_to_dsh
   // 真 DSH agent 调用（限能力、60s、审计、默认询问、特殊人设禁用、服务缺失降级）+ 调用方式标记。
   step('test/verify-about-filter-capability.mjs'),

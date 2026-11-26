@@ -1213,6 +1213,14 @@
         {
           "kind": "guard",
           "npm": null,
+          "file": "test/verify-curated-personal.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
           "file": "test/verify-about-filter-capability.mjs",
           "args": [],
           "tier": "hard",
@@ -2563,6 +2571,14 @@
           "kind": "guard",
           "npm": null,
           "file": "test/verify-curated.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-curated-personal.mjs",
           "args": [],
           "tier": "hard",
           "probe": false

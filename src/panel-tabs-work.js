@@ -284,6 +284,11 @@ function CuratedStep({ step, version, onCopy }) {
     step.optional ? React.createElement(CuratedTag, null, weT('可选')) : null,
     step.alt ? React.createElement(CuratedTag, null, weT('可替代')) : null),
   React.createElement('div', { className: 'we-picker__hint', style: { marginTop: '2px' } }, step.why || ''),
+  step.detail && step.detail !== step.why
+    ? React.createElement('div', { className: 'we-picker__hint', style: { marginTop: '2px' } }, step.detail)
+    : null,
+  step.repo ? React.createElement('div', { style: { marginTop: '2px', fontSize: '10px' } },
+    React.createElement('a', { href: step.repo, target: '_blank', rel: 'noreferrer', style: { color: 'inherit', textDecoration: 'underline' } }, step.repo)) : null,
   step.alt ? React.createElement('div', { className: 'we-picker__hint', style: { marginTop: '2px' } },
     weT('替代：') + step.alt + '（' + CURATED_PREFIX + step.alt + '）') : null,
   React.createElement('div', { style: { display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px' } },
@@ -296,11 +301,12 @@ function CuratedStep({ step, version, onCopy }) {
         if (onCopy) onCopy(command);
         setTimeout(() => setCopied(false), 1500);
       },
-    }, copied ? weT('已复制') : weT('复制')) : null));
+    }, copied ? weT('已复制') : weT('复制安装命令')) : null));
 }
 
 function CuratedCard({ bundle, installed, favorite, recommended, agentsAvailable, onToggleFavorite, onCopy, onExport }) {
   const [open, setOpen] = React.useState(false);
+  const [copyNote, setCopyNote] = React.useState('');
   const steps = Array.isArray(bundle.steps) ? bundle.steps : [];
   const installedCount = steps.filter((s) => installed && installed[s.pkg]).length;
   const callMode = curatedCallMode(bundle, installed, agentsAvailable);
@@ -308,6 +314,11 @@ function CuratedCard({ bundle, installed, favorite, recommended, agentsAvailable
   const risk = CURATED_RISK_LABELS[bundle.risk] || bundle.risk || '';
   const budgets = (Array.isArray(bundle.budget) ? bundle.budget : []).map((b) => CURATED_BUDGET_LABELS[b] || b).join(' / ');
   const high = bundle.risk === 'high';
+  const copyWithNote = (text) => {
+    onCopy(text);
+    setCopyNote(weT('已复制。粘贴到 DSH 对话，让助手帮你安装（会先确认）。'));
+    setTimeout(() => setCopyNote(''), 3500);
+  };
   return React.createElement('div', {
     style: {
       ...CAP_CARD,
@@ -349,16 +360,17 @@ function CuratedCard({ bundle, installed, favorite, recommended, agentsAvailable
       weT('冲突：') + bundle.conflicts.join('；'))
     : null,
   React.createElement('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
-    React.createElement('button', { type: 'button', className: 'we-picker__btn', onClick: () => onCopy(commands.join('\n')) },
+    React.createElement('button', { type: 'button', className: 'we-picker__btn', onClick: () => copyWithNote(commands.join('\n')) },
       weT('复制全部命令')),
     React.createElement('button', { type: 'button', className: 'we-picker__btn', onClick: () => setOpen((v) => !v) },
       open ? weT('收起步骤') : weT('展开步骤')),
     React.createElement('button', { type: 'button', className: 'we-picker__btn', onClick: () => onExport(bundle, 'powershell') }, 'PowerShell'),
     React.createElement('button', { type: 'button', className: 'we-picker__btn', onClick: () => onExport(bundle, 'bash') }, 'bash'),
     React.createElement('button', { type: 'button', className: 'we-picker__btn', onClick: () => onExport(bundle, 'json') }, 'JSON')),
+  copyNote ? React.createElement('div', { className: 'we-picker__hint', style: { color: '#4caf7d' } }, copyNote) : null,
   open ? React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px' } },
     steps.map((step) => React.createElement(CuratedStep, {
-      key: step.pkg, step, version: installed ? installed[step.pkg] : null, onCopy,
+      key: step.pkg, step, version: installed ? installed[step.pkg] : null, onCopy: copyWithNote,
     }))) : null);
 }
 
@@ -386,7 +398,91 @@ function CuratedWizard({ value, onChange, recommended, bundleById }) {
     weT('推荐：') + recommended.map((id) => (bundleById[id] ? bundleById[id].name : id)).join(' / ')) : null);
 }
 
-function CuratedPanel({ data, favorites, onToggleFavorite }) {
+/* ── 个人工具（Docker/Windows，非 DSH 插件；只给仓库 + README 安装说明）── */
+
+const PERSONAL_CATEGORY_LABELS = {
+  all: '全部', ai: 'AI', 'speech-doc': '语音文档', media: '相册影音', docs: '文档效率',
+  notes: '笔记阅读', home: '家庭生活', ops: '自动化运维', backup: '备份文件',
+  privacy: '隐私安全', finance: '财务', creative: '创作设计', dev: '开发',
+};
+
+function PersonalToolCard({ tool }) {
+  const [open, setOpen] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
+  const [note, setNote] = React.useState('');
+  const risk = CURATED_RISK_LABELS[tool.risk] || tool.risk || '';
+  const copyRepo = () => {
+    copyPlainText(tool.repo);
+    setCopied(true);
+    setNote(weT('已复制。粘贴到 DSH 对话，让助手帮你安装（会先确认）。'));
+    setTimeout(() => { setCopied(false); setNote(''); }, 3500);
+  };
+  return React.createElement('div', { style: CAP_CARD },
+    React.createElement('div', { style: { display: 'flex', gap: '8px', alignItems: 'flex-start' } },
+      React.createElement('div', { style: CAP_ICON }, '🧰'),
+      React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+        React.createElement('div', { style: { fontWeight: 600, fontSize: '13px', display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' } },
+          tool.name,
+          React.createElement(CuratedTag, { tone: tool.risk }, risk),
+          React.createElement(CuratedTag, null, weT('非 DSH 插件'))),
+        React.createElement('div', { className: 'we-picker__hint' }, tool.desc),
+        React.createElement('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' } },
+          React.createElement(CuratedTag, null, tool.license),
+          React.createElement(CuratedTag, null, tool.requires))),
+      React.createElement('span', { style: { fontSize: '10px', opacity: 0.6 } }, PERSONAL_CATEGORY_LABELS[tool.category] || tool.category)),
+    React.createElement('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
+      React.createElement('button', { type: 'button', className: 'we-picker__btn', onClick: copyRepo },
+        copied ? weT('已复制') : weT('复制仓库地址')),
+      React.createElement('a', {
+        className: 'we-picker__btn', href: tool.repo, target: '_blank', rel: 'noreferrer',
+        style: { textDecoration: 'none' },
+      }, weT('打开 GitHub')),
+      React.createElement('button', { type: 'button', className: 'we-picker__btn', onClick: () => setOpen((v) => !v) },
+        open ? weT('收起') : weT('详情'))),
+    note ? React.createElement('div', { className: 'we-picker__hint', style: { color: '#4caf7d' } }, note) : null,
+    React.createElement('div', { className: 'we-picker__hint' },
+      weT('需按 README 安装；助手只给步骤，不盲装。')),
+    open ? React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px' } },
+      React.createElement('div', { className: 'we-picker__hint' }, tool.detail),
+      React.createElement('div', { className: 'we-picker__hint' }, weT('前置：') + tool.requires),
+      React.createElement('div', { className: 'we-picker__hint' }, weT('许可：') + tool.license),
+      React.createElement('a', { href: tool.repo, target: '_blank', rel: 'noreferrer', style: { fontSize: '11px', color: 'inherit' } }, tool.repo),
+      (tool.repos || []).length ? React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '2px' } },
+        tool.repos.map((r) => React.createElement('a', {
+          key: r.repo, href: r.repo, target: '_blank', rel: 'noreferrer', style: { fontSize: '11px', color: 'inherit' },
+        }, r.name + ' · ' + r.repo))) : null) : null);
+}
+
+function PersonalPanel({ tools }) {
+  const [category, setCategory] = React.useState('all');
+  const [query, setQuery] = React.useState('');
+  const list = (Array.isArray(tools) ? tools : []).filter((t) => {
+    if (category !== 'all' && t.category !== category) return false;
+    const q = String(query || '').trim().toLowerCase();
+    if (!q) return true;
+    return [t.name, t.desc, t.repo, t.category].join(' ').toLowerCase().includes(q);
+  });
+  return React.createElement('div', { style: { marginTop: '8px' } },
+    React.createElement('div', { style: { display: 'flex', gap: '4px', flexWrap: 'wrap' } },
+      Object.keys(PERSONAL_CATEGORY_LABELS).map((id) => React.createElement('button', {
+        key: id, type: 'button',
+        className: 'we-picker__btn' + (category === id ? ' we-picker__btn--primary' : ''),
+        onClick: () => setCategory(id),
+      }, weT(PERSONAL_CATEGORY_LABELS[id])))),
+    React.createElement('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', marginTop: '6px' } },
+      React.createElement('input', {
+        type: 'text', value: query, placeholder: weT('搜索个人工具'),
+        onChange: (e) => setQuery(e.target.value),
+        style: { flex: '1 1 180px', fontSize: '11px', padding: '4px 6px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.16)', background: 'transparent', color: 'inherit' },
+      }),
+      React.createElement('span', { className: 'we-picker__hint' }, weT('共 {n} 项', { n: list.length }))),
+    list.length ? React.createElement('div', {
+      style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '8px', marginTop: '8px' },
+    }, list.map((tool) => React.createElement(PersonalToolCard, { key: tool.id, tool })))
+      : React.createElement('div', { className: 'we-picker__hint', style: { marginTop: '10px' } }, weT('没有匹配的个人工具')));
+}
+
+function CuratedPanel({ data, favorites, onToggleFavorite, agentsAvailable }) {
   const [family, setFamily] = React.useState('all');
   const [favOnly, setFavOnly] = React.useState(false);
   const [query, setQuery] = React.useState('');
@@ -460,7 +556,7 @@ function CuratedPanel({ data, favorites, onToggleFavorite }) {
 
 function CapabilitiesSection() {
   // items = 市场快照；curated = 20 套组合；page = 精选/工作能力/娱乐（精选默认）
-  const [state, setState] = React.useState({ items: null, curated: null, page: "curated", error: null, agentsAvailable: false });
+  const [state, setState] = React.useState({ items: null, curated: null, page: "curated", curatedTab: "bundles", error: null, agentsAvailable: false });
   const [favorites, setFavorites] = React.useState(() => new Set(readCuratedFavorites()));
 
   React.useEffect(() => {
@@ -506,7 +602,7 @@ function CapabilitiesSection() {
   return React.createElement("div", { style: { padding: "4px 2px" } },
     React.createElement("div", { style: { fontSize: "14px", fontWeight: 600 } }, weT("能力")),
     React.createElement("div", { className: "we-picker__hint", style: { marginTop: "2px" } },
-      weT("这些是可选插件：装好后能力给 DSH 助手用，桌宠本身不受影响。不做一键安装，复制命令自行安装。已装插件可由助手交给 DSH 执行，未装只能看说明。")),
+      weT("这些是可选的插件与个人工具。安装方式：复制包名命令或 GitHub 地址 → 粘贴到 DSH 对话 → 让助手帮你下载安装（会先确认）。已装插件可由助手交给 DSH 执行；未装的只能看说明。非 DSH 插件的个人工具（Docker/Windows 应用）需要按 README 安装，助手只给步骤。")),
     // 三个页面之间切换（页内 tab），精选默认打开
     React.createElement("div", { style: { display: "flex", gap: "6px", marginTop: "10px" } },
       tabs.map((tab) => React.createElement("button", {
@@ -517,7 +613,20 @@ function CapabilitiesSection() {
       }, tab.label))),
     page === "curated"
       ? (state.curated
-        ? React.createElement(CuratedPanel, { data: state.curated, favorites, onToggleFavorite: toggleFavorite })
+        ? [
+          React.createElement("div", { key: "curated-segments", style: { display: "flex", gap: "4px", marginTop: "8px" } },
+            [["bundles", weT("场景组合")], ["personal", weT("个人工具")]].map(([id, label]) => React.createElement("button", {
+              key: id, type: "button",
+              className: "we-picker__btn" + (state.curatedTab === id ? " we-picker__btn--primary" : ""),
+              onClick: () => setState((prev) => ({ ...prev, curatedTab: id })),
+            }, label))),
+          state.curatedTab === "personal"
+            ? React.createElement(PersonalPanel, { key: "personal", tools: state.curated.personalTools })
+            : React.createElement(CuratedPanel, {
+              key: "bundles", data: state.curated, favorites, onToggleFavorite: toggleFavorite,
+              agentsAvailable: state.agentsAvailable === true,
+            }),
+        ]
         : React.createElement("div", { className: "we-picker__hint", style: { marginTop: "10px" } }, weT("精选读取失败，重开设置页再试")))
       : React.createElement(CapGroup, {
         title: page === "work" ? weT("工作能力") : weT("娱乐"),

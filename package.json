@@ -99,6 +99,7 @@
     "lib/media-origin.js",
     "lib/capabilities-catalog.js",
     "lib/capabilities-curated.js",
+    "lib/curated-personal.js",
     "lib/inventory.js",
     "lib/serve.js",
     "lib/faststart.js",
