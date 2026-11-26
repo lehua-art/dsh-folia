@@ -1,5 +1,19 @@
 # 变更记录（Changelog）
 
+### v4.26.0-pre.79（2026-11-26，**能力页「精选」20 套组合**）
+
+> 只做展示/复制命令；不做逐条安装器，不扫描安装路径/注册表。未 npm publish（等用户确认）。
+
+- 新增 `lib/capabilities-curated.js`：20 套组合（6 家族）、风险/预算/冲突/替代/可选、场景向导规则、
+  命令与 PowerShell/bash/JSON 导出纯函数。
+- 新增 `GET /pet-chat/capabilities/curated → { bundles, installed }`；`installed` 复用 profile
+  `node_modules` 的 `package.json` 只读探测（`findPkg`），不联网。
+- `src/panel-tabs-work.js`：精选 tab 默认打开；CuratedWizard / CuratedCard / CuratedStep；
+  6 家族筛选、搜索、只看收藏、复制全部/单条、导出、已装数/版本、推荐高亮。
+- 收藏写 `localStorage['we-curated-favorites']`；与设置页/工作能力/娱乐并存。
+- 新增 `test/verify-curated.mjs`（A–K 13 条）；守卫链/冻结 fixture/package files/CHAIN_FLOOR
+  同步抬高到 verify 153 / all 166；`run-audit` 128 通过 / 52 退役 / 0 失败。
+
 ### v4.26.0-pre.63（2026-11-16，**说完就停（流式 RMS VAD）+ 右键连续对话**）
 
 > 用户口径：① 录音结束要快，说 2 秒不该再等 4 秒；② 右键菜单要有「连续对话」勾选与暂停/继续，

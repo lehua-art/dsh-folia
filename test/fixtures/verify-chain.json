@@ -1205,6 +1205,14 @@
         {
           "kind": "guard",
           "npm": null,
+          "file": "test/verify-curated.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
           "file": "test/verify-voice-thinking-ux-v3.mjs",
           "args": [],
           "tier": "soft",
@@ -2539,6 +2547,14 @@
           "kind": "guard",
           "npm": null,
           "file": "test/verify-capabilities.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-curated.mjs",
           "args": [],
           "tier": "hard",
           "probe": false

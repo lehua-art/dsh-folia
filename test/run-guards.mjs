@@ -489,6 +489,8 @@ const VERIFY_STEPS = [
   // v5 §2 延迟（12 条）：6 段诊断 + P50/P90 协议 / ASR 预热与 10 分钟释放 / VAD 550 / 轮间 150 / 首 token 即合成。
   step('test/verify-latency-v5.mjs', [], 'soft'),
   step('test/verify-capabilities.mjs'),
+  // pre.79 能力页精选项（A–K）：20 套静态数据 + 路由 + 前端精选/向导/快捷键源码判据。
+  step('test/verify-curated.mjs'),
   step('test/verify-voice-thinking-ux-v3.mjs', [], 'soft'),
   // pre.71 身份/UI 收口：package + README 身份文案；删侧栏卡副标题；删官方资源路径整块
   // （宿主路由/inventory 字段保留）；能力详情作者仓库 OG 预览图（非 GitHub 无图、失败不裂）。
