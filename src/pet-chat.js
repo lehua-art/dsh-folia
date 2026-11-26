@@ -683,10 +683,15 @@ function petChatConfirmShow(payload) {
     });
     return el;
   };
+  const hardConfirm = payload.hardConfirm === true;
   row.appendChild(button(weT('允许'), 'allow', true));
   row.appendChild(button(weT('不允许'), 'deny', false));
-  row.appendChild(button(weT('以后都允许'), 'always', false));
-  row.appendChild(button(weT('以后都别问'), 'never', false));
+  if (!hardConfirm) {
+    row.appendChild(button(weT('以后都允许'), 'always', false));
+    row.appendChild(button(weT('以后都别问'), 'never', false));
+  } else if (question) {
+    question.textContent += '（写文件/剪贴板这类操作每次都会确认，避免误操作）';
+  }
   box.appendChild(row);
   document.body.appendChild(box);
   petChatConfirmNode = box;

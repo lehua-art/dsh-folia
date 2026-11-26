@@ -374,6 +374,10 @@ try {
   check('O5 旧版 Edge 短标签（YunJhe/Xiaoxiao）归一为完整 id，试听不再 bad-voice',
     (await import('../lib/tts/voice-center.js')).normalizeVoiceId('YunJhe') === 'edge:zh-TW-YunJheNeural'
     && (await import('../lib/tts/voice-center.js')).normalizeVoiceId('Xiaoxiao') === 'edge:zh-CN-XiaoxiaoNeural');
+  check('O6 写文件/剪贴板是硬确认：不再给「以后都允许」误导',
+    routesSrc.includes('hardConfirm: toolNeedsConfirm(tool)')
+    && chatSrc.includes('if (!hardConfirm)')
+    && chatSrc.includes('写文件/剪贴板这类操作每次都会确认'));
   } finally {
     await new Promise((r) => { volcServer.close(r); });
   }
