@@ -136,7 +136,7 @@ function CapabilitiesSection() {
 
   React.useEffect(() => {
     void (async () => {
-      const resp = await apiJson("/pet-chat/capabilities", { parse: "always" }).catch(() => null);
+      const resp = await apiJson("/pet-chat/capabilities/catalog", { parse: "always" }).catch(() => null);
       const doc = (resp && resp.data) || null;
       if (doc && Array.isArray(doc.items)) setState((prev) => ({ ...prev, items: doc.items, error: null }));
       else setState((prev) => ({ ...prev, error: weT("读取失败，重开设置页再试") }));
