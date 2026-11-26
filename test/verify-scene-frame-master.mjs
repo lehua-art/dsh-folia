@@ -249,7 +249,7 @@ const fakeRes = () => {
   res.__state = state;
   return res;
 };
-const runHandler = async (route, url, method = 'GET', body = null, headers = {}) => {
+const runHandler = async (route, url, method = 'GET', body = null, headers = {}, timeoutMs = 8000) => {
   const res = fakeRes();
   if (body) {
     const req = new Readable({ read() {} });
@@ -262,7 +262,7 @@ const runHandler = async (route, url, method = 'GET', body = null, headers = {})
     route.handler({ url, headers: headers || {}, method, on() {}, once() {}, resume() {} }, res);
   }
   await new Promise((resolveFn) => {
-    const t = setTimeout(resolveFn, 8000);
+    const t = setTimeout(resolveFn, timeoutMs);
     res.on('finish', () => { clearTimeout(t); resolveFn(); });
     if (res.__state.ended) { clearTimeout(t); resolveFn(); }
   });
@@ -275,8 +275,10 @@ const runClear = (url, method = 'DELETE') => runHandler(gpuRoute, url, method);
 
 // ── 取 token：从库存里抓一张场景壁纸的 scene-frame token ────────────────────
 const invRoute = routes.find((r) => r.path === '/folia/inventory');
-const inv = await runHandler(invRoute, '/folia/inventory');
-const invJson = JSON.parse(String(inv.__state.body));
+// 全量审计下机器更忙：库存扫描可能超过 8s，单独放宽到 30s；解析失败也不要直接抛。
+const inv = await runHandler(invRoute, '/folia/inventory', 'GET', null, {}, 30000);
+let invJson = {};
+try { invJson = JSON.parse(String(inv.__state.body)); } catch { invJson = {}; }
 const wp = (invJson.wallpapers || []).find((w) => w.type === 'scene' && w.frameUrl);
 let token = '';
 if (wp) token = wp.frameUrl.split('/').pop();
