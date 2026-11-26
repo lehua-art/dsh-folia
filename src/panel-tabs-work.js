@@ -36,13 +36,52 @@ const CAP_ICON = {
 
 const CAP_META = { fontSize: '11px', opacity: 0.6, marginTop: '2px', wordBreak: 'break-all' };
 
+/* ── pre.71：能力/精选卡的"能不能真调用"标记 ───────────────────────────────
+ * direct  = 已装的技能类包（capability_call 可读正文并按它执行）；
+ * delegate= 已装的插件/组合，交给 delegate_to_dsh 的独立 DSH agent 执行；
+ * manual  = 未装 / 宿主没有 agents 服务 ⇒ 只能读说明，必须如实标注。
+ * 这是 UI 提示，不是权限边界；真正的权限/确认/审计在工具层与路由层。 */
+const CALL_MODE_TONES = { direct: 'ok', delegate: 'medium', manual: undefined };
+
+/** 包名是否是"技能"类（技能正文可被 capability_call 读取）。 */
+function isSkillPackage(pkg) {
+  return /(?:^|\/)dsh-skills?(?:-|$)/i.test(String(pkg || ''));
+}
+
+/** 单个能力条目的调用方式。 */
+function capabilityCallMode(item, agentsAvailable) {
+  if (!item || item.installed !== true) return 'manual';
+  if (isSkillPackage(item.pkg)) return 'direct';
+  return agentsAvailable === true ? 'delegate' : 'manual';
+}
+
+/** 精选组合的调用方式：全装且全是技能 ⇒ direct；有已装插件且宿主有 agents ⇒ delegate。 */
+function curatedCallMode(bundle, installed, agentsAvailable) {
+  const steps = Array.isArray(bundle && bundle.steps) ? bundle.steps : [];
+  if (!steps.length) return 'manual';
+  const installedSteps = steps.filter((s) => installed && installed[s.pkg]);
+  if (!installedSteps.length) return 'manual';
+  if (installedSteps.length === steps.length && installedSteps.every((s) => isSkillPackage(s.pkg))) {
+    return 'direct';
+  }
+  return agentsAvailable === true ? 'delegate' : 'manual';
+}
+
+function CallModeTag({ mode }) {
+  const label = mode === 'direct'
+    ? weT('助手可直接调用')
+    : mode === 'delegate' ? weT('需 DSH 执行') : weT('仅说明');
+  return React.createElement(CuratedTag, { tone: CALL_MODE_TONES[mode] }, label);
+}
+
 /** 作者仓库预览占位块：固定 120px 高，图片失败时仍占位（不塌、不露裂图）。 */
 
 
 
-function CapabilityCard({ item }) {
+function CapabilityCard({ item, agentsAvailable }) {
   const [open, setOpen] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
+  const callMode = capabilityCallMode(item, agentsAvailable);
   const copy = () => {
     const text = String(item.command || '');
     try {
@@ -66,7 +105,9 @@ function CapabilityCard({ item }) {
       ? React.createElement('span', { className: 'we-picker__hint' }, 'v' + item.installedVersion)
       : null),
   React.createElement('div', { className: 'we-picker__hint', style: { marginTop: '2px' } }, item.summary),
-  React.createElement('div', { style: CAP_META }, item.pkg + (item.size ? ' · ' + item.size : ''))),
+  React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', marginTop: '2px' } },
+    React.createElement(CallModeTag, { mode: callMode }),
+    React.createElement('span', { style: CAP_META }, item.pkg + (item.size ? ' · ' + item.size : '')))),
   React.createElement('div', {
     style: { flex: '0 0 auto', textAlign: 'right', fontSize: '11px', opacity: 0.85, whiteSpace: 'nowrap' },
   },
@@ -110,7 +151,7 @@ function CapabilityCard({ item }) {
   return React.createElement('div', { style: CAP_CARD }, body);
 }
 
-function CapGroup({ title, hint, items }) {
+function CapGroup({ title, hint, items, agentsAvailable }) {
   // 220 条一次性渲染会卡（每张卡都带状态），先展示 60 条，按需展开。
   const PAGE = 60;
   const [visibleCount, setVisibleCount] = React.useState(PAGE);
@@ -125,7 +166,7 @@ function CapGroup({ title, hint, items }) {
         gap: '8px',
         marginTop: '8px',
       },
-    }, items.slice(0, visibleCount).map((it) => React.createElement(CapabilityCard, { key: it.pkg || it.name, item: it })),
+    }, items.slice(0, visibleCount).map((it) => React.createElement(CapabilityCard, { key: it.pkg || it.name, item: it, agentsAvailable })),
       items.length > visibleCount
         ? React.createElement("button", { key: "more", type: "button", className: "we-picker__btn", style: { marginTop: "8px" }, onClick: () => setVisibleCount((n) => n + PAGE) },
             weT("显示更多（还有 {n} 个）", { n: items.length - visibleCount }))
@@ -258,10 +299,11 @@ function CuratedStep({ step, version, onCopy }) {
     }, copied ? weT('已复制') : weT('复制')) : null));
 }
 
-function CuratedCard({ bundle, installed, favorite, recommended, onToggleFavorite, onCopy, onExport }) {
+function CuratedCard({ bundle, installed, favorite, recommended, agentsAvailable, onToggleFavorite, onCopy, onExport }) {
   const [open, setOpen] = React.useState(false);
   const steps = Array.isArray(bundle.steps) ? bundle.steps : [];
   const installedCount = steps.filter((s) => installed && installed[s.pkg]).length;
+  const callMode = curatedCallMode(bundle, installed, agentsAvailable);
   const commands = curatedCommands(bundle);
   const risk = CURATED_RISK_LABELS[bundle.risk] || bundle.risk || '';
   const budgets = (Array.isArray(bundle.budget) ? bundle.budget : []).map((b) => CURATED_BUDGET_LABELS[b] || b).join(' / ');
@@ -283,6 +325,7 @@ function CuratedCard({ bundle, installed, favorite, recommended, onToggleFavorit
       React.createElement('div', { style: { display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '4px' } },
         React.createElement(CuratedTag, { tone: bundle.risk }, risk),
         React.createElement(CuratedTag, null, budgets),
+        React.createElement(CallModeTag, { mode: callMode }),
         high ? React.createElement(CuratedTag, { tone: 'high' }, weT('第三方 MCP，先 trust-check')) : null)),
     React.createElement('button', {
       type: 'button', className: 'we-picker__btn', title: favorite ? weT('取消收藏') : weT('收藏'),
@@ -403,6 +446,7 @@ function CuratedPanel({ data, favorites, onToggleFavorite }) {
       }, list.map((bundle) => React.createElement(CuratedCard, {
         key: bundle.id, bundle, installed, favorite: favorites.has(bundle.id),
         recommended: recommended.includes(bundle.id),
+        agentsAvailable: data && data.agentsAvailable === true,
         onToggleFavorite, onCopy: copyPlainText,
         onExport: (b, format) => downloadTextFile(
           'folia-curated-' + b.id + '.' + (format === 'json' ? 'json' : format === 'bash' ? 'sh' : 'ps1'),
@@ -416,7 +460,7 @@ function CuratedPanel({ data, favorites, onToggleFavorite }) {
 
 function CapabilitiesSection() {
   // items = 市场快照；curated = 20 套组合；page = 精选/工作能力/娱乐（精选默认）
-  const [state, setState] = React.useState({ items: null, curated: null, page: "curated", error: null });
+  const [state, setState] = React.useState({ items: null, curated: null, page: "curated", error: null, agentsAvailable: false });
   const [favorites, setFavorites] = React.useState(() => new Set(readCuratedFavorites()));
 
   React.useEffect(() => {
@@ -431,6 +475,7 @@ function CapabilitiesSection() {
         ...prev,
         items: catDoc && Array.isArray(catDoc.items) ? catDoc.items : prev.items,
         curated: curDoc && Array.isArray(curDoc.bundles) ? curDoc : prev.curated,
+        agentsAvailable: Boolean((catDoc && catDoc.agentsAvailable) || (curDoc && curDoc.agentsAvailable) || prev.agentsAvailable),
         error: !catDoc && !curDoc ? weT("读取失败，重开设置页再试") : null,
       }));
     })();
@@ -461,7 +506,7 @@ function CapabilitiesSection() {
   return React.createElement("div", { style: { padding: "4px 2px" } },
     React.createElement("div", { style: { fontSize: "14px", fontWeight: 600 } }, weT("能力")),
     React.createElement("div", { className: "we-picker__hint", style: { marginTop: "2px" } },
-      weT("这些是可选插件：装好后能力给 DSH 助手用，桌宠本身不受影响。不做一键安装，复制命令自行安装。")),
+      weT("这些是可选插件：装好后能力给 DSH 助手用，桌宠本身不受影响。不做一键安装，复制命令自行安装。已装插件可由助手交给 DSH 执行，未装只能看说明。")),
     // 三个页面之间切换（页内 tab），精选默认打开
     React.createElement("div", { style: { display: "flex", gap: "6px", marginTop: "10px" } },
       tabs.map((tab) => React.createElement("button", {
@@ -478,7 +523,8 @@ function CapabilitiesSection() {
         title: page === "work" ? weT("工作能力") : weT("娱乐"),
         hint: page === "work" ? weT("提高日常办事效率") : weT("让界面和对话更有趣"),
         items: page === "work" ? workItems : funItems,
+        agentsAvailable: state.agentsAvailable === true,
       }));
 }
 
-export { CapabilityCard, CapabilitiesSection, CapGroup };
+export { CapabilityCard, CapabilitiesSection, CapGroup, capabilityCallMode, curatedCallMode };

@@ -425,16 +425,25 @@ section('G. 去重表有硬上界（按插入序淘汰最旧 ⇒ 内存有界）
 pair('G1 灌入 ' + SEEN_MAX + ' 个新键把首键挤出后，首键又能落行（证明确实有界且按插入序淘汰）',
   'dedup-unbounded', (makeKit, d) => {
     const kit = makeKit(cfgIn(d));
-    const drive = (pathKey) => { const r = fakeRes({}); kit.traceRequests(r, '/r', pathKey); r.emit('finish'); };
-    drive('/first');
-    for (let i = 0; i < SEEN_MAX; i++) drive('/k' + i);
-    const beforeRetry = readLines(diagFile(d)).length;
-    drive('/first');                             // 首键已被淘汰 ⇒ 应重新落行
-    const afterRetry = readLines(diagFile(d)).length;
-    return {
-      ok: beforeRetry === SEEN_MAX + 1 && afterRetry === SEEN_MAX + 2,
-      detail: '挤满后=' + beforeRetry + ' 重试后=' + afterRetry,
-    };
+    // 冻结时钟：灌 2000 条 appendFileSync 在慢盘/慢沙箱里可能超过 10s TTL，
+    // 那样"首键被淘汰"与"TTL 到期"两种原因会混在一起，变异体负对照会假红。
+    const realNow = Date.now;
+    let now = 1_700_000_000_000;
+    Date.now = () => now;
+    try {
+      const drive = (pathKey) => { const r = fakeRes({}); kit.traceRequests(r, '/r', pathKey); r.emit('finish'); };
+      drive('/first');
+      for (let i = 0; i < SEEN_MAX; i++) drive('/k' + i);
+      const beforeRetry = readLines(diagFile(d)).length;
+      drive('/first');                             // 首键已被淘汰 ⇒ 应重新落行
+      const afterRetry = readLines(diagFile(d)).length;
+      return {
+        ok: beforeRetry === SEEN_MAX + 1 && afterRetry === SEEN_MAX + 2,
+        detail: '挤满后=' + beforeRetry + ' 重试后=' + afterRetry,
+      };
+    } finally {
+      Date.now = realNow;
+    }
   });
 
 // ---------------------------------------------------------------- H. 导出面 + 地板

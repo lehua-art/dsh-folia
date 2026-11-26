@@ -334,6 +334,8 @@ body[data-we-glass-floaters] .we-repo-panel__body {
   .we-qp__group { flex: 1; min-width: 0; }
   .we-qp__search { width: 100%; box-sizing: border-box; }
   .we-qp__list { display: flex; flex-direction: column; gap: 2px; }
+  /* 有筛选但 0 张：说清当前条件 + 清空筛选入口（不再只显示一句笼统空态）。 */
+  .we-qp__empty { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 8px 2px; }
   /* 视图切换：**确定性两行**（pre.51：三个下拉）。官方右栏最窄 300px（内容 276）：
      三个筛选下拉 + 视图按钮同排必然挤碎（下拉最短也要 ~70px），而依赖 flex-wrap
      的假想折行会在中间宽度碎出"只有视图按钮折下去"的行。故搜索与视图按钮包进

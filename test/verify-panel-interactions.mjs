@@ -122,9 +122,10 @@ function check(name, cond, detail) { results.push({ name, ok: Boolean(cond), det
       && /function qpRenderLibrarySection\(sel, view, filters, listRef/.test(quick)
       && quick.includes('onCacheFilterChange, onSubtagFilterChange'));
   check('pre.51 过滤流水线：未缓存 = localReady !== true；子标签按 w.subtag 精确匹配',
-    /const ready = Boolean\(w && w\.localReady === true\)/.test(quick)
+    /function qpFilterBase\(/.test(quick)
+      && /const ready = Boolean\(w && w\.localReady === true\)/.test(quick)
       && /cacheFilter === "uncached" && ready/.test(quick)
-      && /String\(\(w && w\.subtag\) \|\| ""\)\.trim\(\) !== subtagFilter/.test(quick));
+      && /String\(\(w && w\.subtag\) \|\| ""\)\.trim\(\) === (?:rawSubtagFilter|effectiveSubtagFilter)/.test(quick));
   check('pre.51 子标签选项来自站点 facets（站点新增后重开即同步）',
     /tagOptionsFromFacets\(sel\.inventory && sel\.inventory\.facets\)/.test(quick)
       && /group === "subtags"/.test(quick));

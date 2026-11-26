@@ -491,6 +491,9 @@ const VERIFY_STEPS = [
   step('test/verify-capabilities.mjs'),
   // pre.79 能力页精选项（A–K）：20 套静态数据 + 路由 + 前端精选/向导/快捷键源码判据。
   step('test/verify-curated.mjs'),
+  // pre.71 三项 P0/P1：关于页 inventory 未就绪不空白 / 子标签计数与回退 / delegate_to_dsh
+  // 真 DSH agent 调用（限能力、60s、审计、默认询问、特殊人设禁用、服务缺失降级）+ 调用方式标记。
+  step('test/verify-about-filter-capability.mjs'),
   step('test/verify-voice-thinking-ux-v3.mjs', [], 'soft'),
   // pre.71 身份/UI 收口：package + README 身份文案；删侧栏卡副标题；删官方资源路径整块
   // （宿主路由/inventory 字段保留）；能力详情作者仓库 OG 预览图（非 GitHub 无图、失败不裂）。

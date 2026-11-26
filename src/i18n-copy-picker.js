@@ -99,6 +99,13 @@ const WE_I18N_EN_PICKER = {
     "Filter by site subtag (new site subtags appear after reopening the panel)",
   "「{name}」下没有可播放的壁纸": "No playable wallpapers under \"{name}\"",
   "子标签「{name}」下没有可播放的壁纸": "No playable wallpapers with subtag \"{name}\"",
+  // pre.71：子标签计数按其它筛选重算 / 0 张置灰 / 选中变 0 自动回退 / 空态清空筛选。
+  "子标签：{name}": "Subtag: {name}",
+  "搜索「{query}」": "Search \"{query}\"",
+  "当前条件：{summary}，共 0 张": "Current filters: {summary} · 0 wallpapers",
+  "清空筛选": "Clear filters",
+  "当前缓存里没有「{name}」的壁纸，已切回全部": "No cached \"{name}\" wallpapers; switched back to All",
+  "当前条件下没有「{name}」的壁纸，已切回全部": "No \"{name}\" wallpapers under the current filters; switched back to All",
   "打开设置对话框的「壁纸引擎」分区（外观 / 播放 / 系统与全部配置）": "Open the Wallpaper Engine section of the settings dialog (Appearance / Playback / System and all configuration)",
   "壁纸引擎设置 ›": "Wallpaper Engine settings ›",
   "壁纸面板分区": "Wallpaper panel sections",

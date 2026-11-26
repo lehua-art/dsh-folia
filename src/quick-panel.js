@@ -841,6 +841,43 @@
     );
   }
 
+  /**
+   * 当前筛选链里"子标签之外"的条件：缓存状态 / 来源 / 搜索。
+   * 抽成纯函数是为了让计数口径能被 test 直接执行（不是抄一遍断言）。
+   */
+  function qpFilterBase(playable, cacheFilter, sourceFilter, q) {
+    return (Array.isArray(playable) ? playable : []).filter((w) => {
+      const ready = Boolean(w && w.localReady === true);
+      if (cacheFilter === "cached" && !ready) return false;
+      if (cacheFilter === "uncached" && ready) return false;
+      if (sourceFilter !== "all" && ((w.source === "folia") ? "site" : "local") !== sourceFilter) return false;
+      if (q && String(w.title || "").toLowerCase().indexOf(q) === -1) return false;
+      return true;
+    });
+  }
+
+  /** facets 选项 + **按当前其它条件重算**的计数（0 张由渲染器置灰）。 */
+  function qpSubtagOptionsWithCounts(facetOptions, base) {
+    const counts = new Map();
+    for (const w of base || []) {
+      const value = String((w && w.subtag) || "").trim();
+      if (!value) continue;
+      counts.set(value, (counts.get(value) || 0) + 1);
+    }
+    return (Array.isArray(facetOptions) ? facetOptions : []).map((it) => Object.assign({}, it, {
+      count: counts.get(it.value) || 0,
+    }));
+  }
+
+  /** 当前子标签在"其它条件已过滤"的底数里还剩几张；0 张 ⇒ 调用方自动回退「全部」。 */
+  function qpSubtagSelection(rawSubtagFilter, base) {
+    const count = rawSubtagFilter
+      ? (base || []).filter((w) => String((w && w.subtag) || "").trim() === rawSubtagFilter).length
+      : (base || []).length;
+    const lost = Boolean(rawSubtagFilter && count === 0);
+    return { count, lost, effective: lost ? "" : rawSubtagFilter };
+  }
+
   // 筛选条（pre.51）：只有 [缓存][子标签][来源] 三个下拉 + 搜索 + 视图切换。
   // 分级 / 类型两档已按用户口径删除（「侧栏快捷键壁纸筛选条改成三个下拉」）。
   // 取值与处理器全部经 `filters` 入参进来 —— 本函数是纯渲染器，不读外层 state，
@@ -849,6 +886,8 @@
     const {
       cacheFilter, subtagFilter, subtagOptions, sourceFilter,
       onCacheFilterChange, onSubtagFilterChange,
+      // 过滤器交互时清掉"自动回退"提示；提示本身由 QuickPanel 生成本地状态。
+      onFilterInteract, filterNote,
       // 本地上传入口的 UI 态与动作也随 `filters` 这一份渲染 ctx 进来（不新开第 5 个形参：
       // 该签名被 verify-panel-interactions 的既有判据按字面锚定）。
       upload,
@@ -862,7 +901,10 @@
           value: sel.qpSearch || "",
           placeholder: weT("搜索壁纸标题…"),
           "aria-label": weT("搜索壁纸标题"),
-          onInput: (e) => { setTransient("qpSearch", e.target.value); emit(); },
+          onInput: (e) => {
+            if (onFilterInteract) onFilterInteract();
+            setTransient("qpSearch", e.target.value); emit();
+          },
         }),
         // 本地上传入口：搜索框右边（用户点名要的位置）。窄侧栏里按钮只显示图标，
         // 完整文案在 title / aria-label 里 —— 见 styles-quick.js 的 420px 断点。
@@ -901,11 +943,16 @@
       ),
       // 上传状态行：搜索行下方（进度 / 错误 / 重复提示 / 拖拽提示）。
       qpRenderUploadStatus(sel, upload && upload.progress, Boolean(upload && upload.dragActive)),
+      // 子标签自动回退提示（例如"当前缓存里没有「原神」的壁纸，已切回全部"）。
+      filterNote ? React.createElement("div", { className: "we-picker__note" }, filterNote) : null,
       // ① 缓存状态：全部 / 已缓存 / 未缓存（pre.51 新）。
       React.createElement("select", {
         className: "we-picker__select we-qp__filter we-qp__cache",
         value: cacheFilter || "all",
-        onChange: onCacheFilterChange,
+        onChange: (e) => {
+          if (onFilterInteract) onFilterInteract();
+          onCacheFilterChange(e);
+        },
         "aria-label": weT("缓存状态"),
         title: weT("按缓存状态筛选：已缓存 = 本机已有文件，未缓存 = 需要下载"),
       },
@@ -915,19 +962,29 @@
       React.createElement("select", {
         className: "we-picker__select we-qp__filter we-qp__subtag",
         value: subtagFilter || "",
-        onChange: onSubtagFilterChange,
+        onChange: (e) => {
+          if (onFilterInteract) onFilterInteract();
+          onSubtagFilterChange(e);
+        },
         "aria-label": weT("子标签"),
         title: weT("按站点子标签筛选（站点新增子标签后，重开面板即同步）"),
       },
       React.createElement("option", { value: "" }, weT("全部")),
       ...(Array.isArray(subtagOptions) ? subtagOptions : []).map((it) =>
-        React.createElement("option", { key: it.value, value: it.value }, it.label + " (" + it.count + ")")),
+        React.createElement("option", {
+          key: it.value, value: it.value,
+          // 当前缓存/来源/搜索条件下 0 张 ⇒ 置灰，避免"点了只剩空态"的假故障。
+          disabled: Number(it.count) === 0,
+        }, it.label + " (" + Number(it.count || 0) + ")")),
       ),
       // ③ 来源筛选：本机 Wallpaper Engine 库 vs 我们站点（与设置页同一个键）。
       React.createElement("select", {
         className: "we-picker__select we-qp__filter we-qp__source",
         value: sourceFilter || "all",
-        onChange: (e) => { setSetting("sourceFilter", e.target.value); emit(); },
+        onChange: (e) => {
+          if (onFilterInteract) onFilterInteract();
+          setSetting("sourceFilter", e.target.value); emit();
+        },
         "aria-label": weT("来源筛选"),
         title: weT("按来源筛选：本机 Wallpaper Engine 库，还是从我们站点拉下来的壁纸"),
       },
@@ -936,18 +993,17 @@
     );
   }
 
-  function qpRenderList(listRef, rows, view, cardsView, vTopH, vBtmH, q, cacheFilter, subtagFilter, subtagLabel, sel) {
-    // 空态文案按"当前生效的那一档"解释（分级/类型两档已删，pre.51 只剩缓存与子标签）。
-    let emptyText = weT("没有可播放的壁纸");
-    if (q) {
-      emptyText = weT("没有匹配「{query}」的壁纸", { query: sel.qpSearch });
-    } else if (cacheFilter !== "all") {
-      emptyText = weT("「{name}」下没有可播放的壁纸", {
-        name: cacheFilter === "cached" ? weT("已缓存") : weT("未缓存"),
-      });
-    } else if (subtagFilter) {
-      emptyText = weT("子标签「{name}」下没有可播放的壁纸", { name: subtagLabel || subtagFilter });
-    }
+  function qpRenderList(listRef, rows, view, cardsView, vTopH, vBtmH, sel, empty) {
+    // 有筛选条件但没有结果：说清"当前条件共 0 张"并给清空入口；没有筛选条件时保持原空态。
+    const emptyNode = empty && empty.hasActiveFilters
+      ? React.createElement("div", { className: "we-qp__empty" },
+          React.createElement("span", { className: "we-picker__hint" },
+            weT("当前条件：{summary}，共 0 张", { summary: empty.summary || weT("全部") })),
+          React.createElement("button", {
+            type: "button", className: "we-picker__btn",
+            onClick: empty.onClearFilters,
+          }, weT("清空筛选")))
+      : React.createElement("span", { className: "we-picker__hint" }, weT("没有可播放的壁纸"));
     return React.createElement("div", {
       ref: listRef,
       className: "we-qp__list" + (view === "cards" ? " we-qp__list--cards" : ""),
@@ -962,7 +1018,7 @@
             rows.map((w) => qpRenderCardGuarded(w, sel, cardsView)),
             vBtmH > 0 ? qpRenderSpacer("we-qp-vbtm", vBtmH) : null,
           )
-        : React.createElement("span", { className: "we-picker__hint" }, emptyText),
+        : emptyNode,
     );
   }
 
@@ -1006,8 +1062,7 @@
             )
           : React.createElement(React.Fragment, null,
       qpRenderViewBar(sel, view, filters, switchView),
-      qpRenderList(listRef, rows, view, cardsView, vTopH, vBtmH, q,
-        filters.cacheFilter, filters.subtagFilter, filters.subtagLabel, sel),
+      qpRenderList(listRef, rows, view, cardsView, vTopH, vBtmH, sel, filters.empty),
     ),
   );
   }
@@ -1110,6 +1165,8 @@
     // 用一条队列按序喂 useState，插在前面会把 fontOpen / glassDetailOpen 那几档的值顶错位。
     const [uploadState, setUploadState] = React.useState({ busy: false, done: 0, total: 0 });
     const [uploadDragActive, setUploadDragActive] = React.useState(false);
+    // 子标签在当前其它条件下变 0 时，自动回退并留一句提示；下一次筛选项交互时清掉。
+    const [filterNote, setFilterNote] = React.useState("");
     // 防连点：state 更新是异步的，同一帧里连按两次会各起一条串行链。
     const uploadBusyRef = React.useRef(false);
     const runQpUpload = async (filesIn) => {
@@ -1203,27 +1260,56 @@
     // 缓存档：持久化键与设置页壁纸库共用；坏值回落「全部」。
     const cacheRaw = readPickerCacheFilter();
     const cacheFilter = (cacheRaw === "cached" || cacheRaw === "uncached") ? cacheRaw : "all";
-    // 子标签：facets 现算（站点新增子标签后，重开面板即同步）；空串 = 全部。
-    const subtagFilter = String(readPickerSubtagFilter() || "").trim();
-    const subtagOptions = (() => {
+    // 子标签：选项来自 facets（站点新增后重开即同步），但**计数按当前其它筛选条件重算**：
+    // 缓存状态 / 来源 / 搜索先过一遍，再看每个子标签还剩几张。否则会显示"全部"的计数，
+    // 用户按它选完却只剩空态（pre.71 的 P0）。
+    const rawSubtagFilter = String(readPickerSubtagFilter() || "").trim();
+    const facetSubtagOptions = (() => {
       const groups = tagOptionsFromFacets(sel.inventory && sel.inventory.facets);
       const g = groups.find((x) => x && x.group === "subtags");
       return g && Array.isArray(g.items) ? g.items : [];
     })();
-    const subtagLabel = (subtagOptions.find((it) => it.value === subtagFilter) || {}).label || subtagFilter;
-    const filtered = playable.filter((w) => {
-      // 「已缓存」只认清单条目的 localReady（与卡片「已缓存」角标同一份判据）；
-      // 「未缓存」= localReady !== true 的全部，不叠加其它档。
-      const ready = Boolean(w && w.localReady === true);
-      if (cacheFilter === "cached" && !ready) return false;
-      if (cacheFilter === "uncached" && ready) return false;
-      // 子标签精确匹配站点 facets 的 value（与 picker-model 的 matchesSubtagFilter 同口径）。
-      if (subtagFilter && String((w && w.subtag) || "").trim() !== subtagFilter) return false;
-      // 站点条目带 `source: "folia"`；其余（本机工坊 + 上传）一律算本机。
-      if (sourceFilter !== "all" && ((w.source === "folia") ? "site" : "local") !== sourceFilter) return false;
-      if (q && String(w.title || "").toLowerCase().indexOf(q) === -1) return false;
-      return true;
-    });
+    const subtagBase = qpFilterBase(playable, cacheFilter, sourceFilter, q);
+    const subtagOptions = qpSubtagOptionsWithCounts(facetSubtagOptions, subtagBase);
+    const subtagLabel = (subtagOptions.find((it) => it.value === rawSubtagFilter) || {}).label || rawSubtagFilter;
+    const subtagSelection = qpSubtagSelection(rawSubtagFilter, subtagBase);
+    // 当前选中的子标签在其它条件下变 0 ⇒ 自动回退「全部」，并留一句可读提示。
+    const subtagLost = subtagSelection.lost;
+    const effectiveSubtagFilter = subtagSelection.effective;
+    React.useEffect(() => {
+      if (!subtagLost) return;
+      writePickerSubtagFilter("");
+      setFilterNote(weT(
+        cacheFilter === "cached"
+          ? "当前缓存里没有「{name}」的壁纸，已切回全部"
+          : "当前条件下没有「{name}」的壁纸，已切回全部",
+        { name: subtagLabel || rawSubtagFilter },
+      ));
+    }, [subtagLost, rawSubtagFilter, subtagLabel, cacheFilter]);
+    const filtered = subtagBase.filter((w) => (
+      !effectiveSubtagFilter || String((w && w.subtag) || "").trim() === effectiveSubtagFilter
+    ));
+    // 空态用：当前所有生效条件 + 清空筛选入口。
+    const conditionParts = [];
+    if (cacheFilter !== "all") conditionParts.push(weT(cacheFilter === "cached" ? "已缓存" : "未缓存"));
+    if (sourceFilter !== "all") conditionParts.push(weT(sourceFilter === "local" ? "本机" : "站点"));
+    if (effectiveSubtagFilter) {
+      conditionParts.push(weT("子标签：{name}", { name: subtagLabel || effectiveSubtagFilter }));
+    }
+    if (q) conditionParts.push(weT("搜索「{query}」", { query: sel.qpSearch }));
+    const clearFilters = () => {
+      writePickerCacheFilter("all");
+      writePickerSubtagFilter("");
+      setTransient("qpSearch", "");
+      setSetting("sourceFilter", "all");
+      setFilterNote("");
+      emit();
+    };
+    const filterEmpty = {
+      hasActiveFilters: conditionParts.length > 0,
+      summary: conditionParts.join(" + "),
+      onClearFilters: clearFilters,
+    };
     // 虚拟滚动：列表一行一张、卡片一行 cols 张（列数由测量 effect 实测回填）。搜索 /
     // 筛选把列表收窄后旧窗口可能越界 —— 渲染期先钳一道（测量 effect 随 count 变化跟上）；
     // 换视图瞬间旧窗口是另一档的几何（cards 标记对不上）⇒ 按未测量处理：先画顶部
@@ -1318,10 +1404,14 @@
                 // 库还没回来 / 扫描失败：**只有这一页**给一句话 —— 外观 / 播放两页不依赖库，
                 // 照常可用（不能整块替换掉，那样连外观都进不去）。
                 qpRenderLibrarySection(sel, view, {
-                  cacheFilter, subtagFilter, subtagOptions, subtagLabel, sourceFilter,
+                  cacheFilter, subtagFilter: effectiveSubtagFilter, subtagOptions, subtagLabel, sourceFilter,
                   // 两个 handler 直接从同一 bundle 作用域取（client.js 里的
                   // onCacheFilterChange / onSubtagFilterChange：写持久化键 + emit）。
                   onCacheFilterChange, onSubtagFilterChange,
+                  // 用户一改筛选项就清掉上一句自动回退提示。
+                  onFilterInteract: () => { if (filterNote) setFilterNote(""); },
+                  filterNote,
+                  empty: filterEmpty,
                   // 本地上传的进度 / 拖拽态 / 动作：渲染器只读这份 ctx。
                   upload: qpUpload,
                 }, listRef, rows, cardsView, vTopH, vBtmH, q, switchView),

@@ -323,8 +323,14 @@ function weComponentVisibleOf(components, name) {
   //（"要什么"写在签名处），所以这里显式解构出那一个回调。
   // 四段的**顺序**是用户的明确口径（致谢压尾），判据按首次出现下标比大小钉住。
 function renderAboutTab(ctx) {
-  // 组件可见性门：关掉 about-notice 组件行时，这一页签整块不渲染。
-  if (!weComponentVisibleOf(ctx.sel && ctx.sel.inventory && ctx.sel.inventory.components, 'about-notice')) return null;
+  // 组件可见性门：**只有明确读到 components.about-notice 且它被关**时才隐藏。
+  // inventory 未就绪（components 缺失 / 空对象 / 没有该键）时按可用渲染 —— 关于页是纯静态
+  // 文案，永远画得出来；拿"未知"当"关闭"会让启动早期整页空白（pre.71 的 P0）。
+  const components = ctx.sel && ctx.sel.inventory && ctx.sel.inventory.components;
+  const aboutExplicitlyOff = components && typeof components === "object"
+    && Object.prototype.hasOwnProperty.call(components, "about-notice")
+    && !weComponentVisibleOf(components, "about-notice");
+  if (aboutExplicitlyOff) return null;
   // 纯静态文案：不发请求、不写设置、不读面板状态（verify-about 的只读契约）。
   const section = (title, body) => React.createElement("div", { className: "we-picker__section", key: title },
     React.createElement("div", { className: "we-picker__section-head" },
@@ -365,7 +371,7 @@ function renderAboutTab(ctx) {
         "写文案 / 方案 / 代码 / 诗 / 故事 / 笑话；做计划 / 讲概念 / 角色扮演 / 清唱",
         "换壁纸 / 调音量 / 媒体控制 / 提醒 / 通知 / 开应用或网页 / 读写工作区文档 / 剪贴板",
         "多步任务：先计划再逐步执行，高危步骤二次确认",
-        "已安装插件与技能：读取技能说明并由模型执行；逐能力开关、权限组默认询问、调用写审计",
+        "已安装插件与技能：技能读取说明执行；已装插件交给 DSH 独立 agent 真执行（默认询问、可关权限、写审计）",
         "权限：标准 / 宽松 / 自定义三档；allow / ask / deny；写文件、剪贴板、删除等高危动作永远二次确认",
       ]),
     )),
