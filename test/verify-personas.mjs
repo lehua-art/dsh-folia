@@ -424,8 +424,17 @@ const settings = { petChat: { enabled: true, provider: 'openai', baseUrl: '', mo
   model.state.reply = ['第一句。第二句。第三句。第四句。第五句。'];
   const voice = await chat(host, '讲一句', { inputMode: 'voice' });
   const voiceSentences = (voice.text.match(/[。！？!?]/g) || []).length;
-  check('G1 语音模式最多 3 句',
-    voiceSentences <= 3 && voice.text.length > 0, `${voice.text}（${voiceSentences} 句）`);
+  // v1.2：语音默认上限从 3 句改为 8 句（3 句是“讲故事被截断”的根因）。
+  check('G1 语音模式默认 8 句（5 句完整保留）',
+    voiceSentences === 5 && voice.text.length > 0, `${voice.text}（${voiceSentences} 句）`);
+
+  settings.petChat.voiceLength = 3;
+  await wait(1100);
+  const shortVoice = await chat(host, '再讲一句', { inputMode: 'voice' });
+  const shortSentences = (shortVoice.text.match(/[。！？!?]/g) || []).length;
+  settings.petChat.voiceLength = 8;
+  check('G1b 语音长度可配 3 句（设置 voiceLength=3）',
+    shortSentences <= 3 && shortVoice.text.length > 0, `${shortVoice.text}（${shortSentences} 句）`);
 
   await wait(1100);
   model.state.reply = ['长'.repeat(400)];

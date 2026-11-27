@@ -13,52 +13,61 @@
 > `lib/…`、`src/…`、`test/…` 这类**代码路径**先被遮掉 ⇒ 也不会被 `lib/media/mp4-probe.js`
 > 这类源文件路径误算（提及 ≠ 有断言；零提及 = 拆前无安全网）。
 
-共 **40** 条路由。
+共 **49** 条路由。
 
 | # | 路径 | 来源 | 形态 | 依赖（闭包状态 / `c` 字段） | 守卫提及 |
 |---|---|---|---|---|---|
-| 1 | `/media-info` | lib/routes/media-derived.js:60 | 箭头 | disposers base mediaMap log getMediaInfo faststartVariant …(+1) | 10 |
-| 2 | `/transcode-progress` | lib/routes/media-derived.js:103 | 箭头 | disposers base mediaMap transcodeJobs | 2 |
-| 3 | `/transcoded` | lib/routes/media-derived.js:156 | 箭头 | disposers base mediaMap serveFile transcodeToFps registerTranscodeWaiter | 1 |
-| 4 | `/video-preview` | lib/routes/media-derived.js:215 | 箭头 | disposers base mediaMap serveFile generateVideoPreview | 2 |
-| 5 | `/media` | lib/routes/media-bytes.js:39 | 箭头 | disposers base serveFile serveLayout mediaMap log …(+2) | 30 |
-| 6 | `/preview` | lib/routes/media-bytes.js:39 | 箭头 | disposers base serveFile serveLayout mediaMap log …(+2) | 12 |
-| 7 | `/site-media-stats` | lib/routes/site-media.js:354 | 箭头 | disposers | 1 |
-| 8 | `/site-media` | lib/routes/site-media.js:391 | async 箭头 | disposers serveFile | 1 |
-| 9 | `/downloads/add` | lib/routes/downloads.js:171 | async 箭头 | disposers base | 2 |
-| 10 | `/downloads/list` | lib/routes/downloads.js:240 | 箭头 | disposers | 4 |
-| 11 | `/downloads/cancel` | lib/routes/downloads.js:253 | async 箭头 | disposers | **0** |
-| 12 | `/local-media` | lib/routes/downloads.js:266 | 箭头 | disposers serveFile | **0** |
-| 13 | `/kernel-info` | lib/routes/kernel.js:103 | 箭头 | disposers | **0** |
-| 14 | `/kernel/enable-skin-center` | lib/routes/kernel.js:116 | 箭头 | disposers log | **0** |
-| 15 | `/scene-frame` | lib/routes/scene-frame.js:82 | 箭头 | disposers base mediaMap trackStream customFramePath customIdFromAbs …(+3) | 13 |
-| 16 | `/scene-frame-cache` | lib/routes/scene-frame.js:168 | 箭头 | disposers base mediaMap GPU_FRAME_AREA_TOL GPU_FRAME_MAX_BYTES GPU_WRITE_INFLIGHT …(+7) | 5 |
-| 17 | `/custom-frame` | lib/routes/scene-frame.js:272 | 箭头 | disposers base serveFile CUSTOM_FRAME_EXT CUSTOM_FRAME_MAX_BYTES armBodyIdleTimeout …(+3) | 3 |
-| 18 | `/scene-live` | lib/routes/scene-serve.js:86 | 箭头 | disposers base WEBWALLGL_DIR WEBWALLGL_PKG_DIR appendDiagLine traceRequests …(+3) | 9 |
-| 19 | `/scene-files` | lib/routes/scene-serve.js:153 | 箭头 | disposers base handleSceneFiles | 5 |
-| 20 | `/media-origin` | lib/routes/scene-serve.js:161 | 箭头 | disposers base mediaOriginInfo | 1 |
-| 21 | `/scene-payload-progress` | lib/routes/scene-serve.js:181 | 箭头 | disposers base payloadProgress | 1 |
-| 22 | `/props` | lib/routes/props.js:45 | 箭头 | disposers base mediaMap userPropsFor | 7 |
-| 23 | `/live-frame` | lib/routes/live-frame.js:44 | 箭头 | disposers base mediaMap serveFile traceRequests liveFrameFile …(+2) | 3 |
-| 24 | `/occlusion` | lib/routes/occlusion.js:50 | async 箭头 | disposers base hub | 3 |
-| 25 | `/client-diag` | lib/routes/diag.js:85 | 箭头 | disposers appendDiagLine notice base | 5 |
-| 26 | `/diag` | lib/routes/diag.js:149 | 箭头 | disposers | 12 |
-| 27 | `/diag` | lib/routes/diag.js:150 | 箭头 | disposers base | 12 |
-| 28 | `/diag-log` | lib/routes/diag.js:151 | 箭头 | disposers log base componentsProbe | 3 |
-| 29 | `/diag/switch-stats` | lib/routes/diag.js:174 | 箭头 | disposers base | 1 |
-| 30 | `/api/local-assets` | lib/routes/we-assets.js:69 | async 箭头 | disposers serveFile listWeAssetNames weAssetsAvailable WE_ASSETS_SOURCE_ID getWeAssetsDir | 1 |
-| 31 | `/we-assets-dir` | lib/routes/we-assets.js:116 | 箭头 | disposers base CONTROL_JSON_MAX_BYTES normalizeUserDir setWeAssetsDir listWeAssetNames …(+2) | 3 |
-| 32 | `/scene-video` | lib/routes/scene-media.js:54 | 箭头 | disposers base mediaMap serveFile ensureFrameCacheDir sceneVideoProbeKey …(+3) | 3 |
-| 33 | `/scene-audio` | lib/routes/scene-media.js:138 | 箭头 | disposers base mediaMap serveFile ensureSceneAudio | 4 |
-| 34 | `/upload` | lib/routes/upload.js:72 | 箭头 | disposers base tokenFor UPLOAD_EXT UPLOAD_MAX_BYTES ensureUploadDir …(+6) | 4 |
-| 35 | `/remove` | lib/routes/upload.js:222 | 箭头 | disposers base CONTROL_JSON_MAX_BYTES ensureUploadDir removeUploadMeta resolveUploadFile …(+1) | 6 |
-| 36 | `/upload-dir` | lib/routes/upload.js:279 | 箭头 | disposers base CONTROL_JSON_MAX_BYTES setUploadDir normalizeUserDir armBodyIdleTimeout | 3 |
-| 37 | `/glass-presets` | lib/routes/presets.js:502 | async 箭头 | disposers base | 1 |
-| 38 | `/settings` | lib/routes/settings.js:158 | 箭头 | disposers base ctx mediaOriginApi readSettings isBetterSidebarLoaded …(+3) | 22 |
-| 39 | `/cache-dir` | lib/routes/cache-dir.js:47 | 箭头 | disposers base CONTROL_JSON_MAX_BYTES normalizeUserDir cacheBaseDir setCacheDir …(+1) | 1 |
-| 40 | `/cache-dir/browse` | lib/routes/cache-dir.js:115 | 箭头 | disposers base normalizeUserDir | 1 |
+| 1 | `(动态路径)` | lib/routes/personas.js:900 | async 箭头 | — | 2 |
+| 2 | `/media-info` | lib/routes/media-derived.js:60 | 箭头 | disposers base mediaMap log getMediaInfo faststartVariant …(+1) | 10 |
+| 3 | `/transcode-progress` | lib/routes/media-derived.js:103 | 箭头 | disposers base mediaMap transcodeJobs | 2 |
+| 4 | `/transcoded` | lib/routes/media-derived.js:156 | 箭头 | disposers base mediaMap serveFile transcodeToFps registerTranscodeWaiter | 1 |
+| 5 | `/video-preview` | lib/routes/media-derived.js:215 | 箭头 | disposers base mediaMap serveFile generateVideoPreview | 2 |
+| 6 | `/media` | lib/routes/media-bytes.js:39 | 箭头 | disposers base serveFile serveLayout mediaMap log …(+2) | 36 |
+| 7 | `/preview` | lib/routes/media-bytes.js:39 | 箭头 | disposers base serveFile serveLayout mediaMap log …(+2) | 15 |
+| 8 | `/site-media-stats` | lib/routes/site-media.js:459 | 箭头 | disposers | 1 |
+| 9 | `/site-media` | lib/routes/site-media.js:496 | async 箭头 | disposers serveFile | 8 |
+| 10 | `/downloads/add` | lib/routes/downloads.js:568 | async 箭头 | disposers base | 8 |
+| 11 | `/downloads/list` | lib/routes/downloads.js:679 | 箭头 | disposers | 13 |
+| 12 | `/downloads/cancel` | lib/routes/downloads.js:727 | async 箭头 | disposers | **0** |
+| 13 | `/downloads/priority` | lib/routes/downloads.js:748 | async 箭头 | disposers | 2 |
+| 14 | `/downloads/pause` | lib/routes/downloads.js:782 | async 箭头 | disposers | **0** |
+| 15 | `/downloads/requeue` | lib/routes/downloads.js:801 | async 箭头 | disposers log | 3 |
+| 16 | `/diag/media-state` | lib/routes/downloads.js:830 | 箭头 | disposers | 4 |
+| 17 | `/downloads/clear-queued` | lib/routes/downloads.js:860 | 箭头 | disposers | **0** |
+| 18 | `/local-media` | lib/routes/downloads.js:873 | 箭头 | disposers serveFile transcodePlayablePathFor | 9 |
+| 19 | `/local-heal` | lib/routes/downloads.js:934 | async 箭头 | disposers base log | **0** |
+| 20 | `/local-check` | lib/routes/downloads.js:961 | 箭头 | disposers | **0** |
+| 21 | `/local-verify` | lib/routes/downloads.js:971 | async 箭头 | disposers | **0** |
+| 22 | `/kernel-info` | lib/routes/kernel.js:103 | 箭头 | disposers | **0** |
+| 23 | `/kernel/enable-skin-center` | lib/routes/kernel.js:116 | 箭头 | disposers log | **0** |
+| 24 | `/scene-frame` | lib/routes/scene-frame.js:82 | 箭头 | disposers base mediaMap trackStream customFramePath customIdFromAbs …(+3) | 13 |
+| 25 | `/scene-frame-cache` | lib/routes/scene-frame.js:168 | 箭头 | disposers base mediaMap GPU_FRAME_AREA_TOL GPU_FRAME_MAX_BYTES GPU_WRITE_INFLIGHT …(+7) | 5 |
+| 26 | `/custom-frame` | lib/routes/scene-frame.js:272 | 箭头 | disposers base serveFile CUSTOM_FRAME_EXT CUSTOM_FRAME_MAX_BYTES armBodyIdleTimeout …(+3) | 3 |
+| 27 | `/scene-live` | lib/routes/scene-serve.js:86 | 箭头 | disposers base WEBWALLGL_DIR WEBWALLGL_PKG_DIR appendDiagLine traceRequests …(+3) | 9 |
+| 28 | `/scene-files` | lib/routes/scene-serve.js:153 | 箭头 | disposers base handleSceneFiles | 5 |
+| 29 | `/media-origin` | lib/routes/scene-serve.js:161 | 箭头 | disposers base mediaOriginInfo | 1 |
+| 30 | `/scene-payload-progress` | lib/routes/scene-serve.js:181 | 箭头 | disposers base payloadProgress | 1 |
+| 31 | `/props` | lib/routes/props.js:45 | 箭头 | disposers base mediaMap userPropsFor | 7 |
+| 32 | `/live-frame` | lib/routes/live-frame.js:44 | 箭头 | disposers base mediaMap serveFile traceRequests liveFrameFile …(+2) | 3 |
+| 33 | `/occlusion` | lib/routes/occlusion.js:50 | async 箭头 | disposers base hub | 3 |
+| 34 | `/client-diag` | lib/routes/diag.js:85 | 箭头 | disposers appendDiagLine notice base | 5 |
+| 35 | `/diag` | lib/routes/diag.js:149 | 箭头 | disposers | 17 |
+| 36 | `/diag` | lib/routes/diag.js:150 | 箭头 | disposers base | 17 |
+| 37 | `/diag-log` | lib/routes/diag.js:151 | 箭头 | disposers log base componentsProbe | 3 |
+| 38 | `/diag/switch-stats` | lib/routes/diag.js:174 | 箭头 | disposers base | 2 |
+| 39 | `/api/local-assets` | lib/routes/we-assets.js:69 | async 箭头 | disposers serveFile listWeAssetNames weAssetsAvailable WE_ASSETS_SOURCE_ID getWeAssetsDir | 1 |
+| 40 | `/we-assets-dir` | lib/routes/we-assets.js:116 | 箭头 | disposers base CONTROL_JSON_MAX_BYTES normalizeUserDir setWeAssetsDir listWeAssetNames …(+2) | 4 |
+| 41 | `/scene-video` | lib/routes/scene-media.js:54 | 箭头 | disposers base mediaMap serveFile ensureFrameCacheDir sceneVideoProbeKey …(+3) | 3 |
+| 42 | `/scene-audio` | lib/routes/scene-media.js:138 | 箭头 | disposers base mediaMap serveFile ensureSceneAudio | 4 |
+| 43 | `/upload` | lib/routes/upload.js:72 | 箭头 | disposers base tokenFor UPLOAD_EXT UPLOAD_MAX_BYTES ensureUploadDir …(+6) | 5 |
+| 44 | `/remove` | lib/routes/upload.js:222 | 箭头 | disposers base CONTROL_JSON_MAX_BYTES ensureUploadDir removeUploadMeta resolveUploadFile …(+1) | 6 |
+| 45 | `/upload-dir` | lib/routes/upload.js:279 | 箭头 | disposers base CONTROL_JSON_MAX_BYTES setUploadDir normalizeUserDir armBodyIdleTimeout | 3 |
+| 46 | `/glass-presets` | lib/routes/presets.js:502 | async 箭头 | disposers base | 1 |
+| 47 | `/settings` | lib/routes/settings.js:158 | 箭头 | disposers base ctx mediaOriginApi readSettings isBetterSidebarLoaded …(+3) | 22 |
+| 48 | `/cache-dir` | lib/routes/cache-dir.js:47 | 箭头 | disposers base CONTROL_JSON_MAX_BYTES normalizeUserDir cacheBaseDir setCacheDir …(+1) | 1 |
+| 49 | `/cache-dir/browse` | lib/routes/cache-dir.js:115 | 箭头 | disposers base normalizeUserDir | 1 |
 
-**零提及（拆分前必须先补守卫）**：`/downloads/cancel`、`/local-media`、`/kernel-info`、`/kernel/enable-skin-center`
+**零提及（拆分前必须先补守卫）**：`/downloads/cancel`、`/downloads/pause`、`/downloads/clear-queued`、`/local-heal`、`/local-check`、`/local-verify`、`/kernel-info`、`/kernel/enable-skin-center`
 
 **被最多路由引用的闭包状态（context 字段优先级，仅 `lib/index.js` 内的路由）**：
 
@@ -68,7 +77,7 @@
 
 | 模块 | 入口 | 路由数 | `c` 字段 | 死声明 |
 |---|---|---|---|---|
-| `lib/routes/boot.js` | `registerBootRoutes(webServer, c)` | 7 | `disposers` `base` `log` | — |
+| `lib/routes/boot.js` | `registerBootRoutes(webServer, c)` | 9 | `disposers` `base` `log` | — |
 | `lib/routes/cache-dir.js` | `registerCacheDirRoutes(webServer, c)` | 2 | `disposers` `base` `CONTROL_JSON_MAX_BYTES` `normalizeUserDir` `cacheBaseDir` `setCacheDir` `armBodyIdleTimeout` | — |
 | `lib/routes/cache.js` | `isWithin(webServer, c)` | 2 | — | — |
 | `lib/routes/cache.js` | `scanTree(webServer, c)` | 2 | — | — |
@@ -78,14 +87,25 @@
 | `lib/routes/cache.js` | `clearCache(webServer, c)` | 2 | — | — |
 | `lib/routes/cache.js` | `registerCacheRoutes(webServer, c)` | 2 | `disposers` `base` `log` | — |
 | `lib/routes/diag.js` | `registerDiagRoutes(webServer, c)` | 5 | `disposers` `appendDiagLine` `log` `notice` `base` `onHandleDiag` `componentsProbe` | — |
-| `lib/routes/downloads.js` | `getDownloadQueue(webServer, c)` | 4 | — | — |
-| `lib/routes/downloads.js` | `installStallMs(webServer, c)` | 4 | — | — |
-| `lib/routes/downloads.js` | `localCopyFor(webServer, c)` | 4 | — | — |
-| `lib/routes/downloads.js` | `localFamilyCopyFor(webServer, c)` | 4 | — | — |
-| `lib/routes/downloads.js` | `isSlowHostUrl(webServer, c)` | 4 | — | — |
-| `lib/routes/downloads.js` | `queueJobFor(webServer, c)` | 4 | — | — |
-| `lib/routes/downloads.js` | `queueSummary(webServer, c)` | 4 | — | — |
-| `lib/routes/downloads.js` | `registerDownloadsRoutes(webServer, c)` | 4 | `disposers` `base` `serveFile` `log` | — |
+| `lib/routes/downloads.js` | `registerManifestSource(webServer, c)` | 12 | — | — |
+| `lib/routes/downloads.js` | `resetQueuedDoneForKinds(webServer, c)` | 12 | — | — |
+| `lib/routes/downloads.js` | `getMediaReconciler(webServer, c)` | 12 | — | — |
+| `lib/routes/downloads.js` | `__resetMediaSingletons(webServer, c)` | 12 | — | — |
+| `lib/routes/downloads.js` | `getDownloadQueue(webServer, c)` | 12 | — | — |
+| `lib/routes/downloads.js` | `getMediaSelfHeal(webServer, c)` | 12 | — | — |
+| `lib/routes/downloads.js` | `installStallMs(webServer, c)` | 12 | — | — |
+| `lib/routes/downloads.js` | `prefetchCount(webServer, c)` | 12 | — | — |
+| `lib/routes/downloads.js` | `destForUrl(webServer, c)` | 12 | — | — |
+| `lib/routes/downloads.js` | `localCopyFor(webServer, c)` | 12 | — | — |
+| `lib/routes/downloads.js` | `localFamilyCopyFor(webServer, c)` | 12 | — | — |
+| `lib/routes/downloads.js` | `mediaStateOfUrl(webServer, c)` | 12 | — | — |
+| `lib/routes/downloads.js` | `isSlowHostUrl(webServer, c)` | 12 | — | — |
+| `lib/routes/downloads.js` | `queueJobFor(webServer, c)` | 12 | — | — |
+| `lib/routes/downloads.js` | `jobStateForItem(webServer, c)` | 12 | — | — |
+| `lib/routes/downloads.js` | `queueSummary(webServer, c)` | 12 | — | — |
+| `lib/routes/downloads.js` | `registerDownloadsRoutes(webServer, c)` | 12 | `disposers` `base` `serveFile` `log` `transcodeToPlayable` `transcodePlayablePathFor` `transcodePlayableProgress` | — |
+| `lib/routes/inventory.js` | `inventoryEpoch(webServer, c)` | 1 | — | — |
+| `lib/routes/inventory.js` | `invalidateSiteCache(webServer, c)` | 1 | — | — |
 | `lib/routes/inventory.js` | `registerInventoryRoutes(webServer, c)` | 1 | `disposers` `base` `mediaOriginApi` `buildInventory` `componentsProbe` | — |
 | `lib/routes/kernel.js` | `kernelInfo(webServer, c)` | 2 | — | — |
 | `lib/routes/kernel.js` | `registerKernelRoutes(webServer, c)` | 2 | `disposers` `base` `log` | — |
@@ -94,6 +114,16 @@
 | `lib/routes/media-derived.js` | `registerMediaDerivedRoutes(webServer, c)` | 4 | `disposers` `base` `mediaMap` `serveFile` `log` `getMediaInfo` `faststartVariant` `transcodeJobs` `transcodeToFps` `registerTranscodeWaiter` `generateVideoPreview` `transcodeCached` | — |
 | `lib/routes/modules.js` | `registerModulesRoutes(webServer, c)` | 1 | `disposers` `base` | — |
 | `lib/routes/occlusion.js` | `registerOcclusionRoutes(webServer, c)` | 1 | `disposers` `base` `hub` `log` `diag` | — |
+| `lib/routes/personas.js` | `createPersonaApi(webServer, c)` | 1 | — | — |
+| `lib/routes/personas.js` | `normalizeCardForTest(webServer, c)` | 1 | — | — |
+| `lib/routes/personas.js` | `registerPersonaRoutes(webServer, c)` | 1 | `readSettings` `log` | `base` `disposers` |
+| `lib/routes/pet-chat.js` | `wavSeconds(webServer, c)` | 1 | — | — |
+| `lib/routes/pet-chat.js` | `decodeBase64(webServer, c)` | 1 | — | — |
+| `lib/routes/pet-chat.js` | `parseReplyText(webServer, c)` | 1 | — | — |
+| `lib/routes/pet-chat.js` | `emotionFromKeywords(webServer, c)` | 1 | — | — |
+| `lib/routes/pet-chat.js` | `registerPetChatRoutes(webServer, c)` | 1 | `disposers` `base` `log` `readSettings` `speechToText` `tts` `ffmpegEnsure` `ffmpegStatus` `clock` | `// v5 §4：DSH 服务面（可选）。宿主的 ctx.skills/tools 若能传进来就走服务，
+    // 传不进来就退到文件面（~/.dsh/skills + 随包 office-skills）——两条都实现，不假装。
+    services` |
 | `lib/routes/pets.js` | `registerPetsRoutes(webServer, c)` | 8 | `disposers` `base` `log` | — |
 | `lib/routes/presets.js` | `registerGlassPresetsRoutes(webServer, c)` | 1 | `disposers` `base` | — |
 | `lib/routes/props.js` | `registerPropsRoutes(webServer, c)` | 1 | `disposers` `base` `mediaMap` `userPropsFor` | — |

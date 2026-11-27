@@ -26,6 +26,12 @@ const CHAT_DEFAULTS = {
   ownerName: '',
   // v0.2：朗读 = voice.muted 取反；音色 = voice.name；SAPI = voice.sapiEnabled（默认 false）。
   voice: { name: '', muted: false, rate: 0, sapiEnabled: false, enabledEngine: 'edge', continuous: true, listenPaused: false },
+  // v1.2：会话模式 / 语音长度 / 主动思维 / 屏幕感知 / 树洞热线（默认全关高风险项）
+  conversationMode: 'chat',
+  voiceLength: 8,
+  proactive: { enabled: false, intervalMin: 15, quietFrom: '23:00', quietTo: '08:00' },
+  screen: { mode: 'off', confirmed: false },
+  treehole: { hotline: '12356' },
 };
 
 /** apiJson 的返回是 { ok, status, data }，而 /pet-chat/* 的 data 里还套一层 { ok, data }。 */
@@ -202,6 +208,8 @@ function PetChatSettings() {
   const [tab, setTab] = React.useState('assistant');
   const [workPlugins, setWorkPlugins] = React.useState(null);
   const [voices, setVoices] = React.useState(null);
+  /** v1.2：Edge 429 等“在线音色暂时不可用”的提示（列表里不再堆灰项）。 */
+  const [voiceNotice, setVoiceNotice] = React.useState('');
   const [voiceMeta, setVoiceMeta] = React.useState({});
   const [voiceCfg, setVoiceCfg] = React.useState({ sapiEnabled: false, enabledEngine: 'edge', continuous: true, listenPaused: false });
   const [setupBusy, setSetupBusy] = React.useState(false);
@@ -213,6 +221,16 @@ function PetChatSettings() {
   const [enableBusy, setEnableBusy] = React.useState('');
   const [enableNote, setEnableNote] = React.useState(null);
   const [detailOpen, setDetailOpen] = React.useState({});
+  // v1.2：屏幕感知二次确认 / 观察记录 / 记忆回滚 / 用户音色包
+  const [screenArmed, setScreenArmed] = React.useState('');
+  const [observeList, setObserveList] = React.useState(null);
+  const [memoryInfo, setMemoryInfo] = React.useState(null);
+  const [memoryNote, setMemoryNote] = React.useState(null);
+  const [rollbackDate, setRollbackDate] = React.useState('');
+  const [userPacks, setUserPacks] = React.useState([]);
+  const [systemSounds, setSystemSounds] = React.useState([]);
+  const [packForm, setPackForm] = React.useState({ name: '', license: '', author: '', refText: '', engine: 'gpt-sovits' });
+  const [packNote, setPackNote] = React.useState(null);
   const [providers, setProviders] = React.useState(null);
   const [providerBusy, setProviderBusy] = React.useState(false);
   const [providerNote, setProviderNote] = React.useState(null);
@@ -279,6 +297,9 @@ function PetChatSettings() {
     const doc = unwrapPetChat(resp);
     const items = (doc && Array.isArray(doc.voices) ? doc.voices : []).filter((v) => v && v.usable === true);
     setVoices(items);
+    setVoiceNotice(doc && doc.rateLimited === true
+      ? weT('在线音色暂不可用（429 限流）：先用本地音色，稍后再试。')
+      : '');
     setVoiceMeta((doc && doc.meta) || {});
     const engine = ['edge', 'piper', 'sapi'].includes(String(doc && doc.enabledEngine || '')) ? doc.enabledEngine : 'edge';
     setEnabledEngine(engine);
@@ -299,8 +320,106 @@ function PetChatSettings() {
     }
   }, []);
 
-  const loadFfmpeg = React.useCallback(async () => {
-    const resp = await apiJson('/pet-chat/voice/diagnose?light=1', { parse: 'always' }).catch(() => null);
+  /* ── v1.2：观察记录 / 记忆 / 用户音色包（设置页直接查看与清理）─────────── */
+
+  const loadObserveRecords = React.useCallback(async () => {
+    const resp = await apiJson('/pet-chat/observe/records?limit=20', { parse: 'always' }).catch(() => null);
+    const doc = unwrapPetChat(resp);
+    setObserveList(Array.isArray(doc.items) ? doc.items : []);
+  }, []);
+
+  const clearObserveRecords = async () => {
+    await apiFetch('/pet-chat/observe/records', { method: 'DELETE' }).catch(() => null);
+    setObserveList([]);
+    setMemoryNote({ ok: true, text: weT('观察记录已清空') });
+  };
+
+  const loadMemoryInfo = React.useCallback(async () => {
+    const resp = await apiJson('/pet-chat/memory', { parse: 'always' }).catch(() => null);
+    const doc = unwrapPetChat(resp);
+    setMemoryInfo(doc && doc.memory ? { personaId: doc.personaId, events: doc.memory.events || [], line: doc.line || '' } : null);
+  }, []);
+
+  const memoryRollback = async () => {
+    if (!memoryInfo || !memoryInfo.personaId || !/^\d{4}-\d{2}-\d{2}$/.test(rollbackDate)) {
+      setMemoryNote({ ok: false, text: weT('先填日期（YYYY-MM-DD）') });
+      return;
+    }
+    const resp = await apiFetch(`/pet-chat/personas/${encodeURIComponent(memoryInfo.personaId)}/memory/by-date?date=${encodeURIComponent(rollbackDate)}`, {
+      method: 'DELETE',
+    }).catch(() => null);
+    const doc = (resp && resp.data) || {};
+    setMemoryNote({ ok: doc.ok === true, text: doc.ok === true ? weT('已回滚 {n} 条', { n: doc.deleted || 0 }) : weT('回滚失败') });
+    await loadMemoryInfo();
+  };
+
+  const memoryExport = async () => {
+    if (!memoryInfo || !memoryInfo.personaId) return;
+    const resp = await apiFetch(`/pet-chat/personas/${encodeURIComponent(memoryInfo.personaId)}/memory/export`, { parse: false }).catch(() => null);
+    try {
+      const blob = await resp.response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = memoryInfo.personaId + '-memory.json';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 3000);
+    } catch { setMemoryNote({ ok: false, text: weT('导出失败') }); }
+  };
+
+  const loadUserPacks = React.useCallback(async () => {
+    const resp = await apiJson('/pet-chat/voice/user-packs', { parse: 'always' }).catch(() => null);
+    const doc = unwrapPetChat(resp);
+    setUserPacks(Array.isArray(doc.userPacks) ? doc.userPacks : []);
+  }, []);
+  React.useEffect(() => {
+    if (tab === 'voice') void loadUserPacks();
+  }, [tab, loadUserPacks]);
+  React.useEffect(() => {
+    if (tab !== 'voice') return;
+    void apiJson('/pet-chat/system-sounds', { parse: 'always' }).then((resp) => {
+      const doc = unwrapPetChat(resp);
+      setSystemSounds(Array.isArray(doc.sounds) ? doc.sounds : []);
+    }).catch(() => {});
+  }, [tab]);
+
+  const adminVoicePacks = async () => {
+    const resp = await apiJson('/pet-chat/voice/user-packs', { parse: 'always' }).catch(() => null);
+    const doc = unwrapPetChat(resp);
+    setUserPacks(Array.isArray(doc.userPacks) ? doc.userPacks : []);
+    return doc;
+  };
+
+  const importUserPack = async (file) => {
+    if (!file) return;
+    if (!packForm.name || !packForm.license || !packForm.author) {
+      setPackNote({ ok: false, text: weT('先填名字、许可证、作者/来源——没有授权的音色不要导入') });
+      return;
+    }
+    const base64 = await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+    });
+    if (!base64) { setPackNote({ ok: false, text: weT('读不到这个音频文件') }); return; }
+    const resp = await apiPostJson('/pet-chat/voice/user-packs/import', { ...packForm, audioBase64: base64 }, { parse: 'always' }).catch(() => null);
+    const doc = unwrapPetChat(resp);
+    if (doc && doc.ok) {
+      setPackNote({ ok: true, text: weT('已导入：{n}', { n: doc.pack && doc.pack.name ? doc.pack.name : packForm.name }) });
+      setPackForm({ name: '', license: '', author: '', refText: '', engine: 'gpt-sovits' });
+      await adminVoicePacks();
+    } else {
+      setPackNote({ ok: false, text: (doc && doc.hint) || weT('导入失败') });
+    }
+  };
+
+  const removeUserPack = async (id) => {
+    await apiPostJson('/pet-chat/voice/user-packs/remove', { id }, { parse: 'always' }).catch(() => null);
+    await adminVoicePacks();
+  };
+
+  const loadFfmpeg = React.useCallback(async () => {    const resp = await apiJson('/pet-chat/voice/diagnose?light=1', { parse: 'always' }).catch(() => null);
     const doc = unwrapPetChat(resp);
     const st = doc && doc.steps && doc.steps.ffmpeg;
     if (st && st.phase) setFfmpeg(st);
@@ -644,10 +763,11 @@ function PetChatSettings() {
     : null);
   child.push(React.createElement('div', { key: 'title', style: { fontWeight: 600, margin: '14px 0 4px', fontSize: '13px' } }, weT('智能大肥鱼')));
   child.push(React.createElement('div', { key: 'hint', className: 'we-picker__hint', style: { margin: '0 0 6px' } },
-    weT('填 Key、起名字、选音色，再决定要不要朗读。主动搭话与记忆是固定策略；停止/恢复对它说一声就行。')));
+    weT('填 Key、起名字、选音色；对话模式、主动搭话、屏幕感知都在「对话与隐私」里，默认全关。')));
 
   const tabs = [
     ['assistant', weT('助手')],
+    ['behavior', weT('对话与隐私')],
     ['voice', weT('朗读与音色')],
     ['work', weT('工作能力')],
   ];
@@ -689,6 +809,128 @@ function PetChatSettings() {
       ffmpegRow('ffmpeg-env'),
     ));
     child.push(React.createElement(MicTestBlock, { key: 'mic-test' }));
+  }
+
+  if (tab === 'behavior') {
+    const mode = ['chat', 'story', 'treehole', 'observe'].includes(String(draft.conversationMode))
+      ? draft.conversationMode : 'chat';
+    const pro = Object.assign({}, CHAT_DEFAULTS.proactive, draft.proactive || {});
+    const screen = Object.assign({}, CHAT_DEFAULTS.screen, draft.screen || {});
+    const behaviorPage = [];
+    const selectOf = (key, value, options, onChange, disabled) => React.createElement('select', {
+      key, value, disabled: busy || disabled === true,
+      onChange: (e) => onChange(e.target.value),
+      style: { minWidth: '128px' },
+    }, options.map(([val, label]) => React.createElement('option', { key: val, value: val }, label)));
+    const toggle = (key, checked, onChange, label) => React.createElement('label', {
+      key, style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', margin: '4px 0' },
+    }, React.createElement('input', {
+      type: 'checkbox', checked, disabled: busy, onChange: (e) => onChange(e.target.checked),
+    }), weT(label));
+
+    behaviorPage.push(row('conversation-mode', '对话模式', selectOf('mode', mode, [
+      ['chat', weT('聊天')], ['story', weT('讲故事')], ['treehole', weT('树洞')], ['observe', weT('只观察')],
+    ], (value) => update({ conversationMode: value }))));
+    behaviorPage.push(React.createElement('div', { key: 'mode-hint', className: 'we-picker__hint', style: { margin: '0 0 6px' } },
+      weT('聊天＝日常短答；讲故事＝不按句数截断；树洞＝先接情绪；只观察＝不回答、只记不说。')));
+
+    behaviorPage.push(row('voice-length', '语音回答长度', selectOf('vlen', String(draft.voiceLength), [
+      ['3', weT('3 句')], ['8', weT('8 句')], ['0', weT('不限')],
+    ], (value) => update({ voiceLength: Number(value) }))));
+
+    behaviorPage.push(toggle('pro-enabled', pro.enabled === true, (checked) => update({
+      proactive: Object.assign({}, pro, { enabled: checked, intervalMin: checked && !pro.intervalMin ? 15 : pro.intervalMin }),
+    }), '主动搭话（默认关）'));
+    behaviorPage.push(row('pro-interval', '搭话间隔', selectOf('pint', String(pro.intervalMin || 15), [
+      ['15', weT('15 分钟')], ['30', weT('30 分钟')], ['60', weT('60 分钟')],
+    ], (value) => update({ proactive: Object.assign({}, pro, { intervalMin: Number(value) }) }), pro.enabled !== true)));
+    if (pro.enabled !== true) {
+      behaviorPage.push(React.createElement('div', { key: 'pro-off', className: 'we-picker__hint', style: { margin: '0 0 6px' } },
+        weT('关着的时候它只在你主动说话时回应；打开后每小时最多主动 2 次。')));
+    }
+    behaviorPage.push(row('quiet-from', '勿扰时段', React.createElement('div', { key: 'q', style: { display: 'flex', gap: '4px', alignItems: 'center' } },
+      React.createElement('input', {
+        type: 'time', value: pro.quietFrom, disabled: busy,
+        onChange: (e) => update({ proactive: Object.assign({}, pro, { quietFrom: e.target.value }) }),
+      }),
+      React.createElement('span', null, '–'),
+      React.createElement('input', {
+        type: 'time', value: pro.quietTo, disabled: busy,
+        onChange: (e) => update({ proactive: Object.assign({}, pro, { quietTo: e.target.value }) }),
+      }))));
+
+    behaviorPage.push(React.createElement('div', { key: 'privacy-head', style: { marginTop: '12px', fontSize: '12px', fontWeight: 600 } },
+      weT('屏幕感知（默认关）')));
+    behaviorPage.push(React.createElement('div', { key: 'privacy-hint', className: 'we-picker__hint', style: { margin: '2px 0 6px' } },
+      weT('只读前台应用名与窗口标题（可选再加屏幕 OCR）；读不到别的 App 内部数据，绝不上传截图或 OCR 原文。')));
+    behaviorPage.push(row('screen-mode', '屏幕感知', selectOf('screen', screen.mode, [
+      ['off', weT('关')], ['app', weT('前台应用')], ['ocr', weT('前台 + OCR')],
+    ], (value) => {
+      if (value === 'off') {
+        setScreenArmed('');
+        update({ screen: { mode: 'off', confirmed: false } });
+      } else {
+        // 第一下只“上膛”，看说明再确认（不直接开）。
+        setScreenArmed(value);
+      }
+    })));
+    if (screenArmed) {
+      behaviorPage.push(React.createElement('div', {
+        key: 'screen-confirm', style: {
+          border: '1px solid rgba(251,191,36,.45)', background: 'rgba(251,191,36,.08)',
+          borderRadius: '8px', padding: '6px 8px', margin: '2px 0 6px', fontSize: '11px',
+        },
+      },
+      React.createElement('div', { style: { marginBottom: '4px' } },
+        weT('开启后它会知道你当前在用哪个应用、窗口标题是什么（前台+OCR 还会定时读取屏幕文字）。所有记录只存在本机记忆里，可随时查看、删除。')),
+      React.createElement('div', { key: 'btn-row', style: { display: 'flex', gap: '6px' } },
+        React.createElement('button', {
+          type: 'button', className: 'we-picker__btn', disabled: busy,
+          onClick: () => { update({ screen: { mode: screenArmed, confirmed: true } }); setScreenArmed(''); },
+        }, weT('确认开启')),
+        React.createElement('button', {
+          type: 'button', className: 'we-picker__btn', disabled: busy,
+          onClick: () => setScreenArmed(''),
+        }, weT('取消')))));
+    }
+    behaviorPage.push(React.createElement('div', { key: 'status-line', className: 'we-picker__hint', style: { margin: '0 0 4px' } },
+      screen.mode === 'off' ? weT('当前：关（不读前台窗口，也不截屏）') : weT('当前：已开启（可随时关）')));
+    behaviorPage.push(React.createElement('div', { key: 'observe-row', style: { display: 'flex', gap: '6px', flexWrap: 'wrap', margin: '4px 0' } },
+      React.createElement('button', { type: 'button', className: 'we-picker__btn', onClick: () => { void loadObserveRecords(); } }, weT('查看观察记录')),
+      React.createElement('button', { type: 'button', className: 'we-picker__btn', onClick: () => { void clearObserveRecords(); } }, weT('清空观察记录'))));
+    if (observeList !== null) {
+      behaviorPage.push(React.createElement('div', { key: 'observe-list', className: 'we-picker__hint', style: { margin: '0 0 6px' } },
+        observeList.length
+          ? observeList.slice(0, 8).map((item) => React.createElement('div', { key: item.id }, '· ' + String(item.text || '').slice(0, 80)))
+          : weT('还没有观察记录')));
+    }
+
+    behaviorPage.push(React.createElement('div', { key: 'memory-head', style: { marginTop: '12px', fontSize: '12px', fontWeight: 600 } },
+      weT('记忆')));
+    behaviorPage.push(React.createElement('div', { key: 'memory-row', style: { display: 'flex', gap: '6px', flexWrap: 'wrap', margin: '4px 0' } },
+      React.createElement('button', { type: 'button', className: 'we-picker__btn', onClick: () => { void loadMemoryInfo(); } }, weT('查看记忆')),
+      React.createElement('button', { type: 'button', className: 'we-picker__btn', onClick: () => { void memoryExport(); } }, weT('导出记忆'))));
+    if (memoryInfo) {
+      behaviorPage.push(React.createElement('div', { key: 'memory-info', className: 'we-picker__hint', style: { margin: '0 0 6px' } },
+        weT('最近 {n} 条事件', { n: (memoryInfo.events || []).length })));
+    }
+    behaviorPage.push(row('memory-rollback', '按日期回滚', React.createElement('div', { key: 'r', style: { display: 'flex', gap: '4px' } },
+      React.createElement('input', {
+        type: 'date', value: rollbackDate, disabled: busy,
+        onChange: (e) => setRollbackDate(e.target.value),
+      }),
+      React.createElement('button', { type: 'button', className: 'we-picker__btn', disabled: busy, onClick: () => { void memoryRollback(); } }, weT('回滚')))));
+    if (memoryNote) {
+      behaviorPage.push(React.createElement('div', {
+        key: 'memory-note', className: 'we-picker__hint',
+        style: { margin: '0 0 6px', color: memoryNote.ok ? '#4ade80' : '#f87171' },
+      }, memoryNote.text));
+    }
+    behaviorPage.push(row('hotline', '树洞求助热线', React.createElement('input', {
+      type: 'text', value: (draft.treehole && draft.treehole.hotline) || '12356', disabled: busy,
+      onChange: (e) => update({ treehole: { hotline: e.target.value } }),
+    })));
+    child.push(React.createElement('div', { key: 'behavior-page' }, behaviorPage));
   }
 
   if (tab === 'voice') {
@@ -755,6 +997,12 @@ function PetChatSettings() {
     voicePage.push(React.createElement('div', {
       key: 'local-head', style: { marginTop: '10px', fontSize: '12px', fontWeight: 600 },
     }, weT('音色（只列本机真实可用）')));
+    if (voiceNotice) {
+      voicePage.push(React.createElement('div', {
+        key: 'voice-notice', className: 'we-picker__hint',
+        style: { margin: '2px 0', color: '#fbbf24' },
+      }, voiceNotice));
+    }
     if (selectableVoices.length) {
       const groups = [];
       for (const engine of ['edge', 'piper', 'sapi', 'openai', 'azure', 'elevenlabs']) {
@@ -987,6 +1235,57 @@ function PetChatSettings() {
         }, fields),
         ...detailProps,
       }));
+    }
+    // v1.2：角色音色只走「用户下载/导入」；内置只有 4 个系统音效。
+    voicePage.push(React.createElement('div', {
+      key: 'pack-head', style: { marginTop: '14px', fontSize: '12px', fontWeight: 600 },
+    }, weT('用户音色包（角色语音只走导入）')));
+    voicePage.push(React.createElement('div', {
+      key: 'pack-policy', className: 'we-picker__hint', style: { margin: '2px 0 6px' },
+    }, weT('本插件不携带角色/声优素材。导入前请确认你有权使用这段参考音频，并填写许可证与作者/来源。')));
+    if (userPacks.length) {
+      voicePage.push(React.createElement('div', { key: 'pack-list', style: { display: 'flex', flexDirection: 'column', gap: '3px', margin: '0 0 6px' } },
+        userPacks.map((pack) => React.createElement('div', { key: pack.id, style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '11px' } },
+          React.createElement('span', { style: { flex: 1 } }, `${pack.name} · ${pack.engine} · ${pack.license || weT('未填许可证')}`),
+          React.createElement('button', {
+            type: 'button', className: 'we-picker__btn', onClick: () => { void removeUserPack(pack.id); },
+          }, weT('删除'))))));
+    }
+    const packInput = (key, placeholder, value, onChange, type) => React.createElement('input', {
+      key, type: type || 'text', value, placeholder, disabled: busy,
+      onChange: (e) => onChange(e.target.value),
+      style: { fontSize: '11px', padding: '2px 6px', minWidth: '0' },
+    });
+    voicePage.push(React.createElement('div', {
+      key: 'pack-form', style: { display: 'flex', flexDirection: 'column', gap: '4px', margin: '0 0 6px' },
+    },
+    packInput('pname', weT('音色包名字'), packForm.name, (v) => setPackForm((prev) => ({ ...prev, name: v }))),
+    packInput('plicense', weT('许可证（如：本人录制，仅自用）'), packForm.license, (v) => setPackForm((prev) => ({ ...prev, license: v }))),
+    packInput('pauthor', weT('作者 / 来源'), packForm.author, (v) => setPackForm((prev) => ({ ...prev, author: v }))),
+    packInput('pref', weT('参考音频对应的文字（可选）'), packForm.refText, (v) => setPackForm((prev) => ({ ...prev, refText: v }))),
+    React.createElement('div', { key: 'import-row', style: { display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' } },
+      React.createElement('input', {
+        key: 'file', type: 'file', accept: 'audio/*',
+        onChange: (e) => { const file = e.target.files && e.target.files[0]; void importUserPack(file); },
+      }),
+      React.createElement('span', { className: 'we-picker__hint', style: { margin: 0 } },
+        weT('参考音频只存本机用户目录，不进 npm 包、不上传。')))));
+    if (packNote && packNote.text) {
+      voicePage.push(React.createElement('div', {
+        key: 'pack-note', className: 'we-picker__hint',
+        style: { margin: '0 0 6px', color: packNote.ok ? '#4ade80' : '#f87171' },
+      }, packNote.text));
+    }
+    voicePage.push(React.createElement('div', { key: 'sound-head', className: 'we-picker__hint', style: { margin: '2px 0' } },
+      weT('内置系统音效（4 个，MIT，本项目合成；不含角色语音）')));
+    if (systemSounds.length) {
+      voicePage.push(React.createElement('div', { key: 'sound-list', style: { display: 'flex', flexDirection: 'column', gap: '3px', margin: '0 0 6px' } },
+        systemSounds.map((sound) => React.createElement('div', { key: sound.id, style: { display: 'flex', gap: '6px', alignItems: 'center', fontSize: '11px' } },
+          React.createElement('span', null, `${sound.name} · ${sound.license || ''}`),
+          React.createElement('audio', {
+            controls: true, preload: 'none', style: { height: '22px' },
+            src: apiUrl('/pet-chat/system-sounds/' + encodeURIComponent(sound.id) + '.wav'),
+          })))));
     }
     child.push(React.createElement('div', { key: 'voice-page' }, voicePage));
   }

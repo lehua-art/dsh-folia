@@ -422,7 +422,7 @@ function fakeTts() {
     controller.abort();
     check('⑧ 工作联动：POST /speak 无客户端时排队，/events 连上即补发 speak',
       speak.status === 200 && speakDoc.ok === true && speakDoc.queued >= 1
-        && payload && payload.type === 'speak' && payload.text === '提醒：该喝水了',
+        && payload && payload.type === 'speak' && payload.text === '提醒 该喝水了',
       `queued=${speakDoc.queued} · event=${payload && payload.type}:${payload && payload.text}`);
   } finally {
     await host.close();

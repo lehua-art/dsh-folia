@@ -5,7 +5,7 @@
 > 口径：只统计守卫**代码**里真正碰到的模块（先剥注释），并区分"直接读源文件"与"隔着产物 `lib/client.js`"。
 > 写法：字面量路径 / `join(...)` 拼接 / 唯一 basename / 产物配方 / **前缀族读法** `scopeFiles|scopeText(<前缀>)` / **经共享族助手读**（`import { panelText } from './tools/src-scope.mjs'` + 真调用；族口径封在那个库里，见 DEV-GUIDE §4.6「同时是守卫的库」）/ **真源定位读**（`locate('符号')` / `locateFile('文件名')`，`test/tools/source-locator.mjs`：符号唯一声明在哪就是读了哪个模块）。
 
-模块面 237 个 · 守卫 171 个
+模块面 241 个 · 守卫 178 个
 
 ## 守卫 → 模块
 
@@ -91,7 +91,9 @@
 | `verify-media-probe.mjs` | `lib/media/mp4-probe.js` |  |
 | `verify-media-selfheal.mjs` | `lib/download-queue.js` `lib/media-selfheal.js` `lib/media-verify.js` `lib/media/transcode.js` `lib/settings-schema.js` `lib/variant-pick.js` `src/client.js` `src/live-layer.js` `src/local-first.js` `src/video-layer.js` | ✅ |
 | `verify-media-state.mjs` | `lib/download-queue.js` `lib/media-selfheal.js` `lib/media-state.js` `lib/media-verify.js` `lib/routes/cache.js` `lib/routes/downloads.js` `lib/routes/inventory.js` `lib/routes/site-media.js` `src/client.js` `src/local-first.js` `src/media-prep.js` `src/media-state.js` `src/video-switch.js` | ✅ |
+| `verify-memory-db.mjs` | `lib/memory-db.js` `lib/persona-memory.js` `lib/persona-store.js` |  |
 | `verify-mic-test.mjs` | `lib/routes/pet-chat.js` `lib/voice/record.js` `src/i18n-copy-panel.js` `src/panel-tabs-assistant.js` |  |
+| `verify-mind-proactive.mjs` | `lib/persona-store.js` `lib/pet-chat-mind.js` `lib/pet-chat-proactive.js` `lib/routes/pet-chat.js` |  |
 | `verify-module-layout.mjs` | `lib/index.js` `lib/settings-schema.js` `src/client.js` | ✅ |
 | `verify-mp4-vfs.mjs` | `lib/faststart.js` `lib/host-boot.js` `lib/kernel/host-session.js` `lib/mp4-vfs.js` |  |
 | `verify-no-auto-enqueue.mjs` | `lib/download-queue.js` `lib/media-state.js` `lib/routes/downloads.js` `src/local-first.js` `src/wallpaper-progress.js` |  |
@@ -144,6 +146,7 @@
 | `verify-scene-live.mjs` | `lib/cache-dir.js` `lib/components/fonts/src/appearance-font-section.js` `lib/components/fx/lib/client.fx.js` `lib/components/fx/src/ext-fx.js` `lib/components/fx/src/fx-layer.js` `lib/components/media-bridge/legacy.js` `lib/components/media-bridge/provision.js` `lib/components/media-bridge/routes/now-playing.js` `lib/components/media-bridge/supervisor.js` `lib/components/parallax/lib/client.parallax.js` `lib/components/parallax/src/ext-parallax.js` `lib/components/parallax/src/parallax-layer.js` `lib/diag-trace.js` `lib/faststart.js` `lib/fs-paths.js` `lib/http-lifecycle.js` `lib/index.js` `lib/inventory.js` `lib/media-origin.js` `lib/mp4-vfs.js` `lib/routes/diag.js` `lib/routes/media-bytes.js` `lib/routes/scene-serve.js` `lib/routes/we-assets.js` `lib/serve.js` `lib/settings-schema.js` `lib/shim-seed.js` `lib/startup-sweep.js` `lib/upload-dir.js` `lib/upload-store.js` `lib/we-assets.js` `lib/we-focus-guard.js` `lib/we-props.js` `lib/webwallgl/renderer.js` `src/avatar-import.js` `src/avatar-layer.js` `src/client-audio-playback.js` `src/client-media-frame.js` `src/client-rotation.js` `src/client.js` `src/effects.js` `src/ext-avatar.js` `src/extension-registry.js` `src/font/color-roles.js` `src/font/typography.js` `src/glass-panel.js` `src/layer-core.js` `src/live-layer-diag.js` `src/live-layer-gate.js` `src/live-layer-pointer.js` `src/live-layer-underlay.js` `src/live-layer-watch.js` `src/live-layer.js` `src/media-prep.js` `src/module-reset.js` `src/panel-tabs-advanced.js` `src/panel-tabs-appearance.js` `src/panel-tabs-assistant.js` `src/panel-tabs-boot.js` `src/panel-tabs-effects.js` `src/panel-tabs-mascot.js` `src/panel-tabs-personas.js` `src/panel-tabs-pets.js` `src/panel-tabs-skins.js` `src/panel-tabs-wallpaper.js` `src/panel-tabs-work.js` `src/panel-tabs.js` `src/picker-modal.js` `src/quick-panel.js` `src/section-head.js` `src/sidebar-right.js` `src/styles-base.js` `src/styles-chrome.js` `src/styles-ext.js` `src/styles-panel.js` `src/styles-quick.js` `src/styles-settings.js` `src/styles-shell.js` `src/styles-sidebar.js` `src/styles.js` `src/system-fonts.js` `src/video-layer.js` `src/we-base.js` `src/we-cond.js` | ✅ |
 | `verify-scene-probe.mjs` | `lib/media/scene-probe.js` `lib/pkg-read.js` `lib/scene-manifest.js` |  |
 | `verify-scene.mjs` | `lib/index.js` `lib/kernel/host-kernel.js` `lib/kernel/host-session.js` `lib/media/frame-store.js` `lib/pkg-read.js` `lib/routes/live-frame.js` `lib/routes/media-bytes.js` `lib/routes/props.js` `lib/routes/scene-frame.js` `lib/routes/scene-media.js` `lib/routes/settings.js` `lib/scene-manifest.js` | ✅ |
+| `verify-screen-context.mjs` | `lib/desktop-context.js` `lib/persona-memory.js` `lib/persona-store.js` `lib/routes/pet-chat.js` |  |
 | `verify-settings-namespaces.mjs` | `lib/index.js` `lib/kernel/data-dir.js` `lib/routes/settings.js` `lib/settings-schema.js` `src/persistence.js` |  |
 | `verify-settings-ownership.mjs` | `lib/settings-schema.js` `lib/settings/ownership.js` |  |
 | `verify-settings-schema-exports.mjs` | `lib/index.js` `lib/subpackage-boot.js` | ✅ |
@@ -155,6 +158,7 @@
 | `verify-stall-heal.mjs` | `src/local-first.js` `src/panel-tabs-boot.js` `src/panel-tabs-skins.js` |  |
 | `verify-static.mjs` | — |  |
 | `verify-steam-discovery.mjs` | `lib/index.js` `lib/steam-discovery.js` |  |
+| `verify-story-long.mjs` | `lib/persona-store.js` `lib/pet-chat-brain.js` `lib/routes/pet-chat.js` `src/pet-bubble.js` `src/pet-chat.js` `src/pet-tts.js` |  |
 | `verify-subpackage-boot.mjs` | `lib/index.js` `lib/subpackage-boot.js` |  |
 | `verify-subpackage-client-half.mjs` | `lib/components/fx/lib/client.fx.js` | ✅ |
 | `verify-subpackage-manifests.mjs` | `lib/kernel/component-session.js` `lib/subpackage-boot.js` |  |
@@ -167,12 +171,15 @@
 | `verify-theme-layer.mjs` | `lib/components/fonts/src/appearance-font-section.js` `lib/settings-schema.js` `src/client.js` `src/effects.js` `src/font/apply.js` `src/font/color-roles.js` `src/font/typography.js` `src/panel-tabs-advanced.js` `src/panel-tabs-appearance.js` `src/panel-tabs-assistant.js` `src/panel-tabs-boot.js` `src/panel-tabs-effects.js` `src/panel-tabs-mascot.js` `src/panel-tabs-personas.js` `src/panel-tabs-pets.js` `src/panel-tabs-skins.js` `src/panel-tabs-wallpaper.js` `src/panel-tabs-work.js` `src/panel-tabs.js` | ✅ |
 | `verify-token-contract.mjs` | `src/styles-base.js` `src/styles-chrome.js` `src/styles-ext.js` `src/styles-panel.js` `src/styles-quick.js` `src/styles-settings.js` `src/styles-shell.js` `src/styles-sidebar.js` `src/styles.js` |  |
 | `verify-transcode-state.mjs` | `lib/index.js` `lib/media/transcode.js` `lib/routes/media-derived.js` `src/client.js` `src/media-prep.js` `src/video-layer.js` | ✅ |
+| `verify-treehole.mjs` | `lib/persona-memory.js` `lib/persona-store.js` `lib/pet-chat-brain.js` `lib/routes/pet-chat.js` |  |
+| `verify-tts-sanitize.mjs` | `lib/routes/pet-chat.js` `lib/tts/tts.js` `src/pet-chat.js` `src/pet-tts.js` |  |
 | `verify-types.mjs` | `lib/index.js` `lib/inventory.js` `src/client.js` | ✅ |
 | `verify-undefined-refs.mjs` | — |  |
 | `verify-upload-store.mjs` | `lib/index.js` `lib/kernel/config.js` `lib/kernel/data-dir.js` `lib/upload-dir.js` `lib/upload-store.js` |  |
 | `verify-variant-hash.mjs` | `lib/download-queue.js` `lib/routes/downloads.js` `lib/variant-pick.js` `src/i18n-copy-panel.js` `src/local-first.js` |  |
 | `verify-variants.mjs` | `lib/download-queue.js` `lib/routes/downloads.js` `lib/routes/inventory.js` `lib/variant-pick.js` `src/local-first.js` `src/quick-panel.js` |  |
 | `verify-video-preview.mjs` | `lib/media/video-preview.js` |  |
+| `verify-voice-pack.mjs` | `lib/routes/pet-chat.js` `lib/tts/voice-pack.js` `src/panel-tabs-personas.js` |  |
 | `verify-voice-permission-v2.mjs` | `lib/persona-store.js` `lib/persona-tool-log.js` `lib/pet-chat-brain.js` `lib/routes/pet-chat.js` `lib/tts/packs.js` `lib/tts/tts-worker.cjs` `lib/tts/voice-center.js` `src/panel-tabs-personas.js` |  |
 | `verify-voice-thinking-ux-v3.mjs` | `lib/persona-store.js` `lib/persona-tool-log.js` `lib/pet-chat-brain.js` `lib/pet-chat-tools.js` `lib/routes/pet-chat.js` `lib/tts/packs.js` `lib/tts/tts-worker.cjs` `lib/tts/voice-center.js` `src/i18n-copy-panel.js` `src/panel-tabs-personas.js` `src/pet-bubble.js` `src/pet-chat.js` |  |
 | `verify-voice-tts.mjs` | `lib/routes/pet-chat.js` `lib/tts/catalog.js` `lib/tts/tts-worker.cjs` `lib/tts/tts.js` `src/pet-bubble.js` `src/pet-chat.js` `src/pet-tts.js` `src/pet-voice-input.js` |  |
@@ -234,6 +241,7 @@
 | `lib/components/pet-link/src/pet-link-tuner.js` | 2 | `verify-pet-tuner-browser` `verify-pet-tuner` |
 | `lib/components/pet-link/src/pet-link.js` | 4 | `verify-pet-hotplug-client` `verify-pet-official` `verify-pet-tuner-browser` `verify-pet-tuner` |
 | `lib/curated-personal.js` | 1 | `verify-curated-personal` |
+| `lib/desktop-context.js` | 1 | `verify-screen-context` |
 | `lib/diag-trace.js` | 2 | `verify-host-diag` `verify-scene-live` |
 | `lib/download-queue.js` | 17 | `verify-dead-code` `verify-download-chain` `verify-download-first` `verify-download-recovery` `verify-downloads` `verify-hash-source` `verify-local-media-heal` `verify-media-chaos` `verify-media-selfheal` `verify-media-state` `verify-no-auto-enqueue` `verify-queue-priority` `verify-ranged-integrity` `verify-variant-hash` `verify-variants` `verify-wallpaper-chain` `verify-wallpaper-core` |
 | `lib/faststart.js` | 3 | `verify-cache-dir` `verify-mp4-vfs` `verify-scene-live` |
@@ -262,6 +270,7 @@
 | `lib/media/scene-probe.js` | 1 | `verify-scene-probe` |
 | `lib/media/transcode.js` | 6 | `verify-cache-dir` `verify-cache-prune` `verify-child-kill` `verify-config-store` `verify-media-selfheal` `verify-transcode-state` |
 | `lib/media/video-preview.js` | 3 | `verify-cache-dir` `verify-cache-prune` `verify-video-preview` |
+| `lib/memory-db.js` | 1 | `verify-memory-db` |
 | `lib/mp4-vfs.js` | 2 | `verify-mp4-vfs` `verify-scene-live` |
 | `lib/notice.js` | 1 | `verify-logging` |
 | `lib/occlusion/index.js` | 1 | `verify-occlusion-hub` |
@@ -271,12 +280,13 @@
 | `lib/persona-doc.js` | 1 | `verify-persona-ui` |
 | `lib/persona-growth.js` | 1 | `verify-personas` |
 | `lib/persona-library.js` | 1 | `verify-persona-ui` |
-| `lib/persona-memory.js` | 5 | `verify-persona-ui` `verify-personas` `verify-pet-chat-brain` `verify-pet-chat` `verify-pet-settings` |
-| `lib/persona-store.js` | 8 | `verify-about-filter-capability` `verify-persona-ui` `verify-personas` `verify-pet-chat-brain` `verify-pet-chat` `verify-pet-settings` `verify-voice-permission-v2` `verify-voice-thinking-ux-v3` |
+| `lib/persona-memory.js` | 8 | `verify-memory-db` `verify-persona-ui` `verify-personas` `verify-pet-chat-brain` `verify-pet-chat` `verify-pet-settings` `verify-screen-context` `verify-treehole` |
+| `lib/persona-store.js` | 13 | `verify-about-filter-capability` `verify-memory-db` `verify-mind-proactive` `verify-persona-ui` `verify-personas` `verify-pet-chat-brain` `verify-pet-chat` `verify-pet-settings` `verify-screen-context` `verify-story-long` `verify-treehole` `verify-voice-permission-v2` `verify-voice-thinking-ux-v3` |
 | `lib/persona-tool-log.js` | 3 | `verify-capabilities-v5` `verify-voice-permission-v2` `verify-voice-thinking-ux-v3` |
-| `lib/pet-chat-brain.js` | 8 | `verify-about-filter-capability` `verify-capabilities-v5` `verify-persona-ui` `verify-personas` `verify-pet-chat-brain` `verify-singing-v5` `verify-voice-permission-v2` `verify-voice-thinking-ux-v3` |
+| `lib/pet-chat-brain.js` | 10 | `verify-about-filter-capability` `verify-capabilities-v5` `verify-persona-ui` `verify-personas` `verify-pet-chat-brain` `verify-singing-v5` `verify-story-long` `verify-treehole` `verify-voice-permission-v2` `verify-voice-thinking-ux-v3` |
 | `lib/pet-chat-memory.js` | 1 | `verify-pet-chat-brain` |
-| `lib/pet-chat-proactive.js` | 2 | `verify-pet-chat-brain` `verify-pet-chat` |
+| `lib/pet-chat-mind.js` | 1 | `verify-mind-proactive` |
+| `lib/pet-chat-proactive.js` | 3 | `verify-mind-proactive` `verify-pet-chat-brain` `verify-pet-chat` |
 | `lib/pet-chat-tools.js` | 5 | `verify-about-filter-capability` `verify-capabilities-v5` `verify-persona-ui` `verify-pet-chat-brain` `verify-voice-thinking-ux-v3` |
 | `lib/pkg-read.js` | 4 | `verify-package-files` `verify-package-publish` `verify-scene-probe` `verify-scene` |
 | `lib/route-registry.js` | 3 | `verify-cache-manager` `verify-inject-contracts` `verify-route-registry` |
@@ -293,7 +303,7 @@
 | `lib/routes/modules.js` | 0 | **（无）** |
 | `lib/routes/occlusion.js` | 1 | `verify-occlusion-hub` |
 | `lib/routes/personas.js` | 1 | `verify-personas` |
-| `lib/routes/pet-chat.js` | 17 | `verify-about-filter-capability` `verify-capabilities-v5` `verify-capabilities` `verify-curated-personal` `verify-curated` `verify-latency-v5` `verify-mic-test` `verify-persona-ui` `verify-personas` `verify-pet-chat-brain` `verify-pet-chat` `verify-pet-settings` `verify-pet-voice` `verify-singing-v5` `verify-voice-permission-v2` `verify-voice-thinking-ux-v3` `verify-voice-tts` |
+| `lib/routes/pet-chat.js` | 23 | `verify-about-filter-capability` `verify-capabilities-v5` `verify-capabilities` `verify-curated-personal` `verify-curated` `verify-latency-v5` `verify-mic-test` `verify-mind-proactive` `verify-persona-ui` `verify-personas` `verify-pet-chat-brain` `verify-pet-chat` `verify-pet-settings` `verify-pet-voice` `verify-screen-context` `verify-singing-v5` `verify-story-long` `verify-treehole` `verify-tts-sanitize` `verify-voice-pack` `verify-voice-permission-v2` `verify-voice-thinking-ux-v3` `verify-voice-tts` |
 | `lib/routes/pets.js` | 5 | `verify-download-first` `verify-downloads` `verify-features` `verify-hash-source` `verify-site-v1-sync` |
 | `lib/routes/presets.js` | 1 | `verify-presets` |
 | `lib/routes/props.js` | 1 | `verify-scene` |
@@ -322,8 +332,9 @@
 | `lib/tts/sing-synth.js` | 1 | `verify-singing-v5` |
 | `lib/tts/singing.js` | 1 | `verify-singing-v5` |
 | `lib/tts/tts-worker.cjs` | 3 | `verify-voice-permission-v2` `verify-voice-thinking-ux-v3` `verify-voice-tts` |
-| `lib/tts/tts.js` | 2 | `verify-latency-v5` `verify-voice-tts` |
+| `lib/tts/tts.js` | 3 | `verify-latency-v5` `verify-tts-sanitize` `verify-voice-tts` |
 | `lib/tts/voice-center.js` | 2 | `verify-voice-permission-v2` `verify-voice-thinking-ux-v3` |
+| `lib/tts/voice-pack.js` | 1 | `verify-voice-pack` |
 | `lib/upload-dir.js` | 5 | `verify-asset-paths` `verify-avatar-interval-and-rotation` `verify-cache-dir` `verify-scene-live` `verify-upload-store` |
 | `lib/upload-store.js` | 3 | `verify-avatar-interval-and-rotation` `verify-scene-live` `verify-upload-store` |
 | `lib/variant-pick.js` | 10 | `verify-download-chain` `verify-hash-source` `verify-install-flow` `verify-media-selfheal` `verify-queue-priority` `verify-site-v1-sync` `verify-variant-hash` `verify-variants` `verify-wallpaper-chain` `verify-wallpaper-core` |
@@ -387,17 +398,17 @@
 | `src/panel-tabs-boot.js` | 15 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-downloads` `verify-first-click-feedback` `verify-fontset` `verify-glass-surfaces` `verify-panel-interactions` `verify-scene-live` `verify-stall-heal` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs-effects.js` | 12 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-download-first` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs-mascot.js` | 11 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
-| `src/panel-tabs-personas.js` | 16 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-capabilities-v5` `verify-client` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-persona-ui` `verify-personas` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` `verify-voice-permission-v2` `verify-voice-thinking-ux-v3` |
+| `src/panel-tabs-personas.js` | 17 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-capabilities-v5` `verify-client` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-persona-ui` `verify-personas` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` `verify-voice-pack` `verify-voice-permission-v2` `verify-voice-thinking-ux-v3` |
 | `src/panel-tabs-pets.js` | 15 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-downloads` `verify-first-click-feedback` `verify-fontset` `verify-glass-surfaces` `verify-panel-interactions` `verify-pet-settings` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs-skins.js` | 17 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-client` `verify-contracts` `verify-downloads` `verify-first-click-feedback` `verify-fontset` `verify-glass-surfaces` `verify-install-flow` `verify-panel-defensive` `verify-panel-interactions` `verify-scene-live` `verify-stall-heal` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs-wallpaper.js` | 16 | `e2e-web-media-origin` `verify-about` `verify-adapter` `verify-avatar-interval-and-rotation` `verify-client` `verify-contracts` `verify-downloads` `verify-fontset` `verify-glass-surfaces` `verify-identity-ui` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` `verify-wallpaper-chain` `verify-wallpaper-core` |
 | `src/panel-tabs-work.js` | 16 | `e2e-web-media-origin` `verify-about-filter-capability` `verify-about` `verify-adapter` `verify-capabilities` `verify-client` `verify-contracts` `verify-curated-personal` `verify-curated` `verify-fontset` `verify-glass-surfaces` `verify-identity-ui` `verify-scene-live` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/panel-tabs.js` | 15 | `e2e-web-media-origin` `verify-about-filter-capability` `verify-about` `verify-adapter` `verify-api-client` `verify-client` `verify-component-visibility` `verify-contracts` `verify-fontset` `verify-glass-surfaces` `verify-scene-live` `verify-subpackage-toggle-roundtrip` `verify-system-fonts` `verify-theme-follow` `verify-theme-layer` |
 | `src/persistence.js` | 4 | `verify-adapter` `verify-client` `verify-presets` `verify-settings-namespaces` |
-| `src/pet-bubble.js` | 4 | `verify-pet-bubble` `verify-singing-v5` `verify-voice-thinking-ux-v3` `verify-voice-tts` |
-| `src/pet-chat.js` | 9 | `verify-capabilities-v5` `verify-latency-v5` `verify-pet-chat-brain` `verify-pet-chat` `verify-pet-settings` `verify-pet-voice` `verify-singing-v5` `verify-voice-thinking-ux-v3` `verify-voice-tts` |
+| `src/pet-bubble.js` | 5 | `verify-pet-bubble` `verify-singing-v5` `verify-story-long` `verify-voice-thinking-ux-v3` `verify-voice-tts` |
+| `src/pet-chat.js` | 11 | `verify-capabilities-v5` `verify-latency-v5` `verify-pet-chat-brain` `verify-pet-chat` `verify-pet-settings` `verify-pet-voice` `verify-singing-v5` `verify-story-long` `verify-tts-sanitize` `verify-voice-thinking-ux-v3` `verify-voice-tts` |
 | `src/pet-layer.js` | 1 | `verify-features` |
-| `src/pet-tts.js` | 1 | `verify-voice-tts` |
+| `src/pet-tts.js` | 3 | `verify-story-long` `verify-tts-sanitize` `verify-voice-tts` |
 | `src/pet-voice-input.js` | 2 | `verify-pet-voice` `verify-voice-tts` |
 | `src/picker-modal.js` | 5 | `verify-client` `verify-first-click-feedback` `verify-fontset` `verify-scene-live` `verify-wallpaper-progress` |
 | `src/picker-model.js` | 1 | `verify-picker-model` |

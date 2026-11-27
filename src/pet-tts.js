@@ -20,6 +20,11 @@ const PET_TTS_MAX_SENTENCE = 48;
 const PET_TTS_MAX_PIECES = 8;
 /** 与宿主 `TTS_MAX_CHARS` 对齐的总上限。 */
 const PET_TTS_MAX_CHARS = 240;
+/**
+ * 句间静音（200–350ms，任务书 §11③）：不靠标点让引擎停顿（那会被念成“逗号/句号”），
+ * 而是由播放队列在两句之间插一段静音 —— 有停顿，但合成文本里已经没有标点。
+ */
+const PET_TTS_GAP_MS = 260;
 
 /**
  * 纯函数：把一段文字切成“适合一句一合成”的片段。
@@ -242,6 +247,11 @@ function petTtsCreate(deps) {
           onError(error);
           break;
         }
+        // 句间 260ms 静音（任务书 §11③）：合成文本已去标点，停顿只能由队列给。
+        if (queue.length && queue[0].gen === gen) {
+          await new Promise((resolve) => { setTimeout(resolve, PET_TTS_GAP_MS); });
+          if (item.gen !== generation) break;
+        }
       }
     } finally {
       busy = false;
@@ -287,13 +297,23 @@ function petTtsCreate(deps) {
     if (disposed) return false;
     const cfg = getVoice() || {};
     if (cfg.muted === true) { onState('idle'); return false; }
-    const pieces = petTtsSplit(text);
+    let pieces = petTtsSplit(text);
     if (!pieces.length) return false;
     if (!AudioCtor) {
       onError({ code: 'tts-no-audio', hint: '这个环境不能播放声音' });
       return false;
     }
     const speechOpts = speech || {};
+    /**
+     * v1.2 故事模式：`group: 2|3` 把相邻 2–3 句合成**一段**再请求宿主
+     * （每 1–3 句一段，减少碎片；默认 group=1 时行为与旧版完全一致）。
+     */
+    const group = Math.min(3, Math.max(1, Math.round(Number(speechOpts.group) || 1)));
+    if (group > 1 && pieces.length > 1) {
+      const merged = [];
+      for (let i = 0; i < pieces.length; i += group) merged.push(pieces.slice(i, i + group).join(''));
+      pieces = merged;
+    }
     const voice = String(speechOpts.voice || cfg.name || '');
     const rawRate = speechOpts.rate !== undefined ? speechOpts.rate : cfg.rate;
     const rate = Number.isFinite(Number(rawRate)) ? Number(rawRate) : 0;

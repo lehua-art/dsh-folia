@@ -1,5 +1,38 @@
 # 变更记录（Changelog）
 
+### v1.2.0（2026-11-26，**长故事 / 记忆 v2 / 主动思维 / 树洞 / 屏幕感知 / 音色策略**）
+
+> 基线 1.1.0；一个分支一次交付；未 npm publish（版本号由主对话统一发布）。
+> 高风险功能（屏幕感知 / 被动观察 / 主动搭话）**默认全关**。
+
+- P0 TTS：`lib/tts/tts.js` 新增 `sanitizeForSpeech()` / `sanitizeLyrics()`；
+  `/tts`、`/tts/preview`、`/speak` 统一走清洗；`normalizeTtsText` = 清洗 + 折叠；
+  缓存键用清洗后文本；`src/pet-tts.js` 句间插 260ms 静音（不靠标点停顿）。
+- P0 声音列表：`/tts/voices` 增 `rateLimited`（Edge 429 时给一条提示 + 本地音色，不堆灰项）；
+  下拉仍只列 `usable=true`。
+- P0 长故事：`conversationMode`（chat/story/treehole/observe）+ `voiceLength`（3/8/不限，默认 8）；
+  宿主不再在第 3 句 cancel，故事放宽到 `num_predict=6000`；客户端故事 TTS 每 2 句一批、
+  气泡不自动收起、新增「继续/重讲/缩短」动作条。
+- P0 记忆 v2：`lib/memory-db.js`（node:sqlite + FTS5 + bm25 + 30 天半衰期 + 艾宾浩斯衰减 +
+  pinned 不衰减 + 关系/好感度 + 世界书 RAG）；`persona-memory.js` 变双后端，
+  首次使用迁移 `events.jsonl`/`summary.json`（保留只读备份），失败/`FOLIA_MEMORY_DB=0` 回退 JSONL。
+- P0 树洞：树洞 prompt（先接情绪、开放问题、不急建议、不诊断）；危机词固定安全回应
+  （热线可配 `petChat.treehole.hotline`，明确“不是心理治疗”）；树洞事件 importance 7。
+- P1 主动思维：`lib/pet-chat-mind.js`（默认关，15 分钟可配，每小时 ≤2 次，勿扰/静默/忙碌让路，
+  不重复最近 3 句，四档决策 speak/ask/record/none）；`/mind/tick`、`/mind/state`。
+- P1 被动观察 + 屏幕感知：`lib/desktop-context.js`（PowerShell user32 前台窗口 + WinRT OCR
+  全程内存、不落盘、不上传）；Level 1 45s / Level 2 3min 采样；敏感应用与锁屏跳过；
+  默认关时连 PowerShell 都不启动；观察记录 kind=observation 可查/删/清空。
+- P2 音色策略：`lib/tts/voice-pack.js` + 4 个自合成系统音效（MIT，`assets/system/sound/`）；
+  角色音色只走用户导入（license/作者/sha256 硬门槛），不进 npm 包。
+- 设置：`petChat` 新增 `conversationMode` / `voiceLength` / `proactive` / `screen` / `treehole`；
+  设置页新增「对话与隐私」页 + 用户音色包导入 + 观察记录/记忆查看回滚导出。
+- 新增判据 7 个：`verify-tts-sanitize` / `verify-story-long` / `verify-memory-db` /
+  `verify-treehole` / `verify-mind-proactive` / `verify-screen-context` / `verify-voice-pack`；
+  守卫链/冻结 fixture/CHAIN_FLOOR 抬到 verify 162 / all 175。
+- `run-audit` 输出改走文件（Windows 上浏览器子进程继承管道会把 audit 挂死）。
+- **已知限制**见 `docs/V1.2-DELIVERY.md`。
+
 ### v1.1.0（2026-11-26，**精选 → 个人工具 75 项 + 插件步骤详情 + 安装话术**）
 
 > 只做展示与复制；不做逐条安装器，不扫描安装路径/注册表；非 DSH 工具明确按 README 安装。

@@ -165,6 +165,17 @@ async function ensureAsrReady(isCancelled) {
 let petChatVoice = { name: '', muted: false, rate: 0, continuous: true, listenPaused: false };
 /** pre.65：本轮输入方式决定长度策略（语音 1–3 句；文字可长）。 */
 let petChatInputMode = 'text';
+/**
+ * v1.2 会话模式：chat（默认）/ story（讲故事）/ treehole（树洞）/ observe（只观察）。
+ * 模式随每次 /pet-chat/chat 上报（宿主旧版本会安全忽略未知字段）。
+ */
+let petChatConversationMode = 'chat';
+/** v1.2 语音回答长度（0 = 不限；默认 8 句 —— 旧版宿主写死 3 句）。 */
+let petChatVoiceLength = 8;
+/** 故事模式：上一轮全文（「重讲 / 缩短」直接用它，不再问模型）。 */
+let petChatLastReply = '';
+/** 「继续」：下一轮不清空气泡，接在原文后面。 */
+let petChatKeepBubble = false;
 /** 当前 active persona（只用于提示/排障；宿主以 index.active 为准，避免切换后发旧 id）。 */
 let petChatPersonaId = '';
 async function petChatRefreshVoice() {
@@ -182,6 +193,10 @@ async function petChatRefreshVoice() {
         listenPaused: doc.voice.listenPaused === true,
       };
     }
+    // v1.2：会话模式 / 语音长度由宿主设置下发（默认 chat / 8）。
+    if (typeof doc.conversationMode === 'string') petChatConversationMode = petChatNormalizeMode(doc.conversationMode);
+    if (Number.isFinite(Number(doc.voiceLength))) petChatVoiceLength = Math.max(0, Math.round(Number(doc.voiceLength)));
+    petChatProactiveEnabled = Boolean(doc.proactive && doc.proactive.enabled === true);
   } catch { /* 读不到就用默认（不静音） */ }
   // 「暂停说话 / 暂停聆听」都是持久开关：设置页/右键改完立刻生效。
   petChatSpeakPaused = petChatVoice.muted === true;
@@ -189,7 +204,27 @@ async function petChatRefreshVoice() {
   petChatContinuousPaused = petChatVoice.listenPaused === true;
   petBubble.setVoiceFlags({ speakPaused: petChatSpeakPaused, listenPaused: petChatContinuousPaused });
   petChatPublishContinuousState();
+  petChatApplyModeUi();
+  if (petChatProactiveEnabled) petChatMindStart();
   return petChatVoice;
+}
+
+/** v1.2：模式值归一（未知值一律回落 chat，不猜近似值）。 */
+function petChatNormalizeMode(value) {
+  const mode = String(value || '');
+  return ['chat', 'story', 'treehole', 'observe'].includes(mode) ? mode : 'chat';
+}
+
+/** v1.2：模式的可视提示 —— 只观察时状态条常驻「👁 观察中」，退出即收起。 */
+function petChatApplyModeUi() {
+  try {
+    if (petChatConversationMode === 'observe') {
+      petBubble.status('info', '👁 ' + weT('观察中'), { delay: 0 });
+    } else {
+      petBubble.hideStatus(0);
+    }
+  } catch { /* 状态条是增强 */ }
+  petChatPublishContinuousState();
 }
 
 /* ── 常驻聆听（任务 §4）：装好就在听；半双工；「暂停说话 / 暂停聆听」两个开关 ── *
@@ -236,6 +271,8 @@ function petChatPublishContinuousState() {
         active: petChatContinuousActive === true,
         paused: petChatContinuousPaused === true,
         rounds: petChatContinuousRounds,
+        mode: petChatConversationMode,
+        voiceLength: petChatVoiceLength,
       },
     }));
     window.dispatchEvent(new CustomEvent('we-pet-voice-state', {
@@ -781,7 +818,10 @@ const petTts = petTtsCreate({
   },
   onState: (kind) => { petBubble.setState(kind); },
   onIdle: () => {
-    petBubble.hide(3000);
+    // v1.2：故事/树洞读完不马上收起（否则 800 字故事刚读完就消失，没法回看）。
+    if (petChatConversationMode === 'story') { /* 保留气泡，由用户点关闭或「缩短」 */ }
+    else if (petChatConversationMode === 'treehole') petBubble.hide(10000);
+    else petBubble.hide(3000);
     petChatListeningNow = false;
     // 播完 150ms 自动恢复听（半双工：朗读期间绝不录音）。
     if (petChatContinuousActive && !petChatContinuousPaused) petChatContinuousArm(PET_CHAT_LISTEN_RESUME_MS);
@@ -949,6 +989,16 @@ const petVoiceIn = petVoiceInputCreate({
       return;
     }
     petChatTurnBegin();
+    /**
+     * v1.2 只观察模式：**不回答、不弹气泡**（没对它说话时只记不说）。
+     * 宿主也会兜底拒绝，但客户端这一层先挡住，避免每次唤醒都白发一个请求。
+     */
+    if (petChatConversationMode === 'observe') {
+      petBubble.status('info', '👁 ' + weT('观察中'), { delay: 0 });
+      if (typeof onState === 'function') onState({ state: 'idle' });
+      petChatTurnEnd();
+      return;
+    }
     const turnStartAt = Date.now();
     let firstTokenAt = 0;
     let firstAudioAt = 0;
@@ -962,7 +1012,13 @@ const petVoiceIn = petVoiceInputCreate({
     // “想”态：模型还在回，先不给“说”的波形
     petBubble.setState('think');
     // 新一轮回答从空气泡开始（否则会追加到上一轮回答的尾部）。
-    petBubble.clear();
+    // v1.2「继续」：不清空，用两个换行接在原文后面（故事分章阅读）。
+    if (petChatKeepBubble) {
+      petBubble.append('\n\n');
+      petChatKeepBubble = false;
+    } else {
+      petBubble.clear();
+    }
     // v2 环境感知：壁纸名 / 正在播放由前端补（宿主不认识 selection 与媒体桥实例）。
     const context = await petChatEnvSnapshot();
     // ⚠️ apiFetch 的返回值里**已经带上了原始 Response**（字段 `response`）。
@@ -980,6 +1036,8 @@ const petVoiceIn = petVoiceInputCreate({
           context,
           // pre.65：显式输入方式让宿主做“语音 1–3 句 / 文字可长”的长度策略。
           inputMode: petChatInputMode === 'voice' ? 'voice' : 'text',
+          // v1.2：会话模式随每次请求上报（旧宿主安全忽略未知字段）。
+          conversationMode: petChatConversationMode,
         }),
         // ⚠️ 必须 parse:'none'。默认路径会 await response.json()，
         //    那会把 SSE 流**整个消费掉**（等到生成结束、再解析失败），
@@ -1011,16 +1069,30 @@ const petVoiceIn = petVoiceInputCreate({
      */
     let speakBuffer = '';
     let queuedSpeech = 0;
-    const enqueueSpeech = (piece) => {
-      const line = String(piece || '').trim();
+    /** v1.2：故事模式每 2 句合成一段（1–3 句/段的队列播放），减少碎片化。 */
+    let speechBatch = '';
+    /** 本轮回答全文（故事模式的「重讲 / 缩短」用）。 */
+    let turnReply = '';
+    const enqueueSpeech = (piece, flush) => {
+      let line = String(piece || '').trim();
       if (!line) return;
       // 任务 §4③：「暂停说话」= 跳过 TTS 队列，只出字幕；状态条显示「🔇 仅文字」。
       if (petChatSpeakPaused) {
         petBubble.setState('muted');
         return;
       }
+      if (petChatConversationMode === 'story') {
+        // 2 句一批；flush 时把尾句也送出去。每段仍受宿主 240 字上限约束（2 句通常 < 100 字）。
+        speechBatch += line;
+        if (!flush && speechBatch.length < 60) return;
+        line = speechBatch;
+        speechBatch = '';
+      }
       // v2：本轮语速由宿主 meta 给（夜间/疲惫 -1 = -10%）；再叠加当前人设的 voice.rate。
-      if (petSpeak(line, { rate: petChatSpeechRate + (Number(petChatVoice.rate) || 0) })) {
+      if (petSpeak(line, {
+        rate: petChatSpeechRate + (Number(petChatVoice.rate) || 0),
+        ...(petChatConversationMode === 'story' ? { group: 2 } : {}),
+      })) {
         queuedSpeech += 1;
         if (!firstAudioAt) firstAudioAt = Date.now(); // 首段音频交给播放器的时刻
       }
@@ -1083,6 +1155,16 @@ const petVoiceIn = petVoiceInputCreate({
           if (Number.isFinite(Number(payload.rate))) petChatSpeechRate = Number(payload.rate);
           continue;
         }
+        /**
+         * v1.2：宿主失败事件（rate-limited / no-model / timeout / bad-request…）以前**完全静默**，
+         * 气泡停在「在想」。这里补一条可见提示，并把这一轮收尾。
+         */
+        if (eventName === 'error') {
+          const hint = String(payload.hint || payload.code || weT('这次没答上来'));
+          petBubble.status('error', hint, { delay: 5000 });
+          replyDone = true;
+          continue;
+        }
         // 防兜底：模型偶尔仍会输出 {"reply":"…","emotion":"…"} 信封，
         // 这里只把 reply 的正文喂给气泡（不显示大括号/字段名/emotion）。
         if (typeof payload.t === 'string') {
@@ -1105,6 +1187,7 @@ const petVoiceIn = petVoiceInputCreate({
               // 气泡始终显示**完整回答**（逐段追加，长文在 160px 内滚动）；
               // 朗读只负责切句与“说”状态，不再改写气泡内容。
               petBubble.append(piece);
+              turnReply += piece;
               speakBuffer += piece;
               const split = petTtsSentences(speakBuffer);
               for (const sentence of split.sentences) enqueueSpeech(sentence);
@@ -1115,7 +1198,10 @@ const petVoiceIn = petVoiceInputCreate({
       }
     }
     // 最后一段没有句末标点也要念（比如“我也在”）
-    enqueueSpeech(speakBuffer);
+    enqueueSpeech(speakBuffer, true);
+    // v1.2：故事模式记住全文（「重讲 / 缩短」不再问模型），并给出操作按钮。
+    petChatLastReply = String(turnReply || '').trim();
+    if (petChatConversationMode === 'story' && petChatLastReply) petChatStoryBarShow();
     if (typeof onState === 'function') onState({ state: 'idle' });
     // 本轮成功：常驻聆听继续（任务 §4：装好就在听，不靠"点了才听"）；
     // 有朗读时等 onIdle 播完再开麦（半双工），没朗读（暂停说话/静音）直接 150ms 后排下一轮。
@@ -1127,7 +1213,12 @@ const petVoiceIn = petVoiceInputCreate({
     if (!queuedSpeech && !singStarted) petChatContinuousArm();
     // 没有任何一句进入朗读（暂停说话 / 合成不可用）⇒ 字幕照常显示，3 秒后淡出。
     // 唱歌时气泡归歌词用：不提前收，播完由 petChatSingPlay 收。
-    if (!queuedSpeech && !singStarted) petBubble.hide(3000);
+    // v1.2：故事保留气泡（用户要能回看/点「缩短」）；树洞多留一会儿。
+    if (!queuedSpeech && !singStarted) {
+      if (petChatConversationMode === 'story') { /* 不自动收 */ }
+      else if (petChatConversationMode === 'treehole') petBubble.hide(10000);
+      else petBubble.hide(3000);
+    }
     petChatReportLatency(turnStartAt, firstTokenAt, firstAudioAt);
     petChatTurnEnd();
   },
@@ -1215,6 +1306,122 @@ function petChatSay(text) {
   if (!line) return;
   petBubble.show(line);
   if (!petSpeak(line)) petBubble.hide(3000);
+}
+
+/* ── v1.2 故事模式：继续 / 重讲 / 缩短 ─────────────────────────────────── */
+
+let petChatStoryBar = null;
+
+function petChatStoryBarHide() {
+  try { if (petChatStoryBar && petChatStoryBar.parentNode) petChatStoryBar.parentNode.removeChild(petChatStoryBar); } catch { /* ignore */ }
+  petChatStoryBar = null;
+}
+
+/** 把一段长文按句切成 ≤max 字的小段（重讲/朗读用；宿主单次上限 240 字）。 */
+function petChatStoryChunks(text, max) {
+  const limit = Math.max(60, Number(max) || 180);
+  const chunks = [];
+  let buffer = '';
+  for (const ch of String(text || '')) {
+    buffer += ch;
+    if (/[。！？!?；;\n]/.test(ch) && buffer.length >= limit * 0.5) {
+      chunks.push(buffer.trim());
+      buffer = '';
+    } else if (buffer.length >= limit) {
+      chunks.push(buffer.trim());
+      buffer = '';
+    }
+  }
+  if (buffer.trim()) chunks.push(buffer.trim());
+  return chunks.filter(Boolean);
+}
+
+function petChatStoryBarShow() {
+  petChatStoryBarHide();
+  if (typeof document === 'undefined' || !document.body || typeof document.createElement !== 'function') return;
+  const bar = document.createElement('div');
+  bar.id = 'we-pet-story-actions';
+  bar.style.cssText = 'position:fixed;right:22px;bottom:104px;z-index:10000;display:flex;gap:6px;'
+    + 'background:rgba(20,22,28,.92);border:1px solid rgba(255,255,255,.16);border-radius:10px;padding:6px;'
+    + 'box-shadow:0 6px 20px rgba(0,0,0,.35);';
+  const make = (label, onClick) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.style.cssText = 'font-size:12px;padding:4px 9px;border-radius:7px;border:1px solid rgba(255,255,255,.18);'
+      + 'background:rgba(255,255,255,.08);color:#eee;cursor:pointer;';
+    button.addEventListener('click', (event) => {
+      try { event.stopPropagation(); } catch { /* ignore */ }
+      onClick();
+    });
+    return button;
+  };
+  bar.appendChild(make(weT('继续'), () => {
+    petChatStoryBarHide();
+    petChatInputMode = 'text';
+    petChatKeepBubble = true;
+    petBubble.setState('think');
+    void petVoiceIn.postChat('继续讲下去，接着刚才的情节，不要重复已经讲过的内容。');
+  }));
+  bar.appendChild(make(weT('重讲'), () => {
+    petChatStoryBarHide();
+    petSpeakStop();
+    const text = petChatLastReply;
+    if (!text) return;
+    petBubble.show(text);
+    try { petBubble.setExpanded(true); } catch { /* ignore */ }
+    for (const chunk of petChatStoryChunks(text)) petSpeak(chunk, { group: 2 });
+  }));
+  bar.appendChild(make(weT('缩短'), () => {
+    petChatStoryBarHide();
+    petSpeakStop();
+    const text = petChatLastReply;
+    if (!text) return;
+    const sentences = (text.match(/[^。！？!?]+[。！？!?]?/g) || []).slice(0, 3).join('').trim() || text.slice(0, 160);
+    petChatLastReply = sentences;
+    petBubble.show(sentences);
+    petSpeak(sentences);
+  }));
+  bar.appendChild(make(weT('收起'), () => {
+    petChatStoryBarHide();
+    petBubble.hide(0);
+  }));
+  document.body.appendChild(bar);
+  petChatStoryBar = bar;
+}
+
+/** v1.2：切换会话模式（右键菜单 / 设置都会走到这里）。 */
+function petChatSetMode(mode) {
+  petChatConversationMode = petChatNormalizeMode(mode);
+  if (petChatConversationMode !== 'story') petChatStoryBarHide();
+  petChatApplyModeUi();
+  petChatPublishContinuousState();
+}
+
+/* ── v1.2 主动思维：客户端每 5 分钟问一次宿主“现在想不想说点什么” ─────── */
+
+let petChatProactiveEnabled = false;
+let petChatMindTimer = null;
+
+async function petChatMindPoll() {
+  if (!petChatProactiveEnabled || petChatConversationMode === 'observe') return;
+  if (!petChatProactiveAllowed()) return;
+  try {
+    const resp = await apiPostJson('/pet-chat/mind/tick', {
+      speaking: (() => { try { return petTts.isSpeaking(); } catch { return false; } })(),
+      listening: petChatListeningNow === true,
+      turnBusy: petChatTurnBusy === true,
+      activeMinutes: petChatWorkStart ? Math.round((Date.now() - petChatWorkStart) / 60000) : 0,
+    }, { parse: 'always' });
+    const doc = (resp && resp.data) || {};
+    if (doc.ok && doc.line) petChatSay(String(doc.line));
+  } catch { /* 主动是增强，失败静默 */ }
+}
+
+function petChatMindStart() {
+  if (petChatMindTimer != null || typeof setInterval !== 'function') return;
+  petChatMindTimer = setInterval(() => { void petChatMindPoll(); }, 5 * 60 * 1000);
+  if (typeof petChatMindTimer.unref === 'function') petChatMindTimer.unref();
 }
 
 /** 每次点桌宠递增；收起/重开时让旧的 ASR 等待自动作废。 */
@@ -1410,6 +1617,12 @@ function mountPetChat() {
   };
   window.addEventListener('we-pet-speak-pause', onSpeakPauseEvent);
   window.addEventListener('we-pet-listen-pause', onListenPauseEvent);
+  // v1.2：右键菜单/设置页切换会话模式（聊天 / 讲故事 / 树洞 / 只观察）。
+  const onModeEvent = (event) => {
+    const detail = (event && event.detail) || {};
+    petChatSetMode(detail.mode);
+  };
+  window.addEventListener('we-pet-mode', onModeEvent);
   // 页面隐藏：暂时停麦（不持久化，回到页面自动恢复）；不偷偷在后台开麦。
   const onVisibility = () => {
     if (typeof document === 'undefined') return;
@@ -1455,6 +1668,9 @@ function mountPetChat() {
       isListening: () => petChatListeningNow === true,
       isSpeakPaused: () => petChatSpeakPaused === true,
       isListenPaused: () => petChatContinuousPaused === true,
+      // v1.2：会话模式（右键/设置页切换；判据也用它）
+      getMode: () => petChatConversationMode,
+      setMode: (mode) => petChatSetMode(mode),
     };
   } catch { /* 被别的插件占用就只保留事件通道 */ }
   return () => {
@@ -1463,6 +1679,7 @@ function mountPetChat() {
     window.removeEventListener('we-pet-continuous', onContinuousEvent);
     window.removeEventListener('we-pet-speak-pause', onSpeakPauseEvent);
     window.removeEventListener('we-pet-listen-pause', onListenPauseEvent);
+    window.removeEventListener('we-pet-mode', onModeEvent);
     document.removeEventListener('click', onDocumentClick, true);
     document.removeEventListener('keydown', onKeyDown, true);
     document.removeEventListener('visibilitychange', onVisibility);
@@ -1472,6 +1689,8 @@ function mountPetChat() {
     // v5 §6：深度思考的 3s 提示定时器也要随卸载清掉（否则会在 dispose 后改气泡）。
     if (petChatDeepTimer != null) { clearTimeout(petChatDeepTimer); petChatDeepTimer = null; }
     if (petSingTimer != null) { clearInterval(petSingTimer); petSingTimer = null; }
+    if (petChatMindTimer != null) { clearInterval(petChatMindTimer); petChatMindTimer = null; }
+    petChatStoryBarHide();
     petChatWallpaperTimer = null;
     petChatWorkTimer = null;
     petChatGreetingTimer = null;

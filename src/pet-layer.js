@@ -504,6 +504,19 @@ function createPetLayer(layerEl, canvas, pet, scale, cfg) {
       try { window.dispatchEvent(new CustomEvent("we-pet-talk")); } catch { /* ignore */ }
       closeMenu();
     }));
+    // v1.2 会话模式：聊天 / 讲故事 / 树洞 / 只观察（右键直接切换，由 pet-chat 监听）
+    let chatMode = "chat";
+    try { chatMode = (window.__dshFoliaPet && window.__dshFoliaPet.getMode && window.__dshFoliaPet.getMode()) || "chat"; } catch { /* ignore */ }
+    const modeHead = document.createElement("div");
+    modeHead.textContent = weT("模式");
+    modeHead.style.cssText = "padding:4px 10px 4px;opacity:0.55;font-size:11px";
+    menu.appendChild(modeHead);
+    [["chat", weT("聊天")], ["story", weT("讲故事")], ["treehole", weT("树洞")], ["observe", weT("只观察")]].forEach(([mode, label]) => {
+      menu.appendChild(buildMenuItem((chatMode === mode ? "☑ " : "☐ ") + label, () => {
+        try { window.dispatchEvent(new CustomEvent("we-pet-mode", { detail: { mode } })); } catch { /* ignore */ }
+        closeMenu();
+      }));
+    });
     menu.appendChild(buildMenuItem(weT("再大一点"), () => { applyScale(scale + 0.2); closeMenu(); }));
     menu.appendChild(buildMenuItem(weT("再小一点"), () => { applyScale(Math.max(0.5, scale - 0.2)); closeMenu(); }));
     menu.appendChild(buildMenuItem(weT("回右下角"), () => {

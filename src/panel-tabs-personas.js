@@ -1401,6 +1401,8 @@ function PersonaSection() {
     const currentItem = builtin.items.concat(edge.items, providers.items).find((item) => item.id === currentId);
     const edgeByLang = {};
     for (const item of edge.items) {
+      // 用户口径：声音里不可用的不要出现（429/不可用从主列表隐藏，只留一条提示）
+      if (item.status === 'rate-limited' || item.status === 'unavailable') continue;
       const key = item.langGroup || '其他';
       if (!edgeByLang[key]) edgeByLang[key] = [];
       edgeByLang[key].push(item);
@@ -1459,7 +1461,7 @@ function PersonaSection() {
           '免费在线 · Edge', personaTag('可能限流', 'warn')),
         voiceCatalog && voiceCatalog.edgeRateLimited
           ? React.createElement('div', { className: 'we-picker__hint', style: { color: '#fcd34d' } },
-            `在线音色被限流（429）：已保留 ${voiceCatalog.rateLimitedCount || 0} 个并标注“暂不可用”，合成时会自动回落到内置音色。`)
+            `在线音色被限流（429）：不可用项已隐藏；可先用内置音色，稍后自动恢复。`)
           : null,
         Object.keys(edgeByLang).length
           ? Object.keys(edgeByLang).map((lang) => React.createElement('div', { key: 'pick-edge-' + lang },

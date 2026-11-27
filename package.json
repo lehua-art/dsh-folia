@@ -1,7 +1,7 @@
 {
   "name": "dsh-folia",
   "displayName": "dshAI · 壁纸引擎与 AI 桌宠",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "dshAI：壁纸引擎 + AI 桌宠语音助手 + 多人设角色卡 + 皮肤/开机动画 + 能力市场，一站式桌面伴侣。",
   "type": "module",
   "engines": {
@@ -50,6 +50,9 @@
     "lib/persona-card.js",
     "lib/persona-growth.js",
     "lib/persona-memory.js",
+    "lib/memory-db.js",
+    "lib/pet-chat-mind.js",
+    "lib/desktop-context.js",
     "lib/persona-store.js",
     "lib/persona-tool-log.js",
     "lib/persona-doc.js",
@@ -125,6 +128,7 @@
     "README.en.md",
     "README.beginner.md",
     "lib/components/",
+    "assets/system/sound/",
     "lib/features.js",
     "lib/route-registry.js",
     "lib/settings/",

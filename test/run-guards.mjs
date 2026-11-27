@@ -481,6 +481,20 @@ const VERIFY_STEPS = [
   // P1 智能语音闭环：真合成（SAPI → Edge 系统音色 → 明确错误）/ /tts 与 /tts/stop 路由 /
   // stop 幂等 / barge-in 调用顺序 / 分句排队 / 三态气泡 / 工作联动 speak 通道。
   step('test/verify-voice-tts.mjs'),
+  // v1.2 P0：TTS 只读文字（清洗 + 缓存键 + 句间静音 + 故事分批）
+  step('test/verify-tts-sanitize.mjs'),
+  // v1.2 P0：长故事完整输出（不再 3/8 句截断；故事 prompt / num_predict / 按钮）
+  step('test/verify-story-long.mjs'),
+  // v1.2 P0：记忆 v2（node:sqlite + FTS5 + 衰减 + 关系 + 世界书 + JSONL 迁移）
+  step('test/verify-memory-db.mjs'),
+  // v1.2 P0：树洞模式（先共情+提问 / 危机词安全提示 / 记忆 importance 7）
+  step('test/verify-treehole.mjs'),
+  // v1.2 P1：主动思维（15 分钟可配 / 45 分钟工作 / 勿扰/静默/每小时 2 次 / 不重复）
+  step('test/verify-mind-proactive.mjs'),
+  // v1.2 P1：屏幕感知（默认关 / Level1 前台 / Level2 OCR 原图不落盘 / 敏感与锁屏跳过）
+  step('test/verify-screen-context.mjs'),
+  // v1.2 P2：音色素材策略（内置仅 4 个系统音效 / 角色音色只走导入 / license 硬门槛）
+  step('test/verify-voice-pack.mjs'),
   // v5 §1 按谱清唱（16 条）：真合成 + F0 朗读对照（≥2×）/ 音符数 / 时长误差 / 路由 / 拒绝带伴奏 / 曲调来源。
   // 软档：依赖本机 SAPI 音色与 ffmpeg，换机器可能 SKIP；audit 仍会单独跑它。
   step('test/verify-singing-v5.mjs', [], 'soft'),

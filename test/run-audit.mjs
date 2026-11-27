@@ -17,7 +17,8 @@
  *   node test/run-audit.mjs --quiet    # 只打印汇总与 FAIL 清单
  */
 import { spawnSync } from 'node:child_process';
-import { readdirSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RETIRED_TESTS, isRetired } from './tools/retired-tests.mjs';
@@ -25,6 +26,14 @@ import { RETIRED_TESTS, isRetired } from './tools/retired-tests.mjs';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const QUIET = process.argv.includes('--quiet');
 const ONLY_RETIRED = process.argv.includes('--only-retired');
+/**
+ * 子进程输出走**文件**而不是管道：Windows 上 `verify-glass-runtime-browser` 会拉起
+ * Chromium，浏览器子进程会继承父进程的 stdout 管道句柄 —— spawnSync 等到管道 EOF
+ * 才返回，于是整个 audit 挂死（本机实测 30 分钟不返回）。写文件后只看退出码，
+ * 既没有管道等待，也不丢失败详情。
+ */
+const LOG_DIR = join(tmpdir(), 'folia-audit-logs');
+mkdirSync(LOG_DIR, { recursive: true });
 
 const SKIP = new Set(['run-guards.mjs', 'run-audit.mjs', 'warn-only.mjs']);
 const files = readdirSync(join(ROOT, 'test'))
@@ -39,14 +48,21 @@ const failDetail = new Map();
 for (const file of files) {
   const known = isRetired(file);
   if (ONLY_RETIRED && !known) continue;
+  const outPath = join(LOG_DIR, file + '.out.log');
+  const errPath = join(LOG_DIR, file + '.err.log');
+  const outFd = openSync(outPath, 'w');
+  const errFd = openSync(errPath, 'w');
   const run = spawnSync(process.execPath, [join(ROOT, 'test', file)], {
-    cwd: ROOT, encoding: 'utf8', timeout: 180000, stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: ROOT, encoding: 'utf8', timeout: 180000, stdio: ['ignore', outFd, errFd],
   });
+  closeSync(outFd);
+  closeSync(errFd);
   const ok = run.status === 0;
-  if (ok) { pass.push(file); continue; }
+  if (ok) { pass.push(file); try { rmSync(outPath, { force: true }); rmSync(errPath, { force: true }); } catch { /* ignore */ } continue; }
   if (known) { retired.push(file); continue; }
   fail.push(file);
-  const out = String(run.stdout || '') + String(run.stderr || '');
+  let out = '';
+  try { out = readFileSync(outPath, 'utf8') + '\n' + readFileSync(errPath, 'utf8'); } catch { out = ''; }
   const line = out.split('\n').find((l) => l.includes('✗') || l.includes('Error:')) || '';
   failDetail.set(file, line.trim().slice(0, 160));
 }
