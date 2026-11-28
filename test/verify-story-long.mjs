@@ -95,8 +95,8 @@ const textOf = (events) => events.filter((item) => item.event === 'delta').map((
 const doneOf = (events) => events.filter((item) => item.event === 'done').at(-1)?.data || {};
 
 /* ① prompt：故事模式不再“1–3 句” */
-const storyPrompt = buildPersonaSystemPrompt(persona, { conversationMode: 'story', voiceLength: 8 });
-const chatPrompt3 = buildPersonaSystemPrompt(persona, { conversationMode: 'chat', inputMode: 'voice', voiceLength: 3 });
+const storyPrompt = buildPersonaSystemPrompt(persona, { turnPolicy: 'story', voiceLength: 8 });
+const chatPrompt3 = buildPersonaSystemPrompt(persona, { turnPolicy: 'chat', inputMode: 'voice', voiceLength: 3 });
 check('S1① 故事 prompt：完整讲完（开头/发展/结尾），不再写死 1–3 句',
   /完整讲完/.test(storyPrompt) && /开头、发展、结尾/.test(storyPrompt) && !/1–3 句/.test(storyPrompt),
   'story prompt ok');
@@ -116,7 +116,7 @@ settings.petChat.baseUrl = model.base;
 const host = await startHost();
 const storyRes = await fetch(`${host.base}/chat`, {
   method: 'POST', headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ text: '给我讲个长一点的故事', inputMode: 'voice', conversationMode: 'story' }),
+  body: JSON.stringify({ text: '给我讲个长一点的故事', inputMode: 'voice' }),
 });
 const storyEvents = await readSse(storyRes);
 const storyText = textOf(storyEvents);
@@ -133,7 +133,7 @@ check('S1④ 宿主给故事放宽输出上限（ollama num_predict=6000）',
 await new Promise((r) => setTimeout(r, 1100));
 const chatRes = await fetch(`${host.base}/chat`, {
   method: 'POST', headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ text: '讲十句', inputMode: 'voice', conversationMode: 'chat' }),
+  body: JSON.stringify({ text: '讲十句', inputMode: 'voice' }),
 });
 const chatEvents = await readSse(chatRes);
 const chatText = textOf(chatEvents);
@@ -147,11 +147,12 @@ const bubble = readFileSync(join(ROOT, 'src', 'pet-bubble.js'), 'utf8');
 const tts = readFileSync(join(ROOT, 'src', 'pet-tts.js'), 'utf8');
 check('S2① TTS 分批（2 句/段）+ group + 句间静音',
   /speechBatch/.test(client) && /group: 2/.test(tts) && /PET_TTS_GAP_MS/.test(tts));
-check('S2② 长文气泡可滚动 + 故事不自动收起',
-  /overflow-y:auto/.test(bubble) && /petChatConversationMode === 'story'/.test(client));
-check('S2③ 故事按钮：继续 / 重讲 / 缩短（都走现有通道）',
-  /weT\('继续'\)/.test(client) && /weT\('重讲'\)/.test(client) && /weT\('缩短'\)/.test(client)
-  && /petChatStoryBarShow/.test(client) && /petChatLastReply/.test(client));
+check('S2② 长文气泡可滚动 + 故事轮不自动收起',
+  /overflow-y:auto/.test(bubble) && /petChatTurnPolicy === 'story'/.test(client));
+check('S2③ 故事按钮：继续讲 / 重讲 / 缩短（只在本轮 story 出现）',
+  /weT\('继续讲'\)/.test(client) && /weT\('重讲'\)/.test(client) && /weT\('缩短'\)/.test(client)
+  && /petChatStoryBarShow/.test(client) && /petChatLastReply/.test(client)
+  && /petChatTurnPolicy === 'story' && petChatLastReply/.test(client));
 
 await host.close();
 await model.close();

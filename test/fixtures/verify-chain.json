@@ -1229,6 +1229,22 @@
         {
           "kind": "guard",
           "npm": null,
+          "file": "test/verify-intent-first.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-settings-entry.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
           "file": "test/verify-singing-v5.mjs",
           "args": [],
           "tier": "soft",
@@ -2643,6 +2659,22 @@
           "kind": "guard",
           "npm": null,
           "file": "test/verify-voice-pack.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-intent-first.mjs",
+          "args": [],
+          "tier": "hard",
+          "probe": false
+        },
+        {
+          "kind": "guard",
+          "npm": null,
+          "file": "test/verify-settings-entry.mjs",
           "args": [],
           "tier": "hard",
           "probe": false

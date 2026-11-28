@@ -417,7 +417,7 @@ async function main() {
     // 4.26.0-pre.79 抬到 **153/166**：能力页精选项 + verify-curated（A–K）。
     // 1.0.1 抬到 **154/167**：关于页 gate / 子标签计数回退 / delegate_to_dsh 真 DSH 调用。
     // 1.1.0 抬到 **155/168**：精选个人工具（A–H）。
-    const CHAIN_FLOOR = { verify: 162, docs: 6, smoke: 6, all: 175 };
+    const CHAIN_FLOOR = { verify: 164, docs: 6, smoke: 6, all: 177 };
     /** 地板表与 GROUPS 的对齐体检：键名必须与**组名**逐一对齐（纯函数 ⇒ 负对照可直接喂）。 */
     const floorGaps = (groups, floors) => groups.map(([, g]) => g).filter((g) => !Number.isInteger(floors[g]));
     const problems = floorGaps(GROUPS, CHAIN_FLOOR).map((g) => '地板表缺组 ' + g

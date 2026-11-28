@@ -453,6 +453,7 @@ const WE_I18N_EN_PANEL = {
   "复制失败：这个环境没有剪贴板权限": "Copy failed: no clipboard permission in this environment",
   // v1.2：故事模式按钮 / 观察模式 / 宿主错误提示
   "继续": "Continue",
+  "继续讲": "Continue the story",
   "重讲": "Tell again",
   "缩短": "Shorten",
   "观察中": "Observing",
@@ -507,7 +508,10 @@ const WE_I18N_EN_PANEL = {
   "读不到这个音频文件": "Could not read this audio file",
   "已导入：{n}": "Imported: {n}",
   "导入失败": "Import failed",
-  "填 Key、起名字、选音色；对话模式、主动搭话、屏幕感知都在「对话与隐私」里，默认全关。": "Enter the key, name and voice; conversation mode, proactive talk and screen awareness live under Conversation & privacy, all off by default.",
+  "填 Key、起名字、选音色；语音长度、主动搭话、屏幕感知都在「对话与隐私」里，默认全关。": "Enter the key, name and voice; answer length, proactive talk and screen awareness live under Conversation & privacy, all off by default.",
+  "⚙ 对话与隐私 / 朗读 / 工作能力": "⚙ Conversation & privacy / Speech / Capabilities",
+  "收起设置": "Collapse settings",
+  "不用先选模式：说「讲个故事」就直接讲，说「今天好累」就先共情；下一轮自动回到聊天。": "No mode to pick: say 'tell me a story' and it starts; say 'I'm exhausted today' and it listens first. The next turn returns to chat automatically.",
   // pre.64：大脑 v2（壁纸动作的客户端执行反馈）
   "正在换壁纸…": "Switching wallpaper…",
   "没找到叫「{name}」的壁纸": "No wallpaper named '{name}' was found",

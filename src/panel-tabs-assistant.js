@@ -199,13 +199,17 @@ function assistantVoiceCard(props) {
   }, rows);
 }
 
-/** 设置页：三分页 + 音色库 + 一键启用。 */
+/** 设置页：四分页 + 音色库 + 一键启用。 */
 function PetChatSettings() {
+  // v1.3：入口按钮可以指定初始页签；**函数签名保持无参**（构建 marker 依赖它）。
+  const initialProps = arguments[0] && typeof arguments[0] === 'object' ? arguments[0] : {};
+  const initialTab = ['assistant', 'behavior', 'voice', 'work'].includes(String(initialProps.initialTab || ''))
+    ? String(initialProps.initialTab) : 'assistant';
   const [draft, setDraft] = React.useState(CHAT_DEFAULTS);
   const [status, setStatus] = React.useState({ ok: null, text: '' });
   const [note, setNote] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
-  const [tab, setTab] = React.useState('assistant');
+  const [tab, setTab] = React.useState(initialTab);
   const [workPlugins, setWorkPlugins] = React.useState(null);
   const [voices, setVoices] = React.useState(null);
   /** v1.2：Edge 429 等“在线音色暂时不可用”的提示（列表里不再堆灰项）。 */
@@ -763,7 +767,7 @@ function PetChatSettings() {
     : null);
   child.push(React.createElement('div', { key: 'title', style: { fontWeight: 600, margin: '14px 0 4px', fontSize: '13px' } }, weT('智能大肥鱼')));
   child.push(React.createElement('div', { key: 'hint', className: 'we-picker__hint', style: { margin: '0 0 6px' } },
-    weT('填 Key、起名字、选音色；对话模式、主动搭话、屏幕感知都在「对话与隐私」里，默认全关。')));
+    weT('填 Key、起名字、选音色；语音长度、主动搭话、屏幕感知都在「对话与隐私」里，默认全关。')));
 
   const tabs = [
     ['assistant', weT('助手')],
@@ -812,8 +816,6 @@ function PetChatSettings() {
   }
 
   if (tab === 'behavior') {
-    const mode = ['chat', 'story', 'treehole', 'observe'].includes(String(draft.conversationMode))
-      ? draft.conversationMode : 'chat';
     const pro = Object.assign({}, CHAT_DEFAULTS.proactive, draft.proactive || {});
     const screen = Object.assign({}, CHAT_DEFAULTS.screen, draft.screen || {});
     const behaviorPage = [];
@@ -828,11 +830,9 @@ function PetChatSettings() {
       type: 'checkbox', checked, disabled: busy, onChange: (e) => onChange(e.target.checked),
     }), weT(label));
 
-    behaviorPage.push(row('conversation-mode', '对话模式', selectOf('mode', mode, [
-      ['chat', weT('聊天')], ['story', weT('讲故事')], ['treehole', weT('树洞')], ['observe', weT('只观察')],
-    ], (value) => update({ conversationMode: value }))));
-    behaviorPage.push(React.createElement('div', { key: 'mode-hint', className: 'we-picker__hint', style: { margin: '0 0 6px' } },
-      weT('聊天＝日常短答；讲故事＝不按句数截断；树洞＝先接情绪；只观察＝不回答、只记不说。')));
+    // v1.3：不再有「对话模式」下拉 —— 讲故事/共情由每一句话自动判定。
+    behaviorPage.push(React.createElement('div', { key: 'intent-hint', className: 'we-picker__hint', style: { margin: '0 0 6px' } },
+      weT('不用先选模式：说「讲个故事」就直接讲，说「今天好累」就先共情；下一轮自动回到聊天。')));
 
     behaviorPage.push(row('voice-length', '语音回答长度', selectOf('vlen', String(draft.voiceLength), [
       ['3', weT('3 句')], ['8', weT('8 句')], ['0', weT('不限')],
@@ -1374,13 +1374,36 @@ function MicTestBlock() {
 }
 
 /**
- * 「智能大肥鱼」一级设置页。只做版面装配：标题 + 三分页表单。
+ * 「智能大肥鱼」一级设置页。只做版面装配：标题 + 入口按钮 + 人设区。
  * 设置导航的注册在 `src/client.js`（id=folia-assistant，order 502）。
+ *
+ * v1.3：**入口必须第一屏可见**。上一版只渲染 PersonaSection，PetChatSettings
+ * 虽然存在却永远挂不上去（用户找不到「对话与隐私」）。
  */
 function AssistantSection() {
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
   return React.createElement('div', { className: 'we-assistant-section', style: { padding: '4px 2px' } },
+    React.createElement('div', {
+      style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' },
+    },
     React.createElement('div', { style: { fontSize: '14px', fontWeight: 600 } }, weT('智能大肥鱼')),
+    React.createElement('button', {
+      type: 'button', className: 'we-picker__btn', id: 'we-assistant-settings-entry',
+      style: { marginLeft: 'auto', fontSize: '12px' },
+      onClick: () => setSettingsOpen((open) => !open),
+    }, settingsOpen ? weT('收起设置') : weT('⚙ 对话与隐私 / 朗读 / 工作能力'))),
     React.createElement(PersonaSection, null),
+    settingsOpen
+      ? React.createElement('div', {
+        key: 'assistant-settings',
+        style: {
+          marginTop: '10px', padding: '10px 10px 4px', borderRadius: '10px',
+          border: '1px solid rgba(120,190,255,.28)', background: 'rgba(90,160,255,.05)',
+        },
+      },
+      // v1.3：默认停在「对话与隐私」；四个页签在 PetChatSettings 内部切换，共用同一份草稿。
+      React.createElement(PetChatSettings, { initialTab: 'behavior' }))
+      : null,
   );
 }
 

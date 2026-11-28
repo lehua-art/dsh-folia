@@ -495,6 +495,10 @@ const VERIFY_STEPS = [
   step('test/verify-screen-context.mjs'),
   // v1.2 P2：音色素材策略（内置仅 4 个系统音效 / 角色音色只走导入 / license 硬门槛）
   step('test/verify-voice-pack.mjs'),
+  // v1.3：意图自动识别（S1–S7：讲故事/继续/共情/静音/危机；没有“模式”）
+  step('test/verify-intent-first.mjs'),
+  // v1.3：智能大肥鱼首屏入口 + PetChatSettings 默认 behavior + 构建 marker（U1–U4）
+  step('test/verify-settings-entry.mjs'),
   // v5 §1 按谱清唱（16 条）：真合成 + F0 朗读对照（≥2×）/ 音符数 / 时长误差 / 路由 / 拒绝带伴奏 / 曲调来源。
   // 软档：依赖本机 SAPI 音色与 ffmpeg，换机器可能 SKIP；audit 仍会单独跑它。
   step('test/verify-singing-v5.mjs', [], 'soft'),

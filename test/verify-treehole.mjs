@@ -86,14 +86,14 @@ async function readSse(response) {
 const say = async (base, text) => {
   const res = await fetch(`${base}/chat`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ text, inputMode: 'text', conversationMode: 'treehole' }),
+    body: JSON.stringify({ text, inputMode: 'text' }),
   });
   const events = await readSse(res);
   return { events, text: events.filter((item) => item.event === 'delta').map((item) => item.data.t).join(''), done: events.filter((item) => item.event === 'done').at(-1)?.data || {} };
 };
 
 /* ① prompt 规则 */
-const prompt = buildPersonaSystemPrompt(persona, { conversationMode: 'treehole' });
+const prompt = buildPersonaSystemPrompt(persona, { turnPolicy: 'empathy' });
 check('T1① 树洞 prompt：先接住情绪 + 开放问题 + 不急建议 + 不诊断',
   /先接住情绪/.test(prompt) && /开放问题/.test(prompt) && /不急着给建议/.test(prompt)
   && /不评判、不诊断/.test(prompt) && /不是心理治疗/.test(prompt),
@@ -117,8 +117,8 @@ check('T1④ 安全回应文案可配置（热线注入）',
 await new Promise((r) => setTimeout(r, 1100));
 const first = await say(host.base, '今天好累');
 const firstSystem = String((model.seen.at(-1).body.messages || [])[0].content || '');
-check('T1⑤ 普通倾诉走模型，system 带树洞规则',
-  first.text.length > 0 && /树洞模式/.test(firstSystem) && first.done.conversationMode === 'treehole',
+check('T1⑤ 普通倾诉走模型，system 带“情绪优先”规则',
+  first.text.length > 0 && /情绪优先/.test(firstSystem) && first.done.policy === 'empathy',
   first.text.slice(0, 20));
 const events = mem.listEvents(persona.id, { limit: 20 }).items;
 check('T1⑥ 树洞记住“在意的事/情绪触发点”（kind=treehole, importance 7）',

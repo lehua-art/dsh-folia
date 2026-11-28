@@ -1,5 +1,33 @@
 # 变更记录（Changelog）
 
+### v1.3.0（2026-11-28，**意图优先：删掉“模式”，修「对话与隐私」入口**）
+
+> 基线 1.2.0；目标 1.3.0；未 npm publish（版本号由主对话统一发布）。
+> 本版按用户流程改，不再新增任何“模式”开关。
+
+- **「对话与隐私」入口可见**：`AssistantSection` 第一屏新增
+  `⚙ 对话与隐私 / 朗读 / 工作能力` 按钮，点击在当前页展开 `PetChatSettings`，默认 `behavior` 页签；
+  四个页签（助手 / 对话与隐私 / 朗读与音色 / 工作能力）共用同一份草稿，切页不丢。
+  `function PetChatSettings()` 构建 marker 未改，初始页签通过 props（`arguments[0].initialTab`）传入。
+- **删除“对话模式”**：设置页删除下拉、右键删除「模式」分组、客户端删除
+  `petChatConversationMode/getMode/setMode/we-pet-mode`；`conversationMode` 字段保留兼容，
+  读档一律 `auto`，运行时不再作为持久模式。
+- **意图自动识别（每轮）**：`lib/pet-chat-brain.js` 新增 `resolveTurnPolicy(text, {lastWasStory})`
+  → `chat / story / empathy`：
+  - `讲个故事 / 讲长一点 / 继续讲 / 后来呢` → 本轮 story：prompt 800–1500 字、不按句数截断、
+    `num_predict=6000`、TTS 2 句/批、气泡保留、仅本轮显示「继续讲 / 重讲 / 缩短」；
+  - `今天好累 / 烦 / 难受` → 本轮 empathy：先共情 + 一个开放问题，不列 1/2/3；危机词仍走固定安全回应；
+  - 下一轮自动回到 chat；故事续写只带上一段结尾（内存 3000 字，不落盘）。
+- **静音指令**：`别说话了/别说话/安静…` → 只把 TTS `voice.muted` 置 true（字幕继续）；
+  `可以说了/说话吧…` → 恢复；不进入任何模式。补了 `别说话了 / 可以说了` 两个口语变体。
+- **只观察重新定义**：不再是对话模式；= 屏幕感知开启 + 主动搭话关闭（隐私设置）。
+  聊天不再有 observe 分支，观察记录仍由采样器写入、可查/删/清空。
+- 新增判据：`test/verify-intent-first.mjs`（S1–S7）、`test/verify-settings-entry.mjs`（U1–U4）；
+  守卫链/fixture/CHAIN_FLOOR 抬到 verify 164 / all 177。
+- 既有判据调整：`verify-story-long` 静态断言改为 `petChatTurnPolicy`/「继续讲」；
+  `verify-treehole` 改为 `policy=empathy` + 「情绪优先」；`verify-personas` G1b 继续覆盖 3 句档。
+- 已知限制见 `docs/V1.3-DELIVERY.md`。
+
 ### v1.2.0（2026-11-26，**长故事 / 记忆 v2 / 主动思维 / 树洞 / 屏幕感知 / 音色策略**）
 
 > 基线 1.1.0；一个分支一次交付；未 npm publish（版本号由主对话统一发布）。
