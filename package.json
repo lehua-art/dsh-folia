@@ -1,7 +1,7 @@
 {
   "name": "dsh-folia",
   "displayName": "dshAI · 壁纸引擎与 AI 桌宠",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "dshAI：壁纸引擎 + AI 桌宠语音助手 + 多人设角色卡 + 皮肤/开机动画 + 能力市场，一站式桌面伴侣。",
   "type": "module",
   "engines": {

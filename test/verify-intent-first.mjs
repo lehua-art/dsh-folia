@@ -122,6 +122,10 @@ check('S1① “讲个故事” ⇒ story；“继续讲” ⇒ story 续写',
   && resolveTurnPolicy('继续讲', { lastWasStory: true }).storyContinue === true);
 check('S1② “讲个笑话/讲一下这个代码” ⇒ chat（不是 story）',
   resolveTurnPolicy('讲个笑话').policy === 'chat' && resolveTurnPolicy('讲一下这个代码').policy === 'chat');
+check('S3② 技术/礼貌语境的“压力/烦”不抢共情（压力测试/函数压力/烦请）',
+  resolveTurnPolicy('做个压力测试').policy === 'chat'
+  && resolveTurnPolicy('这个函数压力很大').policy === 'chat'
+  && resolveTurnPolicy('烦请确认一下').policy === 'chat');
 check('S3① “今天好累” ⇒ empathy；“好累，怎么办” ⇒ chat（明确求建议）',
   resolveTurnPolicy('今天好累').policy === 'empathy' && resolveTurnPolicy('好累，怎么办').policy === 'chat');
 check('S5① “帮我查下天气” ⇒ chat（不被故事/情绪抢走）',
